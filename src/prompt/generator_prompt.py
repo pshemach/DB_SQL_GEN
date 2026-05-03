@@ -51,7 +51,6 @@ TIME RULE
 ════════════════════════════
 If plan specifies time → use it  
 Else:
-
 sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
 AND sf.Date < DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)
 
@@ -63,10 +62,6 @@ All non-aggregated columns must be in GROUP BY
 ════════════════════════════
 SAFE CALCULATION
 ════════════════════════════
-Use:
-COALESCE(...)
-NULLIF(...)
-
 LIMIT RULE:
 Add LIMIT 100 only when the query returns detail rows or ranked/grouped lists.
 Do NOT add LIMIT when the final output is a single aggregate row.

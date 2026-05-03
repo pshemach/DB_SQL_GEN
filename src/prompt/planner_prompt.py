@@ -58,7 +58,7 @@ If a metric requires multiple levels of aggregation:
 BUSINESS DEFINITIONS
 ────────────────────────────────
 Net Sales:
-  Sales minus returns
+  Sales minus return
 
 Sales Volume:
   Quantity adjusted by product volume
@@ -75,7 +75,7 @@ SKU:
   Number of unique products sold
 
 Target:
-  Planned sales
+  Planned target 
 
 Achievement:
   Net sales
