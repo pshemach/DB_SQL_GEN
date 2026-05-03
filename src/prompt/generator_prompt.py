@@ -50,7 +50,7 @@ Avoid row multiplication:
 TIME RULE
 ════════════════════════════
 If plan specifies time → use it  
-Else:
+for current month use bellow kind format:
 sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
 AND sf.Date < DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)
 
