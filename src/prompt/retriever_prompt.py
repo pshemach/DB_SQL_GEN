@@ -5,37 +5,38 @@ Return ONLY a comma-separated list of table names — nothing else.
 TABLE SELECTION GUIDE
 ─────────────────────
 sales_flat
-  Main transaction fact table. One row per product line per invoice.
+  Main flat table that stores product-wise(product code and name) sales and return data for each sales representative (rep). 
+  Each record corresponds to a single product line within an invoice and includes product details, 
+  customer information, and financial values.
 
+sales_targets
+  contain targets assigned to sales reps
+  
 sales_hierarchy_nodes
-  Include when:
+  this is mapping table that helps to join sales_flat table with sales_targets table.
   (a) filtering or displaying RepCode / RepName and sales_flat alone
       is not sufficient (e.g. target queries need the bridge), OR
   (b) sales_targets is included — it is the MANDATORY bridge between
       sales_flat and sales_targets. Never omit it when targets are needed.
 
-sales_targets
-  Include ONLY when the query mentions: target, quota, achievement vs
-  target, balance to target, run rate, or 'what is my target'.
-
 external_parties
-  Include when the query needs: customer active/inactive status,
-  customer type (0=Customer, 1=Supplier, 2=Distributor), customer
-  onboarding date (CreatedDate), or explicit customer master lookups.
-  Do NOT include just to get CustomerName — that is in sales_flat.
+  This table describes the all customers and distributors details.
 
 products
   Include ONLY when the query needs: product volume (litres/kg),
-  volume-based KPIs (e.g. ECO achievement, CSD volume), or product
-  master details not available in sales_flat.
+  volume-based KPIs or product master details not available in sales_flat.
 
 planned_routes
-  Include ONLY when the query is about FUTURE or PLANNED visits.
-  For past route data, sales_flat.Route is sufficient.
+  route details that sales rep planned to take.
 
 route_customer_assignments
-  Include ONLY when planned_routes is included and you need to match
-  planned routes to specific customers.
+  This table describes the assignments of customers to specific sales routes.
+  
+relationships:
+    sales_flat.RepId -> sales_hierarchy_nodes.Id, many-to-one,Sales records associated with each sales rep node
+    sales_targets.RepId -> sales_hierarchy_nodes.Id, many-to-one, targets assigned for each sales rep node
+    sales_flat.ProductCode -> Products.Code, many-to-one, Transaction details for each product
+    sales_flat.CustomerCode -> external_parties.Code, many-to-one, Sales transactions associated with each customer
 
 MANDATORY RULE
 ──────────────
@@ -54,6 +55,7 @@ Available Tables:
 
 Return ONLY a comma-separated list of table names, nothing else.
 """
+
 COLUMN_SELECTION_TABLE = """You are a database column selection expert for a MySQL sales
 distribution system. Given the logical plan and the DDL schema, identify
 the exact columns required. Return a JSON object only — no explanation,

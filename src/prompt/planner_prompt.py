@@ -58,8 +58,9 @@ If a metric requires multiple levels of aggregation:
 BUSINESS DEFINITIONS
 ────────────────────────────────
 Net Sales:
-  Sales minus return
-
+  Sales ('sales') minus return ('return') taken as net sale.
+  also calling as achievement
+  
 Sales Volume:
   Quantity adjusted by product volume
 
@@ -75,10 +76,10 @@ SKU:
   Number of unique products sold
 
 Target:
-  Planned target 
-
-Achievement:
-  Net sales
-
+  for given period need get sum of target value
+  StartDate and EndDate need to be in the period
+  For primary / distributor target Type = 0
+  For secondary / rep-level target Type = 1
+  
 Return the plan.
 """
