@@ -5,7 +5,9 @@ from loguru import logger
 from ..core.state import AgentState
 from ..config import settings
 from ..prompt import PLANNER_PROMPT
+from ..tools import BusinessKnowledgeStore
 
+doc_retriever = BusinessKnowledgeStore()
 
 class PlannerAgent:
     """Decomposes natural language questions into structured logical plans."""
@@ -23,7 +25,7 @@ class PlannerAgent:
         
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", PLANNER_PROMPT),
-            ("user", "{question}")
+            ("human", "{question}")
         ])
         
         self.chain = self.prompt | self.llm
@@ -32,9 +34,12 @@ class PlannerAgent:
         """Generate a logical plan for the question."""
         logger.info("PLANNER: Decomposing question into logical steps")
         question = state["question"]
-        
+        business_definition = doc_retriever.retrieve_business_definitions_block(question=question)
         try:
-            response = self.chain.invoke({"question": question})
+            response = self.chain.invoke({
+                "question": question,
+                "business_definition": business_definition
+                })
             plan = response.content
             
             # Extract numbered steps from the plan

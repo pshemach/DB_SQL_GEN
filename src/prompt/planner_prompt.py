@@ -41,29 +41,8 @@ explicitly describe each aggregation level. Do NOT collapse into one step.
 
 BUSINESS DEFINITIONS
 ────────────────────────────────
-Net Sales:
-  Sales ('sales') minus return ('return') taken as net sale.
-  also calling as achievement
-  
-Sales Volume:
-  Quantity adjusted by product volume
 
-Productive Calls:
-  Step 1: For each day, count unique customers where a sale occurred
-  Step 2: Then sum those daily counts over the selected time period
-    IMPORTANT:
-    - This is NOT overall distinct customers
-    - It is sum of daily distinct customer counts
-    - only include sales occurred, exclude returns
-
-SKU:
-  Number of unique products sold
-
-Target:
-  for given period need get sum of target value
-  StartDate and EndDate need to be in the period
-  For primary / distributor target Type = 0
-  For secondary / rep-level target Type = 1
+{business_definition}
   
 Return the plan.
 """
