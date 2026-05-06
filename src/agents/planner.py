@@ -33,12 +33,14 @@ class PlannerAgent:
     def plan(self, state: AgentState) -> dict:
         """Generate a logical plan for the question."""
         logger.info("PLANNER: Decomposing question into logical steps")
+        
         question = state["question"]
-        business_definition = doc_retriever.retrieve_business_definitions_block(question=question)
+        business_definitions = doc_retriever.retrieve_business_definitions_block(question=question)
+        
         try:
             response = self.chain.invoke({
                 "question": question,
-                "business_definition": business_definition
+                "business_definitions": business_definitions
                 })
             plan = response.content
             

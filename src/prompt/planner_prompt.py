@@ -42,7 +42,7 @@ explicitly describe each aggregation level. Do NOT collapse into one step.
 BUSINESS DEFINITIONS
 ────────────────────────────────
 
-{business_definition}
+{business_definitions}
   
 Return the plan.
 """
