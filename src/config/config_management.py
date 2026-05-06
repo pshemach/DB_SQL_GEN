@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     
     # Vector Store Configuration (ChromaDB)
     vector_store_path: str = Field(default="./data/vector_store", env="VECTOR_STORE_PATH")
-    chroma_collection_name: str = Field(default="sql_examples", env="CHROMA_COLLECTION_NAME")
+    chroma_collection_name: str = Field(default="sql_examples", env="SQL_EXAMPLES_COLLECTION_NAME")
     
     # Embedding Configuration (using sentence-transformers for local embeddings)
     embedding_model: str = Field(default="all-MiniLM-L6-v2", env="EMBEDDING_MODEL")
@@ -51,8 +51,10 @@ class Settings(BaseSettings):
     langchain_tracing_v2: bool  = Field(default=False, env="LANGCHAIN_TRACING_V2")
     langchain_api_key: str      = Field(default="",    env="LANGCHAIN_API_KEY")
     langchain_project: str      = Field(default="sales-text-to-sql", env="LANGCHAIN_PROJECT")
-    langchain_endpoint: str     = Field(default="https://api.smith.langchain.com",
-                                        env="LANGCHAIN_ENDPOINT")
+    langchain_endpoint: str     = Field(default="https://api.smith.langchain.com", env="LANGCHAIN_ENDPOINT")
+    
+    # Data paths
+    business_doc_ymal_path: str = Field("data/business_definitions.yaml", env="BUSINESS_DOC_YAML_PATH")
     
     class Config:
         env_file = ".env"

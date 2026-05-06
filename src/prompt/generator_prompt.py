@@ -12,14 +12,14 @@ SCHEMA:
 {schema_context}
 ────────────────────────────────
 
-FINAL OUTPUT RULE (CRITICAL)
+FINAL OUTPUT RULE
 ────────────────────────────────
 Return ONLY a valid SQL query.
 Must start with SELECT or WITH.
 No explanations, no comments, no markdown.
 
 ════════════════════════════
-SAFETY RULES
+SAFETY RULES (CRITICAL)
 ════════════════════════════
 - ONLY SELECT queries
 - No DML/DDL
@@ -66,13 +66,5 @@ GROUPING RULE
 ════════════════════════════
 All non-aggregated columns must be in GROUP BY
 
-════════════════════════════
-SAFE CALCULATION
-════════════════════════════
-LIMIT RULE:
-Add LIMIT 100 only when the query returns detail rows or ranked/grouped lists.
-Do NOT add LIMIT when the final output is a single aggregate row.
-
-════════════════════════════
 Return SQL now.
 """
