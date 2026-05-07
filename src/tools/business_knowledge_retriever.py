@@ -7,7 +7,7 @@ import os
 from typing import List, Dict
 from ..config import settings
 
-class BusinessKnowledgeStore:
+class BusinessKnowledgeRetriever:
     """
     Manages a vector store of business definitions.
     """
@@ -96,3 +96,5 @@ class BusinessKnowledgeStore:
             keywords_lines.append(keywords)
             
         return "\n".join(keywords_lines).strip()
+    
+business_knowledge_retriever = BusinessKnowledgeRetriever()

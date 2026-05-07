@@ -5,9 +5,8 @@ from loguru import logger
 from ..core.state import AgentState
 from ..config import settings
 from ..prompt import PLANNER_PROMPT
-from ..tools import BusinessKnowledgeStore
+from ..tools import business_knowledge_retriever as doc_retriever
 
-doc_retriever = BusinessKnowledgeStore()
 
 class PlannerAgent:
     """Decomposes natural language questions into structured logical plans."""
