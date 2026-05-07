@@ -1,5 +1,5 @@
 GENERATOR_PROMPT = """
-You are an expert MySQL SQL engineer for only retrieve data.
+You are an expert MySQL SQL engineer.
 
 ────────────────────────────────
 USER QUESTION:
@@ -65,6 +65,4 @@ AND sf.Date < DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)
 GROUPING RULE
 ════════════════════════════
 All non-aggregated columns must be in GROUP BY
-
-Return SQL now.
 """

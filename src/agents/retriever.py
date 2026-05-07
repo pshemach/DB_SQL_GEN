@@ -4,6 +4,7 @@ Schema Linker Agent (Selector): Identifies relevant tables and columns.
 
 from typing import List
 from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 from ..core import AgentState, db_manager
@@ -17,14 +18,18 @@ class SchemaLinkerAgent:
     """
     
     def __init__(self):
-        self.llm = ChatOpenAI(
-            model=settings.openai_model_fast,
-            api_key=settings.openai_api_key
-        )     
-        
+        # self.llm = ChatOpenAI(
+        #     model=settings.openai_model_fast,
+        #     api_key=settings.openai_api_key
+        # )     
+        self.llm = ChatAnthropic(
+            model=settings.anthropic_model_fast,
+            api_key=settings.anthropic_api_key
+        )
         self.table_selection_prompt = ChatPromptTemplate.from_messages([
-                ("system", TABLE_SELECTION_TABLE)
-            ])
+                ("system", TABLE_SELECTION_TABLE),
+                 ("human","{question}")
+                 ])
         
         self.column_selection_prompt = ChatPromptTemplate.from_messages([
             ("system", COLUMN_SELECTION_TABLE)
@@ -61,7 +66,8 @@ class SchemaLinkerAgent:
         except Exception as e:
             logger.error(f"Table selection error: {e}")
             # Fallback: return top 5 tables (simple heuristic)
-            return all_tables[:5]
+            return ['sales_flat', "sales_targets", 'sales_hierarchy_nodes',
+                    'external_parties', 'products', 'planned_routes', 'route_customer_assignments']
             
     def retrieve_schema(self, state: AgentState) -> dict:
         """

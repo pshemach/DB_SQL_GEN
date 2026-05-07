@@ -35,7 +35,8 @@ class PlannerAgent:
         logger.info("PLANNER: Decomposing question into logical steps")
         
         question = state["question"]
-        business_definitions = doc_retriever.retrieve_business_definitions_block(question=question)
+        business_definitions = doc_retriever.retrieve_business_definitions_block(
+            question=question, k=5)
         
         try:
             response = self.chain.invoke({

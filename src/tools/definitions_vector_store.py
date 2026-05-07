@@ -82,4 +82,17 @@ class BusinessKnowledgeStore:
             lines.append("")
             
         return "\n".join(lines).strip()
+    
+    def retrieve_business_keywords(self, question: str, k: int = 3) -> str:
         
+        docs = self.get_relevant_definition_docs(question=question, k=k)
+        
+        keywords_lines = []
+        for doc in docs:
+            name = doc.metadata.get("name", "---").replace("_", " ")
+            keywords = doc.metadata.get("keywords", ["-"])
+            keywords = " ".join(keywords).strip()
+            keywords_lines.append(f"{name}:")
+            keywords_lines.append(keywords)
+            
+        return "\n".join(keywords_lines).strip()

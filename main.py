@@ -1,13 +1,13 @@
-from src.agents import planner_node, schema_linker_node, generator_node
-from src.core import AgentState
+# from src.agents import planner_node, schema_linker_node, generator_node
+# from src.core import AgentState
 
-state = AgentState(question="What is my productive call?")
+# state = AgentState(question="What is my productive call?")
 
 
-planner_node_output = planner_node(state)
+# planner_node_output = planner_node(state)
 
-print(planner_node_output['plan'])
-print( planner_node_output['plan_steps'])
+# print(planner_node_output['plan'])
+# print( planner_node_output['plan_steps'])
 
 # state['plan'] = planner_node_output['plan']
 # state['plan_steps'] = planner_node_output['plan_steps']
