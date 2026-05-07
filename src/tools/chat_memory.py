@@ -1,45 +1,152 @@
-from typing import List, Optional
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-import json
-import os
+from typing import Dict, List, Any, Optional
+from datetime import datetime
+from uuid import uuid4
 
-class ChatMemory:
-    def __init__(self, storage_path: str = "data/chat_memory.json"):
-        self.storage_path = storage_path
-        os.makedirs(os.path.dirname(storage_path), exist_ok=True)
-        self._load()
 
-    def _load(self):
-        if os.path.exists(self.storage_path):
-            with open(self.storage_path, 'r') as f:
-                data = json.load(f)
-                self.history = [self._deserialize_msg(msg) for msg in data.get("history", [])]
-        else:
-            self.history = []
+class ChatMemoryStore:
+    """
+    In-memory conversation memory.
+    """
 
-    def _save(self):
-        data = {"history": [self._serialize_msg(msg) for msg in self.history]}
-        with open(self.storage_path, 'w') as f:
-            json.dump(data, f)
+    def __init__(self):
+        self.sessions: Dict[str, Dict[str, Any]] = {}
 
-    def _serialize_msg(self, msg: BaseMessage) -> dict:
-        return {"type": msg.__class__.__name__, "content": msg.content}
+    def get_or_create_session(self, session_id: Optional[str] = None) -> str:
+        if session_id and session_id in self.sessions:
+            return session_id
 
-    def _deserialize_msg(self, data: dict) -> BaseMessage:
-        if data["type"] == "HumanMessage":
-            return HumanMessage(content=data["content"])
-        elif data["type"] == "AIMessage":
-            return AIMessage(content=data["content"])
-        # Add more types as needed
-        return HumanMessage(content=data["content"])  # Fallback
+        new_session_id = session_id or str(uuid4())
 
-    def add_message(self, message: BaseMessage):
-        self.history.append(message)
-        self._save()
+        self.sessions[new_session_id] = {
+            "messages": [],
+            "clarifications": [],
+            "knowledge_gaps": [],
+            "last_state": None,
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat()
+        }
 
-    def get_history(self) -> List[BaseMessage]:
-        return self.history.copy()
+        return new_session_id
 
-    def clear_history(self):
-        self.history = []
-        self._save()
+    def get_session(self, session_id: str) -> Dict[str, Any]:
+        return self.sessions.get(session_id, {})
+
+    def get_last_state(self, session_id: str) -> Optional[Dict[str, Any]]:
+        return self.sessions.get(session_id, {}).get("last_state")
+
+    def set_last_state(self, session_id: str, state: Dict[str, Any]):
+        self.sessions[session_id]["last_state"] = state
+        self.sessions[session_id]["updated_at"] = datetime.utcnow().isoformat()
+
+    def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        message_type: str = "message",
+        metadata: Optional[Dict[str, Any]] = None
+    ):
+        self.sessions[session_id]["messages"].append({
+            "role": role,
+            "type": message_type,
+            "content": content,
+            "metadata": metadata or {},
+            "created_at": datetime.utcnow().isoformat()
+        })
+
+        self.sessions[session_id]["updated_at"] = datetime.utcnow().isoformat()
+
+    def add_clarification(
+        self,
+        session_id: str,
+        original_question: str,
+        clarification_question: str,
+        user_answer: Optional[str] = None,
+        resolved: bool = False
+    ):
+        self.sessions[session_id]["clarifications"].append({
+            "original_question": original_question,
+            "clarification_question": clarification_question,
+            "user_answer": user_answer,
+            "resolved": resolved,
+            "created_at": datetime.utcnow().isoformat()
+        })
+
+        self.sessions[session_id]["updated_at"] = datetime.utcnow().isoformat()
+
+    def resolve_latest_clarification(self, session_id: str, user_answer: str):
+        clarifications = self.sessions[session_id]["clarifications"]
+
+        if clarifications:
+            clarifications[-1]["user_answer"] = user_answer
+            clarifications[-1]["resolved"] = True
+            clarifications[-1]["resolved_at"] = datetime.utcnow().isoformat()
+
+        self.sessions[session_id]["updated_at"] = datetime.utcnow().isoformat()
+
+    def add_knowledge_gap(
+        self,
+        session_id: str,
+        question: str,
+        missing_pieces: List[str],
+        reason: str,
+        resolved: bool = False
+    ):
+        self.sessions[session_id]["knowledge_gaps"].append({
+            "question": question,
+            "missing_pieces": missing_pieces,
+            "reason": reason,
+            "resolved": resolved,
+            "created_at": datetime.utcnow().isoformat()
+        })
+
+        self.sessions[session_id]["updated_at"] = datetime.utcnow().isoformat()
+
+    def resolve_latest_knowledge_gap(self, session_id: str):
+        gaps = self.sessions[session_id]["knowledge_gaps"]
+
+        if gaps:
+            gaps[-1]["resolved"] = True
+            gaps[-1]["resolved_at"] = datetime.utcnow().isoformat()
+
+        self.sessions[session_id]["updated_at"] = datetime.utcnow().isoformat()
+
+    def build_memory_context(self, session_id: str, max_messages: int = 10) -> str:
+        session = self.sessions.get(session_id)
+
+        if not session:
+            return ""
+
+        messages = session.get("messages", [])[-max_messages:]
+        clarifications = session.get("clarifications", [])[-5:]
+        knowledge_gaps = session.get("knowledge_gaps", [])[-5:]
+
+        parts = []
+
+        if messages:
+            parts.append("Recent Conversation:")
+            for msg in messages:
+                parts.append(f"- {msg['role']} ({msg['type']}): {msg['content']}")
+
+        if clarifications:
+            parts.append("\nClarifications:")
+            for c in clarifications:
+                parts.append(
+                    f"- Asked: {c['clarification_question']} | "
+                    f"Answered: {c.get('user_answer')} | "
+                    f"Resolved: {c.get('resolved')}"
+                )
+
+        if knowledge_gaps:
+            parts.append("\nKnowledge Gaps:")
+            for g in knowledge_gaps:
+                parts.append(
+                    f"- Question: {g['question']} | "
+                    f"Missing: {', '.join(g.get('missing_pieces', []))} | "
+                    f"Resolved: {g.get('resolved')}"
+                )
+
+        return "\n".join(parts)
+
+
+chat_memory = ChatMemoryStore()

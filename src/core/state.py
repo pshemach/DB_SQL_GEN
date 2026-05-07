@@ -15,7 +15,13 @@ class AgentState(TypedDict):
     """
     
     # Input
+    session_id: Optional[str]
     question: str  # Original user question
+    original_question: Optional[str]
+    
+    # Conversation memory
+    messages: List[Dict[str, Any]]
+    memory_context: Optional[str]
     
     # Planning Phase
     plan: Optional[str]  # Logical plan from Decomposer

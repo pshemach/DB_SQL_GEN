@@ -8,6 +8,7 @@ from ..graph import run_agent_async
 from ..tools import seed_examples, semantic_cache, few_shot_retriever
 from ..core import db_manager
 from ..config import settings
+from ..tools.chat_memory import chat_memory
 
 from .data_models import (
     QueryRequest, QueryResponse,
@@ -71,7 +72,87 @@ async def query_database(request: QueryRequest):
     logger.info(f"Query: {request.question}")
     
     try:
-        result = await run_agent_async(request.question)
+        session_id = request.session_id or chat_memory.get_or_create_session()
+        
+        previous_state = chat_memory.get_last_state(session_id)
+        
+        # result = await run_agent_async(request.question)
+        
+        # if previous_state and previous_state.get("waiting_for_user"):
+        #     result = await continue_after_user_reply(
+        #         previous_state=previous_state,
+        #         user_reply=request.question
+        #     )
+        # else:
+        #     chat_memory.add_message(
+        #         session_id=session_id,
+        #         role="user",
+        #         content=request.question,
+        #         message_type="question"
+        #     )
+
+        #     result = await run_agent_async(
+        #         question=request.question,
+        #         session_id=session_id,
+        #         messages=chat_memory.get_session(session_id).get("messages", [])
+        #     )
+        
+        chat_memory.add_message(
+                session_id=session_id,
+                role="user",
+                content=request.question,
+                message_type="question"
+            )
+
+        result = await run_agent_async(
+                question=request.question,
+                session_id=session_id,
+                messages=chat_memory.get_session(session_id).get("messages", [])
+            )
+        
+        # assistant memory
+        if result.get("waiting_for_user"):
+            assistant_content = result.get("question_to_user")
+            message_type = "clarification_question"
+        elif result.get("final_answer"):
+            assistant_content = result.get("final_answer")
+            message_type = "answer"
+        elif result.get("sql_query"):
+            assistant_content = result.get("sql_query")
+            message_type = "sql"
+        elif result.get("plan"):
+            assistant_content = result.get("plan")
+            message_type = "plan"
+        else:
+            assistant_content = result.get("error")
+            message_type = "error"
+
+        if assistant_content:
+            chat_memory.add_message(
+                session_id=session_id,
+                role="assistant",
+                content=assistant_content,
+                message_type=message_type
+            )
+
+        result["messages"] = chat_memory.get_session(session_id).get("messages", [])
+        result["session_id"] = session_id
+
+        chat_memory.set_last_state(session_id, result)
+        
+        
+        # return QueryResponse(
+        #     success=result.get("error") is None,
+        #     sql_query=result.get("sql_query"),
+        #     result_preview=result.get("result_preview"),
+        #     error=result.get("error"),
+        #     execution_time_ms=result.get("execution_time_ms"),
+        #     total_latency_ms=result.get("total_latency_ms"),
+        #     iterations=result.get("iterations", 0),
+        #     cache_hit=result.get("cache_hit", False),
+        #     plan=result.get("plan"),
+        #     relevant_tables=result.get("relevant_tables")
+        # )
         
         return QueryResponse(
             success=result.get("error") is None,
@@ -83,7 +164,14 @@ async def query_database(request: QueryRequest):
             iterations=result.get("iterations", 0),
             cache_hit=result.get("cache_hit", False),
             plan=result.get("plan"),
-            relevant_tables=result.get("relevant_tables")
+            relevant_tables=result.get("relevant_tables"),
+
+            session_id=session_id,
+            waiting_for_user=result.get("waiting_for_user", False),
+            question_to_user=result.get("question_to_user"),
+            gap_type=result.get("gap_type"),
+            gap_reason=result.get("gap_reason"),
+            confidence=result.get("confidence")
         )
     except Exception as e:
         logger.error(f"Query error: {e}")

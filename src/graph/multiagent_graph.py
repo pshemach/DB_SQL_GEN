@@ -24,6 +24,7 @@ from ..tools import (
     # few_shot_retriever
     )
 from ..config import settings
+from ..tools.chat_memory import chat_memory
 
 def _setup_langsmith():
     """
@@ -255,7 +256,11 @@ def run_agent(question: str) -> dict:
     run_type= "chain",
     tags    = ["text-to-sql", "openai"],
 )
-async def run_agent_async(question: str) -> dict:
+async def run_agent_async(
+    question: str,
+    session_id: str,
+    messages: list | None = None
+    ) -> dict:
     """
     Asynchronous version of run_agent.
     
@@ -270,25 +275,73 @@ async def run_agent_async(question: str) -> dict:
     logger.info(f"Question: {question}")
     logger.info(f"{'='*60}")
     
-    initial_state: AgentState = {
+    memory_context = chat_memory.build_memory_context(session_id)
+    
+    # initial_state: AgentState = {
+    #     "question": question,
+    #     "plan": None,
+    #     "plan_steps": None,
+    #     "relevant_tables": None,
+    #     "schema_context": None,
+    #     "schema_metadata": None,
+    #     "sql_query": None,
+    #     "sql_explanation": None,
+    #     "few_shot_examples": None,
+    #     "query_result": None,
+    #     "result_preview": None,
+    #     "execution_time_ms": None,
+    #     "error": None,
+    #     "error_type": None,
+    #     "iterations": 0,
+    #     "should_retry": True,
+    #     "messages": [],
+    #     "start_time": None,
+    #     "cache_hit": False
+    # }
+    
+    initial_state = {
+        "session_id": session_id,
         "question": question,
+        "original_question": question,
+
+        "messages": messages or [],
+        "memory_context": memory_context,
+
+        "needs_clarification": False,
+        "gap_type": None,
+        "gap_reason": None,
+        "confidence": None,
+        "missing_pieces": [],
+
+        "question_to_user": None,
+        "waiting_for_user": False,
+        "pending_original_question": None,
+        "clarification_answer": None,
+        "clarifications": [],
+
+        "business_definitions": "",
+        "matched_knowledge": [],
+
         "plan": None,
         "plan_steps": None,
+
         "relevant_tables": None,
         "schema_context": None,
         "schema_metadata": None,
+
         "sql_query": None,
         "sql_explanation": None,
-        "few_shot_examples": None,
+
         "query_result": None,
         "result_preview": None,
         "execution_time_ms": None,
+
         "error": None,
         "error_type": None,
         "iterations": 0,
         "should_retry": True,
-        "messages": [],
-        "start_time": None,
+
+        "start_time": time.time(),
         "cache_hit": False
     }
     
