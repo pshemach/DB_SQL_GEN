@@ -4,8 +4,9 @@ from typing import List, Dict, Any
 from ..config import settings
 
 class BusinessKnowledgeStore:
-    def __init__(self, yaml_path: str):
-        self.yaml_path = Path(yaml_path) or Path(settings.business_doc_ymal_path)
+    def __init__(self, yaml_path: str = None):
+        yaml_path = yaml_path or settings.business_doc_ymal_path
+        self.yaml_path = Path(yaml_path)
         self.definitions = self._load()
 
     def _load(self) -> Dict[str, Any]:

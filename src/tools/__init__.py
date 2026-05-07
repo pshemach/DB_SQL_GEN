@@ -6,6 +6,7 @@ from .cache import SemanticCache, semantic_cache
 from .vector_store import few_shot_retriever, seed_examples
 from .business_knowledge_retriever import BusinessKnowledgeRetriever, business_knowledge_retriever
 from .business_knowledge_store import BusinessKnowledgeStore, business_knowledge_store
+from .chat_memory import chat_memory, ChatMemoryStore
 
 __all__ = [
     "SemanticCache", 
@@ -15,5 +16,7 @@ __all__ = [
     "BusinessKnowledgeRetriever"
     "business_knowledge_retriever",
     "BusinessKnowledgeStore",
-    "business_knowledge_store"
+    "business_knowledge_store",
+    "chat_memory", 
+    "ChatMemoryStore"
 ]
