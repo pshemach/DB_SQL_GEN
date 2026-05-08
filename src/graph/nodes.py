@@ -15,7 +15,6 @@ def memory_loader_node(state: dict) -> dict:
     )
 
     return {
-        "start_time": time.time(),
         "previous_state": previous_state,
         "messages": chat_memory.get_session(session_id).get("messages", []),
         "memory_context": chat_memory.build_memory_context(session_id),

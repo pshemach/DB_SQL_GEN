@@ -1,64 +1,97 @@
+from uuid import uuid4
+from loguru import logger
+import time
+import os
+from langsmith import traceable
 from ..tools.chat_memory import chat_memory
-from ..agents.intent_switch_agent import intent_switch_agent
-from ..agents.knowledge_capture_agent import knowledge_capture_agent
-from ..graph.multiagent_graph import graph
+from .multiagent_graph import graph
+from ..config import settings
+
+def _setup_langsmith():
+    """
+    Set LangChain environment variables from settings so every
+    """
+    if not settings.langchain_tracing_v2:
+        return                           # tracing off — skip
+
+    os.environ["LANGCHAIN_TRACING_V2"]  = "true"
+    os.environ["LANGCHAIN_API_KEY"]     = settings.langchain_api_key
+    os.environ["LANGCHAIN_PROJECT"]     = settings.langchain_project
+    os.environ["LANGCHAIN_ENDPOINT"]    = settings.langchain_endpoint
+
+# Call once when this module is imported
+_setup_langsmith()
 
 
-async def continue_after_user_reply(
-    previous_state: dict,
-    user_reply: str
-) -> dict:
-    session_id = previous_state["session_id"]
+@traceable(
+    name    = "sales-sql-agent",          # trace name in LangSmith UI
+    run_type= "chain",                    # shows as a chain in the UI
+    tags    = ["text-to-sql", "openai", "anthropic"],
+)
+async def run_agent_async(question: str, session_id: str | None = None) -> dict:
+    
+    session_id = chat_memory.get_or_create_session(session_id)
 
-    decision = intent_switch_agent.detect(previous_state, user_reply)
+    initial_state = {
+        "session_id": session_id,
+        "question": question,
+        "original_question": question,
 
-    if decision == "NEW_QUESTION":
-        chat_memory.add_message(
-            session_id=session_id,
-            role="user",
-            content=user_reply,
-            message_type="new_question"
-        )
+        "previous_state": None,
+        "messages": [],
+        "memory_context": "",
 
-        return await graph.ainvoke({
-            **previous_state,
-            "question": user_reply,
-            "original_question": user_reply,
-            "waiting_for_user": False,
-            "needs_clarification": False,
-            "question_to_user": None,
-            "memory_context": chat_memory.build_memory_context(session_id)
-        })
+        "conversation_route": None,
 
-    # ANSWER
-    chat_memory.add_message(
-        session_id=session_id,
-        role="user",
-        content=user_reply,
-        message_type="clarification_answer"
-    )
+        "needs_clarification": False,
+        "gap_type": None,
+        "gap_reason": None,
+        "confidence": None,
+        "missing_pieces": [],
 
-    if previous_state.get("gap_type") == "knowledge_gap":
-        updated_state = knowledge_capture_agent.capture(previous_state, user_reply)
-    else:
-        chat_memory.resolve_latest_clarification(session_id, user_reply)
+        "question_to_user": None,
+        "waiting_for_user": False,
+        "pending_original_question": None,
+        "clarification_answer": None,
 
-        combined_question = f"""
-Original Question:
-{previous_state.get("pending_original_question")}
+        "business_definitions": "",
+        "matched_knowledge": [],
 
-Clarification Answer:
-{user_reply}
-""".strip()
+        "plan": None,
+        "plan_steps": None,
 
-        updated_state = {
-            **previous_state,
-            "question": combined_question,
-            "clarification_answer": user_reply,
-            "waiting_for_user": False,
-            "needs_clarification": False,
-            "question_to_user": None,
-            "memory_context": chat_memory.build_memory_context(session_id)
+        "relevant_tables": None,
+        "schema_context": None,
+        "schema_metadata": None,
+
+        "sql_query": None,
+        "sql_explanation": None,
+
+        "query_result": None,
+        "result_preview": None,
+        "execution_time_ms": None,
+
+        "error": None,
+        "error_type": None,
+        "iterations": 0,
+        "should_retry": True,
+
+        "start_time": time.time(),
+        "cache_hit": False
+    }
+
+    try:
+        result = await graph.ainvoke(initial_state)
+
+        if result.get("start_time"):
+            result["total_latency_ms"] = (time.time() - result["start_time"]) * 1000
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Graph execution error: {e}")
+        return {
+            **initial_state,
+            "error": str(e),
+            "should_retry": False
         }
-
-    return await graph.ainvoke(updated_state)

@@ -5,9 +5,11 @@ from ..config import settings
 from .graph_state import AgentState
 from ..tools import semantic_cache, chat_memory
 
+
 def add_start_time(state: AgentState) -> dict:
     """Add timestamp at start of workflow."""
     return {"start_time": time.time()}
+
 
 def should_continue(state: AgentState) -> Literal["reflect", "end", "cache_success"]:
     """

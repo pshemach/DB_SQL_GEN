@@ -19,7 +19,8 @@ from ..agents import (
     executor_node,
     reflector_node,
     knowledge_gap_detector_node,
-    clarification_node
+    clarification_node,
+    conversation_router_node
 )
 
 from .conditional_methods import (
@@ -85,23 +86,43 @@ def build_graph() -> StateGraph:
     # Each node represents a step in the workflow
     workflow.add_node("init", add_start_time)
     
+    workflow.add_node("memory_loader", memory_loader_node)
+    workflow.add_node("conversation_router", conversation_router_node)
+    workflow.add_node("clarification_resolver", clarification_resolver_node)
+    workflow.add_node("new_question_reset", new_question_reset_node)
+    
     workflow.add_node("gap_detector", knowledge_gap_detector_node)
     workflow.add_node("clarifier", clarification_node)
     
     workflow.add_node("planner", planner_node)
+    
     workflow.add_node("schema_retriever", schema_linker_node)
     workflow.add_node("generator", generator_node)
     workflow.add_node("executor", executor_node)    # Execute and validate
-    
     workflow.add_node("reflector", reflector_node)  # Fix errors if any
     workflow.add_node("cache_result", cache_result_node)  # Store successful result
+    
+    workflow.add_node("save_memory", save_memory_node)
     
     # === DEFINE WORKFLOW ===
     workflow.set_entry_point("init")
     
-    # workflow.add_edge("init", "planner")
+    workflow.add_edge("init", "memory_loader")
     
-    workflow.add_edge("init", "gap_detector")
+    workflow.add_edge("memory_loader", "conversation_router")
+    
+    workflow.add_conditional_edges(
+        "conversation_router",
+        route_after_conversation_router,
+        {
+            "gap_detector": "gap_detector",
+            "clarification_resolver": "clarification_resolver",
+            "new_question_reset": "new_question_reset"
+        }
+    )
+    
+    workflow.add_edge("new_question_reset", "gap_detector")
+    workflow.add_edge("clarification_resolver", "gap_detector")
 
     workflow.add_conditional_edges(
         "gap_detector",
@@ -111,8 +132,9 @@ def build_graph() -> StateGraph:
             "planner": "planner"
         }
     )
-
-    workflow.add_edge("clarifier", END)
+    
+    workflow.add_edge("clarifier", "save_memory")
+    workflow.add_edge("save_memory", END)
     
     workflow.add_edge("planner", "schema_retriever")
     workflow.add_edge("schema_retriever", "generator")
@@ -123,15 +145,16 @@ def build_graph() -> StateGraph:
         "executor", 
         should_continue,
         {
-            "end": END,
+            "end": "save_memory",
             "cache_success": "cache_result",
             "reflect": "reflector"
         }
     )
     
-    workflow.add_edge("cache_result", END)
+    workflow.add_edge("cache_result", "save_memory")
     # After reflection, retry execution
     workflow.add_edge("reflector", "executor")
+    workflow.add_edge("save_memory", END)
     
     logger.info("Graph built successfully")
     return workflow
@@ -223,114 +246,114 @@ def run_agent(question: str) -> dict:
         }
 
 
-@traceable(
-    name    = "sales-sql-agent-async",
-    run_type= "chain",
-    tags    = ["text-to-sql", "openai"],
-)
-async def run_agent_async(
-    question: str,
-    session_id: str,
-    messages: list | None = None
-    ) -> dict:
-    """
-    Asynchronous version of run_agent.
+# @traceable(
+#     name    = "sales-sql-agent-async",
+#     run_type= "chain",
+#     tags    = ["text-to-sql", "openai"],
+# )
+# async def run_agent_async(
+#     question: str,
+#     session_id: str,
+#     messages: list | None = None
+#     ) -> dict:
+#     """
+#     Asynchronous version of run_agent.
     
-    Args:
-        question: Natural language question
+#     Args:
+#         question: Natural language question
         
-    Returns:
-        Final state with results
-    """
-    logger.info(f"{'='*60}")
-    logger.info(f"Running Text-to-SQL Agent (Async)")
-    logger.info(f"Question: {question}")
-    logger.info(f"{'='*60}")
+#     Returns:
+#         Final state with results
+#     """
+#     logger.info(f"{'='*60}")
+#     logger.info(f"Running Text-to-SQL Agent (Async)")
+#     logger.info(f"Question: {question}")
+#     logger.info(f"{'='*60}")
     
-    memory_context = chat_memory.build_memory_context(session_id)
+#     memory_context = chat_memory.build_memory_context(session_id)
     
-    # initial_state: AgentState = {
-    #     "question": question,
-    #     "plan": None,
-    #     "plan_steps": None,
-    #     "relevant_tables": None,
-    #     "schema_context": None,
-    #     "schema_metadata": None,
-    #     "sql_query": None,
-    #     "sql_explanation": None,
-    #     "few_shot_examples": None,
-    #     "query_result": None,
-    #     "result_preview": None,
-    #     "execution_time_ms": None,
-    #     "error": None,
-    #     "error_type": None,
-    #     "iterations": 0,
-    #     "should_retry": True,
-    #     "messages": [],
-    #     "start_time": None,
-    #     "cache_hit": False
-    # }
+#     # initial_state: AgentState = {
+#     #     "question": question,
+#     #     "plan": None,
+#     #     "plan_steps": None,
+#     #     "relevant_tables": None,
+#     #     "schema_context": None,
+#     #     "schema_metadata": None,
+#     #     "sql_query": None,
+#     #     "sql_explanation": None,
+#     #     "few_shot_examples": None,
+#     #     "query_result": None,
+#     #     "result_preview": None,
+#     #     "execution_time_ms": None,
+#     #     "error": None,
+#     #     "error_type": None,
+#     #     "iterations": 0,
+#     #     "should_retry": True,
+#     #     "messages": [],
+#     #     "start_time": None,
+#     #     "cache_hit": False
+#     # }
     
-    initial_state = {
-        "session_id": session_id,
-        "question": question,
-        "original_question": question,
+#     initial_state = {
+#         "session_id": session_id,
+#         "question": question,
+#         "original_question": question,
 
-        "messages": messages or [],
-        "memory_context": memory_context,
+#         "messages": messages or [],
+#         "memory_context": memory_context,
 
-        "needs_clarification": False,
-        "gap_type": None,
-        "gap_reason": None,
-        "confidence": None,
-        "missing_pieces": [],
+#         "needs_clarification": False,
+#         "gap_type": None,
+#         "gap_reason": None,
+#         "confidence": None,
+#         "missing_pieces": [],
 
-        "question_to_user": None,
-        "waiting_for_user": False,
-        "pending_original_question": None,
-        "clarification_answer": None,
-        "clarifications": [],
+#         "question_to_user": None,
+#         "waiting_for_user": False,
+#         "pending_original_question": None,
+#         "clarification_answer": None,
+#         "clarifications": [],
 
-        "business_definitions": "",
-        "matched_knowledge": [],
+#         "business_definitions": "",
+#         "matched_knowledge": [],
 
-        "plan": None,
-        "plan_steps": None,
+#         "plan": None,
+#         "plan_steps": None,
 
-        "relevant_tables": None,
-        "schema_context": None,
-        "schema_metadata": None,
+#         "relevant_tables": None,
+#         "schema_context": None,
+#         "schema_metadata": None,
 
-        "sql_query": None,
-        "sql_explanation": None,
+#         "sql_query": None,
+#         "sql_explanation": None,
 
-        "query_result": None,
-        "result_preview": None,
-        "execution_time_ms": None,
+#         "query_result": None,
+#         "result_preview": None,
+#         "execution_time_ms": None,
 
-        "error": None,
-        "error_type": None,
-        "iterations": 0,
-        "should_retry": True,
+#         "error": None,
+#         "error_type": None,
+#         "iterations": 0,
+#         "should_retry": True,
 
-        "start_time": time.time(),
-        "cache_hit": False
-    }
+#         "start_time": time.time(),
+#         "cache_hit": False
+#     }
     
-    try:
-        final_state = await graph.ainvoke(initial_state)
+#     try:
+#         final_state = await graph.ainvoke(initial_state)
         
-        if final_state.get("start_time"):
-            total_time = (time.time() - final_state["start_time"]) * 1000
-            final_state["total_latency_ms"] = total_time
+#         if final_state.get("start_time"):
+#             total_time = (time.time() - final_state["start_time"]) * 1000
+#             final_state["total_latency_ms"] = total_time
         
-        return final_state
+#         return final_state
         
-    except Exception as e:
-        logger.error(f"Async graph execution error: {e}")
-        return {
-            **initial_state,
-            "error": str(e),
-            "should_retry": False
-        }
+#     except Exception as e:
+#         logger.error(f"Async graph execution error: {e}")
+#         return {
+#             **initial_state,
+#             "error": str(e),
+#             "should_retry": False
+#         }
 
