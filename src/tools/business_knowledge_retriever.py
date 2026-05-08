@@ -89,10 +89,10 @@ class BusinessKnowledgeRetriever:
         
         keywords_lines = []
         for doc in docs:
-            name = doc.metadata.get("name", "---").replace("_", " ")
+            # name = doc.metadata.get("name", "---").replace("_", " ")
             keywords = doc.metadata.get("keywords", ["-"])
             keywords = " ".join(keywords).strip()
-            keywords_lines.append(f"{name}:")
+            # keywords_lines.append(f"{name}:")
             keywords_lines.append(keywords)
             
         return "\n".join(keywords_lines).strip()

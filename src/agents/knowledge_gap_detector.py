@@ -53,7 +53,7 @@ class KnowledgeGapDetectorAgent:
             response = self.chain.invoke({
                 "question": question,
                 "memory_context": memory_context,
-                "business_definitions": business_knowledge_store.get_all_definitions_text(),
+                # "business_definitions": business_knowledge_store.get_all_definitions_text(),
                 "retrieved_knowledge": retrieved_knowledge
             })
 

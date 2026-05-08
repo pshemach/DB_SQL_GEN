@@ -23,6 +23,24 @@ class AgentState(TypedDict):
     messages: List[Dict[str, Any]]
     memory_context: Optional[str]
     
+    # Gap detection
+    needs_clarification: bool
+    gap_type: Optional[str]  # knowledge_gap | parameter_gap | none
+    gap_reason: Optional[str]
+    confidence: Optional[float]
+    missing_pieces: Optional[List[str]]
+
+    # Clarification
+    question_to_user: Optional[str]
+    waiting_for_user: bool
+    pending_original_question: Optional[str]
+    clarification_answer: Optional[str]
+    clarifications: Optional[List[Dict[str, Any]]]
+
+    # Business knowledge
+    business_definitions: Optional[str]
+    matched_knowledge: Optional[List[Dict[str, Any]]]
+    
     # Planning Phase
     plan: Optional[str]  # Logical plan from Decomposer
     plan_steps: Optional[List[str]]  # Individual steps from plan
