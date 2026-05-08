@@ -15,6 +15,8 @@ from .data_models import (
     ExampleRequest, HealthResponse
     )
 
+from ..graph.conversation_controller import continue_after_user_reply
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Text-to-SQL Agent API",
@@ -78,33 +80,20 @@ async def query_database(request: QueryRequest):
         
         # result = await run_agent_async(request.question)
         
-        # if previous_state and previous_state.get("waiting_for_user"):
-        #     result = await continue_after_user_reply(
-        #         previous_state=previous_state,
-        #         user_reply=request.question
-        #     )
-        # else:
-        #     chat_memory.add_message(
-        #         session_id=session_id,
-        #         role="user",
-        #         content=request.question,
-        #         message_type="question"
-        #     )
-
-        #     result = await run_agent_async(
-        #         question=request.question,
-        #         session_id=session_id,
-        #         messages=chat_memory.get_session(session_id).get("messages", [])
-        #     )
-        
-        chat_memory.add_message(
+        if previous_state and previous_state.get("waiting_for_user"):
+            result = await continue_after_user_reply(
+                previous_state=previous_state,
+                user_reply=request.question
+            )
+        else:
+            chat_memory.add_message(
                 session_id=session_id,
                 role="user",
                 content=request.question,
                 message_type="question"
             )
 
-        result = await run_agent_async(
+            result = await run_agent_async(
                 question=request.question,
                 session_id=session_id,
                 messages=chat_memory.get_session(session_id).get("messages", [])

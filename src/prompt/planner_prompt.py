@@ -39,6 +39,9 @@ AGGREGATION RULE (CRITICAL)
 If a metric requires multiple levels of aggregation the plan MUST
 explicitly describe each aggregation level. Do NOT collapse into one step.
 
+Conversation Memory:
+{memory_context}
+
 BUSINESS DEFINITIONS
 ────────────────────────────────
 

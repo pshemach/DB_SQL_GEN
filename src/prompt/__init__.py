@@ -3,6 +3,7 @@ from .retriever_prompt import TABLE_SELECTION_TABLE, COLUMN_SELECTION_TABLE
 from .generator_prompt import GENERATOR_PROMPT
 from .critic_prompt import REFLECTION_PROMPT
 from .knowledge_gap_prompt import KNOWLEDGE_GAP_DETECTOR_PROMPT
+from .clarification_prompt import CLARIFICATION_AGENT_PROMPT
 
 __all__ = [
     "PLANNER_PROMPT",
@@ -10,5 +11,6 @@ __all__ = [
     "COLUMN_SELECTION_TABLE",
     "GENERATOR_PROMPT",
     "REFLECTION_PROMPT",
-    "KNOWLEDGE_GAP_DETECTOR_PROMPT"
+    "KNOWLEDGE_GAP_DETECTOR_PROMPT",
+    "CLARIFICATION_AGENT_PROMPT"
 ]

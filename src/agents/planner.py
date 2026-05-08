@@ -40,7 +40,8 @@ class PlannerAgent:
         try:
             response = self.chain.invoke({
                 "question": question,
-                "business_definitions": business_definitions
+                "business_definitions": business_definitions,
+                "memory_context": state.get("memory_context", ""),
                 })
             plan = response.content
             

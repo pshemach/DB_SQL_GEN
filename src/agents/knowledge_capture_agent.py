@@ -1,0 +1,101 @@
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from loguru import logger
+
+from ..config import settings
+from ..utils.json_utils import extract_json
+from ..tools.business_knowledge_store import business_knowledge_store
+from ..tools.chat_memory import chat_memory
+
+
+KNOWLEDGE_CAPTURE_PROMPT = """
+You are a business knowledge capture agent.
+
+Original User Question:
+{original_question}
+
+User Answer / Business Definition:
+{user_answer}
+
+Convert this into a reusable KPI/business definition.
+
+Return ONLY valid JSON:
+{{
+  "name": "snake_case_kpi_name",
+  "keywords": ["..."],
+  "definition": "clear business definition and calculation logic"
+}}
+
+Rules:
+1. Do not write SQL.
+2. Include aggregation rules if the user gave them.
+3. Include filters/exclusions if the user gave them.
+4. Keep it reusable for future questions.
+"""
+
+
+class KnowledgeCaptureAgent:
+    def __init__(self):
+        self.llm = ChatOpenAI(
+            model=settings.openai_model_fast,
+            api_key=settings.openai_api_key,
+            temperature=0
+        )
+
+        self.prompt = ChatPromptTemplate.from_messages([
+            ("system", KNOWLEDGE_CAPTURE_PROMPT),
+            ("human", "{user_answer}")
+        ])
+
+        self.chain = self.prompt | self.llm
+
+    def capture(self, previous_state: dict, user_answer: str) -> dict:
+        original_question = previous_state.get("pending_original_question") or previous_state.get("question")
+        session_id = previous_state.get("session_id")
+
+        try:
+            response = self.chain.invoke({
+                "original_question": original_question,
+                "user_answer": user_answer
+            })
+
+            result = extract_json(response.content)
+
+            business_knowledge_store.add_definition(
+                name=result["name"],
+                keywords=result.get("keywords", []),
+                definition=result["definition"]
+            )
+
+            if session_id:
+                chat_memory.resolve_latest_clarification(session_id, user_answer)
+                chat_memory.resolve_latest_knowledge_gap(session_id)
+
+            combined_question = f"""
+Original Question:
+{original_question}
+
+User Provided Business Definition:
+{result["definition"]}
+""".strip()
+
+            return {
+                **previous_state,
+                "question": combined_question,
+                "clarification_answer": user_answer,
+                "business_definitions": result["definition"],
+                "needs_clarification": False,
+                "waiting_for_user": False,
+                "captured_business_rule": result
+            }
+
+        except Exception as e:
+            logger.error(f"Knowledge capture failed: {e}")
+            return {
+                **previous_state,
+                "error": f"Knowledge capture failed: {str(e)}",
+                "should_retry": False
+            }
+
+
+knowledge_capture_agent = KnowledgeCaptureAgent()

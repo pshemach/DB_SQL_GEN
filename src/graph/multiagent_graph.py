@@ -17,7 +17,9 @@ from ..agents import (
     schema_linker_node,
     generator_node,
     executor_node,
-    reflector_node
+    reflector_node,
+    knowledge_gap_detector_node,
+    clarification_node
 )
 from ..tools import (
     semantic_cache, 
@@ -105,6 +107,12 @@ def cache_result_node(state: AgentState) -> dict:
     return {}
 
 
+def route_after_gap_detection(state: AgentState) -> Literal["clarify", "planner"]:
+    if state.get("needs_clarification"):
+        return "clarify"
+    return "planner"
+
+
 def build_graph() -> StateGraph:
     """
     Builds the LangGraph workflow for the Text-to-SQL agent.
@@ -131,17 +139,36 @@ def build_graph() -> StateGraph:
     # === ADD NODES ===
     # Each node represents a step in the workflow
     workflow.add_node("init", add_start_time)
+    
+    workflow.add_node("gap_detector", knowledge_gap_detector_node)
+    workflow.add_node("clarifier", clarification_node)
+    
     workflow.add_node("planner", planner_node)
     workflow.add_node("schema_retriever", schema_linker_node)
     workflow.add_node("generator", generator_node)
     workflow.add_node("executor", executor_node)    # Execute and validate
+    
     workflow.add_node("reflector", reflector_node)  # Fix errors if any
     workflow.add_node("cache_result", cache_result_node)  # Store successful result
     
     # === DEFINE WORKFLOW ===
     workflow.set_entry_point("init")
     
-    workflow.add_edge("init", "planner")
+    # workflow.add_edge("init", "planner")
+    
+    workflow.add_edge("init", "gap_detector")
+
+    workflow.add_conditional_edges(
+        "gap_detector",
+        route_after_gap_detection,
+        {
+            "clarify": "clarifier",
+            "planner": "planner"
+        }
+    )
+
+    workflow.add_edge("clarifier", END)
+    
     workflow.add_edge("planner", "schema_retriever")
     workflow.add_edge("schema_retriever", "generator")
     workflow.add_edge("generator", "executor")
