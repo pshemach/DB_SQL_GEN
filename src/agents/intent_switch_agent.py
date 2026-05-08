@@ -1,6 +1,7 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from ..config import settings
+from ..graph import AgentState
 
 
 INTENT_SWITCH_PROMPT = """

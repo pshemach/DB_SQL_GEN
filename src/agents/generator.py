@@ -6,7 +6,7 @@ from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate, FewShotChatMessagePromptTemplate
 from loguru import logger
-from ..core import AgentState
+from ..graph import AgentState
 from ..config import settings
 from ..prompt import GENERATOR_PROMPT
 

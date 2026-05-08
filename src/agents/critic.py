@@ -6,7 +6,8 @@ from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
-from ..core import AgentState, db_manager
+from ..core import db_manager
+from ..graph import AgentState
 from ..config import settings
 from ..prompt import REFLECTION_PROMPT
 

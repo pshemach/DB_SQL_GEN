@@ -2,7 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
-from ..core.state import AgentState
+from ..graph.graph_state import AgentState
 from ..config import settings
 from ..prompt import PLANNER_PROMPT
 from ..tools import business_knowledge_retriever as doc_retriever

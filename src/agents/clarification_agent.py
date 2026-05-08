@@ -3,7 +3,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 
-from ..core import AgentState
+from ..graph import AgentState
 from ..config import settings
 from ..prompt import CLARIFICATION_AGENT_PROMPT
 from ..utils.json_utils import extract_json
