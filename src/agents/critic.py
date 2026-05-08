@@ -19,14 +19,14 @@ class CriticAgent:
     
     def __init__(self):
 
-        # self.llm = ChatOpenAI(
-        #     model=settings.openai_model_fast,
-        #     api_key=settings.openai_api_key
-        # )
-        self.llm = ChatAnthropic(
-            model=settings.anthropic_model_fast,
-            api_key=settings.anthropic_api_key
+        self.llm = ChatOpenAI(
+            model=settings.openai_model_fast,
+            api_key=settings.openai_api_key
         )
+        # self.llm = ChatAnthropic(
+        #     model=settings.anthropic_model_fast,
+        #     api_key=settings.anthropic_api_key
+        # )
             
         self.reflection_prompt = ChatPromptTemplate.from_messages([
             ("system", REFLECTION_PROMPT),

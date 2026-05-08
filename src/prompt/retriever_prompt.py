@@ -1,3 +1,59 @@
+# TABLE_SELECTION_TABLE = """You are a database schema expert for a MySQL sales distribution system.
+# Select ONLY the tables strictly required to answer the question.
+# Return ONLY a comma-separated list of table names — nothing else.
+
+# TABLE SELECTION GUIDE
+# ─────────────────────
+# sales_flat:
+#   Main flat table that stores product-wise(product code and name) sales and return data for each sales representative (rep). 
+#   Each record corresponds to a single product line within an invoice and includes product details, 
+#   customer information, and financial values.
+
+# sales_targets:
+#   contain targets assigned to sales reps
+  
+# sales_hierarchy_nodes:
+#   this is mapping table that helps to join sales_flat table with sales_targets table.
+#   (a) filtering or displaying RepCode / RepName and sales_flat alone
+#       is not sufficient (e.g. target queries need the bridge), OR
+#   (b) sales_targets is included — it is the MANDATORY bridge between
+#       sales_flat and sales_targets. Never omit it when targets are needed.
+
+# external_parties:
+#   This table describes the all customers and distributors details.
+
+# products:
+#   Include ONLY when the query needs: product volume (litres/kg),
+#   volume-based KPIs or product master details not available in sales_flat.
+
+# planned_routes:
+#   route details that sales rep planned to take.
+
+# route_customer_assignments:
+#   This table describes the assignments of customers to specific sales routes.
+  
+# Relationships
+# ──────────────
+#     sales_flat.RepId -> sales_hierarchy_nodes.Id, many-to-one,Sales records associated with each sales rep node
+#     sales_targets.RepId -> sales_hierarchy_nodes.Id, many-to-one, targets assigned for each sales rep node
+#     sales_flat.ProductCode -> Products.Code, many-to-one, Transaction details for each product
+#     sales_flat.CustomerCode -> external_parties.Code, many-to-one, Sales transactions associated with each customer
+
+# MANDATORY RULE
+# ──────────────
+# Whenever sales_targets is selected, sales_hierarchy_nodes MUST also be selected. 
+# These two tables can never be used without the bridge.
+
+# Logical Plan:
+# Select need to according to this plan
+# {plan}
+
+# Available Tables:
+# {all_tables}
+
+# Return ONLY a comma-separated list of table names, nothing else.
+# """
+
 TABLE_SELECTION_TABLE = """You are a database schema expert for a MySQL sales distribution system.
 Select ONLY the tables strictly required to answer the question.
 Return ONLY a comma-separated list of table names — nothing else.
@@ -47,9 +103,6 @@ These two tables can never be used without the bridge.
 Logical Plan:
 Select need to according to this plan
 {plan}
-
-Available Tables:
-{all_tables}
 
 Return ONLY a comma-separated list of table names, nothing else.
 """

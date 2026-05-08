@@ -18,14 +18,14 @@ class SchemaLinkerAgent:
     """
     
     def __init__(self):
-        # self.llm = ChatOpenAI(
-        #     model=settings.openai_model_fast,
-        #     api_key=settings.openai_api_key
-        # )     
-        self.llm = ChatAnthropic(
-            model=settings.anthropic_model_fast,
-            api_key=settings.anthropic_api_key
-        )
+        self.llm = ChatOpenAI(
+            model=settings.openai_model_fast,
+            api_key=settings.openai_api_key
+        )     
+        # self.llm = ChatAnthropic(
+        #     model=settings.anthropic_model_fast,
+        #     api_key=settings.anthropic_api_key
+        # )
         self.table_selection_prompt = ChatPromptTemplate.from_messages([
                 ("system", TABLE_SELECTION_TABLE),
                  ("human","{question}")
@@ -52,7 +52,7 @@ class SchemaLinkerAgent:
             response = chain.invoke({
                 "question": question,
                 "plan": plan,
-                "all_tables": ", ".join(all_tables)
+                # "all_tables": ", ".join(all_tables)
             })
             
             # Parse comma-separated table names
