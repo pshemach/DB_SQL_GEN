@@ -11,7 +11,7 @@ import time
 import os
 from langsmith import traceable
 
-from ..core import AgentState
+from .graph_state import AgentState
 from ..agents import (
     planner_node,
     schema_linker_node,
@@ -20,6 +20,20 @@ from ..agents import (
     reflector_node,
     knowledge_gap_detector_node,
     clarification_node
+)
+
+from .conditional_methods import (
+    add_start_time,
+    should_continue,
+    route_after_conversation_router,
+    route_after_gap_detection
+    )
+from .nodes import (
+    memory_loader_node,
+    clarification_resolver_node,
+    new_question_reset_node, 
+    save_memory_node,
+    cache_result_node
 )
 from ..tools import (
     semantic_cache, 
@@ -42,75 +56,6 @@ def _setup_langsmith():
 
 # Call once when this module is imported
 _setup_langsmith()
-
-def add_start_time(state: AgentState) -> dict:
-    """Add timestamp at start of workflow."""
-    return {"start_time": time.time()}
-
-def should_continue(state: AgentState) -> Literal["reflect", "end", "cache_success"]:
-    """
-    Determines the next step in the workflow after query execution.
-    
-    Decision flow:
-    - If query succeeded: cache result and end
-    - If max iterations reached: end with error
-    - If self-correction disabled: end with error
-    - Otherwise: attempt to fix the error
-    
-    Args:
-        state: Current agent state
-        
-    Returns:
-        Next node name: "cache_success", "end", or "reflect"
-    """
-    # If there's no error, cache and end
-    if state.get("error") is None:
-        logger.info("✓ Query successful - caching and ending workflow")
-        return "cache_success"
-    
-    # If max iterations reached, stop
-    if state.get("iterations", 0) >= settings.max_iterations:
-        logger.warning(f"✗ Max iterations ({settings.max_iterations}) reached - ending workflow")
-        return "end"
-    
-    # If self-correction is disabled, stop
-    if not settings.enable_self_correction:
-        logger.warning("✗ Self-correction disabled - ending workflow")
-        return "end"
-    
-    # If should_retry flag is False, stop
-    if not state.get("should_retry", True):
-        logger.warning("✗ Retry flag is False - ending workflow")
-        return "end"
-    
-    # Otherwise, attempt reflection/correction
-    logger.info(f"↻ Attempting correction (iteration {state.get('iterations', 0) + 1})")
-    return "reflect"
-
-def cache_result_node(state: AgentState) -> dict:
-    """
-    Stores successful query results in semantic cache for future use.
-    Only caches when query executed without errors.
-    """
-    # Only cache if query was successful
-    if state.get("error") is None and state.get("sql_query"):
-        result_to_cache = {
-            "sql_query": state["sql_query"],
-            "query_result": state.get("query_result"),
-            "result_preview": state.get("result_preview"),
-            "plan": state.get("plan"),
-            "relevant_tables": state.get("relevant_tables")
-        }
-        
-        semantic_cache.set(state["question"], result_to_cache)
-    
-    return {}
-
-
-def route_after_gap_detection(state: AgentState) -> Literal["clarify", "planner"]:
-    if state.get("needs_clarification"):
-        return "clarify"
-    return "planner"
 
 
 def build_graph() -> StateGraph:
