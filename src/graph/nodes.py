@@ -1,5 +1,6 @@
 import time
-from ..tools.chat_memory import chat_memory, semantic_cache
+from ..tools.chat_memory import chat_memory
+from ..tools import semantic_cache
 from ..agents import knowledge_capture_agent
 from .graph_state import AgentState
 

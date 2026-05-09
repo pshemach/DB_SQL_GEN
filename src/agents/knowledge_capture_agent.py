@@ -6,7 +6,7 @@ from ..config import settings
 from ..utils.json_utils import extract_json
 from ..tools.business_knowledge_store import business_knowledge_store
 from ..tools.chat_memory import chat_memory
-from ..graph import AgentState
+from ..graph.graph_state import AgentState
 
 KNOWLEDGE_CAPTURE_PROMPT = """
 You are a business knowledge capture agent.

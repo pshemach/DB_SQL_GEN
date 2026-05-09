@@ -1,7 +1,7 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from ..config import settings
-from ..graph import AgentState
+from ..graph.graph_state import AgentState
 
 CONVERSATION_ROUTER_PROMPT = """
 You are a conversation router.
