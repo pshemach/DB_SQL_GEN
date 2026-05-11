@@ -1,0 +1,197 @@
+definitions:
+  net_sales:
+    keywords:
+      - net sales
+      - net sale
+      - achievement
+      - revenue
+      - sale
+    definition:
+      "Net Sales:\n Sales ('sales') minus return ('return') taken as net\
+      \ sale.\n  also calling as achievement\n  Covers both sales and return in one\
+      \ calculation.\n"
+  productive_calls:
+    keywords:
+      - productive call
+      - productive calls
+      - pc
+      - productive visit
+    definition: "Productive Calls:
+      Count the number of unique customers with successful sales for each day,
+      then sum those daily counts across the selected period.
+      This must not be calculated as overall distinct customers for the full period.
+      Include only sales"
+  planned_productive_calls:
+    keywords:
+      - productive visit
+      - planned route call
+      - planned pc
+      - planned productive calls
+    definition: "Planned Productive Calls:
+      The number of unique customers for whom a sale occurred in a single
+      day within a planned route. This count is aggregated over a specified period
+      to measure the effectiveness of sales activities in planned routes. Each customer
+      is counted only once per day if a sale is made, and the aggregation sums these
+      daily counts over the defined period."
+  sales_volume:
+    keywords:
+      - volume
+      - litre
+      - liter
+      - csd
+      - aloka
+    definition:
+      "Sales Volume:\n  SUM(products.Volume x Qty) with +/- sign from Type.\n\
+      \  Filter by ProductCategory for category-specific volume (e.g. Aloka for CSD).\n"
+  sku:
+    keywords:
+      - sku
+      - unique product
+      - products per bill
+      - items per bill
+      - line item
+    definition:
+      "SKU: COUNT of distinct ProductCode values.\n  For average SKU per\
+      \ bill: compute per invoice first, then take AVERAGE across\n  all invoices.\
+      \ Return average NOT total.\n"
+  target:
+    keywords:
+      - target
+      - quota
+    definition:
+      "Target: for given period need get sum of target value\n  StartDate\
+      \ and EndDate need to be in the period\n  For primary / distributor target Type\
+      \ = 0\n  For secondary / rep-level target Type = 1\n"
+  achievement_vs_target:
+    keywords:
+      - achievement vs target
+      - achievement vs
+      - target vs
+      - against target
+      - target achievement
+    definition:
+      "Achievement vs Target - CRITICAL two-step rule:\n  Step 1: Calculate\
+      \ Net Sales for the rep independently.\n  Step 2: Calculate Target for the rep\
+      \ independently.\n  Step 3: Join both results at rep level AFTER aggregation.\n\
+      \  NEVER aggregate sales and targets in the same step - causes row multiplication.\n"
+  run_rate:
+    keywords:
+      - run rate
+      - required rate
+      - daily rate
+      - with run
+    definition:
+      "Run Rate:\n  Current run rate  = Achievement divided by days elapsed\
+      \ in period.\n  Required run rate = (Target minus Achievement) divided by remaining\
+      \ days.\n"
+  bill_count:
+    keywords:
+      - bill count
+      - invoice count
+      - number of bills
+      - number of invoices
+    definition:
+      "Bill Count: COUNT(DISTINCT InvoiceNo) WHERE Type='sales' AND in_sales\
+      \ > 0.\n  Productivity ratio = Bill Count divided by monthly target (e.g. 700).\n"
+  returns:
+    keywords:
+      - return amount
+      - total return
+      - financial return
+    definition:
+      "Returns: Financial loss = SUM(in_sales) WHERE Type='return'.\n  Report\
+      \ financial loss unless user explicitly asks for quantity.\n"
+  zero_sales_outlets:
+    keywords:
+      - zero sales
+      - non billing
+      - not billing
+      - zero billing
+      - no sales outlet
+    definition:
+      "Zero Sales Outlets: Outlets where in_sales=0 in the period.\n  Always\
+      \ include: last billing date and visit count in output.\n  Always exclude: Head\
+      \ Office, OPENING STOCK, INTERNAL SUPPLIER,\n  INTERNAL CUSTOMER, CASH, D_ON,\
+      \ D_OFF, TOUR_START, TOUR_END,\n  C Basnayaka-Matara 01.\n"
+  best_outlets:
+    keywords:
+      - best outlet
+      - top customer
+      - top outlet
+      - best customer
+      - best performing
+      - highest sales
+    definition:
+      "Best/Top Outlets (same as Best Customers, Top Customers):\n  Rank\
+      \ by Net Sales = SUM(sales) minus SUM(return) per outlet, descending.\n"
+  potential_outlets:
+    keywords:
+      - potential outlet
+      - potential customer
+      - growth outlet
+      - for growth
+      - potential
+    definition:
+      "Potential Outlets - ALL THREE criteria must be met:\n  1. Net Sales\
+      \ below average across all outlets.\n  2. At least 5 distinct product categories\
+      \ purchased.\n  3. At least 3 distinct invoices (invoice count = visit count).\n"
+  eco_achievement:
+    keywords:
+      - eco
+      - eco achievement
+      - eco value
+    definition:
+      "ECO Achievement:\n  Percentage of assigned outlets where net volume\
+      \ sold > 6 litres.\n  Numerator: outlets with net volume > 6L.\n  Denominator:\
+      \ total assigned active outlets in planned routes.\n  Result: (Numerator / Denominator)\
+      \ x 100.\n"
+  credit_outstanding:
+    keywords:
+      - credit outstanding
+      - outstanding balance
+      - amount owed
+      - owes
+    definition: "Credit Outstanding: Total amount a customer owes at a point in time."
+  new_customers:
+    keywords:
+      - new customer
+      - new outlet
+      - recently added
+      - newly added
+      - joined
+      - did i add
+      - have i added
+      - how many new
+    definition:
+      "New Customers: Customers whose CreatedDate falls within the query\
+      \ period.\n  CreatedDate is in the external_parties table.\n"
+  route_coverage:
+    keywords:
+      - route coverage
+      - coverage
+      - planned coverage
+    definition:
+      "Route Coverage: Planned customers actually visited with a sale\n\
+      \  divided by total planned customers for the period.\n"
+  monthly_kpi:
+    keywords:
+      - monthly kpi
+      - kpi breakdown
+      - full kpi
+      - dashboard
+    definition:
+      "Monthly KPI Breakdown: Single query returning Target, Achievement,\n\
+      \  Balance, Current Run Rate, Required Run Rate, Achievement Percentage.\n"
+  outlet_productivity:
+    keywords:
+      - outlet productivity
+      - productive outlet percentage
+      - outlet productive percentage
+      - outlet coverage
+    definition: |
+      Outlet Productivity measures the percentage of assigned outlets that were visited/productive during the selected period.
+      Actual Visits are counted from sales transactions using distinct CustomerCode and InvoiceNo combinations.
+      Total Assigned Outlets are counted from planned route customer assignments for the rep during the same period.
+      Only active and approved assigned outlets should be included.
+      Formula: Outlet Productivity % = (Actual Visits / Total Assigned Outlets) * 100.
+      If Total Assigned Outlets is 0, return 0.
