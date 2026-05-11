@@ -53,6 +53,8 @@ Avoid row multiplication:
 - Aggregate before join if needed
 - Use CTEs for multi-step queries
 
+sales_flat.Type -> ('sales', 'return')
+
 ════════════════════════════
 TIME RULE
 ════════════════════════════
