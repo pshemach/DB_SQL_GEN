@@ -26,7 +26,7 @@ class BusinessKnowledgeRetriever:
         os.makedirs(persist_directory, exist_ok=True)
         
         self.vectorstore = Chroma(
-            collection_name="business_definition",
+            collection_name=settings.business_definition_collection_name,
             embedding_function=self.embeddings,
             persist_directory=persist_directory
         )
@@ -38,7 +38,7 @@ class BusinessKnowledgeRetriever:
             )
         return data.get("definitions", {})
     
-    def seed_business_definitions(self, persist_dir, collection_name):
+    def seed_business_definitions(self):
         
         docs = []
         for name, entry in self.business_info_dict.items():

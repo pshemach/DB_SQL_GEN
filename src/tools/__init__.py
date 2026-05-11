@@ -13,7 +13,7 @@ __all__ = [
     "semantic_cache",
     "seed_examples",
     "few_shot_retriever",
-    "BusinessKnowledgeRetriever"
+    "BusinessKnowledgeRetriever",
     "business_knowledge_retriever",
     "BusinessKnowledgeStore",
     "business_knowledge_store",

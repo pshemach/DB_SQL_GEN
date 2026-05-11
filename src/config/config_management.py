@@ -30,8 +30,9 @@ class Settings(BaseSettings):
     database_uri: str = Field(..., env="DATABASE_URI")
     
     # Vector Store Configuration (ChromaDB)
-    vector_store_path: str = Field(default="./data/vector_store", env="VECTOR_STORE_PATH")
+    vector_store_path: str = Field(default="./database/vector_store", env="VECTOR_STORE_PATH")
     chroma_collection_name: str = Field(default="sql_examples", env="SQL_EXAMPLES_COLLECTION_NAME")
+    business_definition_collection_name: str = Field(default="business_definition", env="")
     
     # Embedding Configuration (using sentence-transformers for local embeddings)
     embedding_model: str = Field(default="all-MiniLM-L6-v2", env="EMBEDDING_MODEL")
