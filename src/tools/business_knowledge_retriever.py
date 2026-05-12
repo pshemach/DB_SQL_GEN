@@ -76,8 +76,8 @@ class BusinessKnowledgeRetriever:
         
         lines = []
         for doc in docs:
-            # name = doc.metadata.get("name", "---").replace("_", " ")
-            # lines.append(f"{name}:")
+            name = doc.metadata.get("name", "---").replace("_", " ")
+            lines.append(f"{name}:")
             lines.append(doc.page_content.strip())
             lines.append("")
             

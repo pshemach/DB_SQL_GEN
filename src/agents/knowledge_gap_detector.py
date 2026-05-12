@@ -29,7 +29,6 @@ class KnowledgeGapDetectorAgent:
         self.chain = self.prompt | self.llm
         
     def detect(self, state: AgentState) -> dict: 
-        print(state)
         question = state['question']
         session_id = state['session_id']
         
@@ -45,13 +44,13 @@ class KnowledgeGapDetectorAgent:
         vector_knowledge = ""
         if business_knowledge_retriever:
             try:
-                vector_knowledge = business_knowledge_retriever.retrieve(question)
+                vector_knowledge = business_knowledge_retriever.retrieve_business_definitions_block(question)
             except Exception as e:
                 logger.warning(f"Vector knowledge retrieval failed: {e}")
 
         retrieved_knowledge = "\n\n".join(
             x for x in [keyword_knowledge, vector_knowledge] if x
-        )
+        )  
 
         try:
             response = self.chain.invoke({

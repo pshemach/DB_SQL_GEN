@@ -44,6 +44,17 @@ Conversation Memory:
 
 BUSINESS DEFINITIONS
 ────────────────────────────────
+net sales:
+Net Sales, also called Achievement, is the actual sales value after deducting returns for the selected period.
+Sales transactions increase the value, and return transactions reduce the value.
+Use the selected rep/customer/product/route filters when provided.
+Formula: Net Sales = Sales Amount - Return Amount.
+
+target:
+Target is the planned sales value assigned for the selected period.
+For rep-level or secondary target, use target Type = 1.
+For distributor-level or primary target, use target Type = 0.
+Target records must overlap the requested period using StartDate and EndDate.
 
 {business_definitions}
   
