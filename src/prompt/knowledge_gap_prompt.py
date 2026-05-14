@@ -109,7 +109,7 @@ Examples of equivalent KPI wording:
 - "achievement" may refer to "current achievement" or "net sales"
 - "sales" may refer to "net sales" if the question asks actual sales/achievement
 - "productive call" and "productive calls" are same KPI
-- minor spelling differences like "repswise" should not create a gap
+- minor spelling differences should not create a gap
 
 WHEN TO ASK CLARIFICATION
 ────────────────────────────────
@@ -117,8 +117,6 @@ Ask clarification ONLY if:
 1. The KPI / metric name is not found in retrieved business definitions, AND
 2. The KPI meaning cannot be inferred from known KPI definitions, AND
 3. It is not merely a grouping/filter/entity word.
-
-Do NOT ask clarification just because the question has a grouping word like "repwise".
 
 OUTPUT FORMAT
 ────────────────────────────────
