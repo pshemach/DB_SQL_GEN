@@ -56,7 +56,6 @@ class KnowledgeGapDetectorAgent:
             response = self.chain.invoke({
                 "question": question,
                 "memory_context": memory_context,
-                # "business_definitions": business_knowledge_store.get_all_definitions_text(),
                 "retrieved_knowledge": retrieved_knowledge
             })
 
@@ -74,7 +73,6 @@ class KnowledgeGapDetectorAgent:
                 "confidence": float(result.get("confidence", 0.0)),
                 "gap_reason": result.get("gap_reason"),
                 "missing_pieces": result.get("missing_pieces", []),
-                "business_definitions": result.get("business_definitions") or retrieved_knowledge,
                 "matched_knowledge": keyword_matches
             }
 
@@ -87,7 +85,6 @@ class KnowledgeGapDetectorAgent:
                 "confidence": 0.0,
                 "gap_reason": "Unable to verify business knowledge coverage.",
                 "missing_pieces": ["business definition"],
-                "business_definitions": retrieved_knowledge,
                 "matched_knowledge": keyword_matches
             }
             
