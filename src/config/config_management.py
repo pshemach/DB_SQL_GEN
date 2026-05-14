@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     langchain_endpoint: str     = Field(default="https://api.smith.langchain.com", env="LANGCHAIN_ENDPOINT")
     
     # Data paths
-    business_doc_ymal_path: str = Field("data/business_definitions.yaml", env="BUSINESS_DOC_YAML_PATH")
+    business_doc_yaml_path: str = Field("data/business_definitions.yaml", env="BUSINESS_DOC_YAML_PATH")
     
     class Config:
         env_file = ".env"

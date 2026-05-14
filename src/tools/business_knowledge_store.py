@@ -5,7 +5,7 @@ from ..config import settings
 
 class BusinessKnowledgeStore:
     def __init__(self, yaml_path: str = None):
-        yaml_path = yaml_path or settings.business_doc_ymal_path
+        yaml_path = yaml_path or settings.business_doc_yaml_path
         self.yaml_path = Path(yaml_path)
         self.definitions = self._load()
 

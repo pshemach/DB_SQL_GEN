@@ -12,7 +12,7 @@ def _load():
     
     global _definitions, _keyword_index
     
-    _YAML_PATH = Path(settings.business_doc_ymal_path)
+    _YAML_PATH = Path(settings.business_doc_yaml_path)
  
     if not _YAML_PATH.exists():
         raise FileNotFoundError(
@@ -96,7 +96,3 @@ def list_all_definitions() -> str:
         lines.append(definition.strip())
         lines.append("")
     return "\n".join(lines)
- 
- 
-# Load on import
-_load()

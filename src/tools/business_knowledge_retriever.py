@@ -13,7 +13,7 @@ class BusinessKnowledgeRetriever:
     """
     def __init__(self, yaml_path: str = None):
         
-        self.yaml_path = yaml_path or settings.business_doc_ymal_path
+        self.yaml_path = yaml_path or settings.business_doc_yaml_path
         self.business_info_dict = self._load_yaml()
         
         # Initialize embeddings with HuggingFace model (local)
