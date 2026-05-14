@@ -60,7 +60,7 @@ JSON format:
   "confidence": 0.0,
   "gap_reason": "...",
   "missing_pieces": ["..."],
-  "business_definitions": "comprehensive relevant business rules to inject into planner"
+  "business_definitions": "comprehensive relevant business rules to inject into planner | none"
   "followup_question": "ask a question from user to get know about unknown KPIs when need clarification"
 }}
 """

@@ -18,14 +18,15 @@ Return ONLY a valid SQL query.
 Must start with SELECT or WITH.
 No explanations, no comments, no markdown.
 
-════════════════════════════
 SAFETY RULES (CRITICAL)
 ════════════════════════════
-- ONLY SELECT queries
-- No DML/DDL
-- Use ONLY schema columns
-- Never use invoices table
-- Never join sales_flat with sales_target directly
+- Generate ONLY SELECT queries.
+- Do NOT generate INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, REPLACE, EXEC, CALL, or MERGE.
+- Use ONLY tables and columns present in the provided schema.
+- Never use the invoices table.
+- Never join sales_flat with sales_targets directly.
+- Do NOT use sample data from schema examples as SQL constraints unless the value is explicitly mentioned in the user question, logical plan, or clarification.
+- Schema sample rows are examples only. They are NOT business rules and NOT filter conditions.
 
 ════════════════════════════
 SQL STYLE RULES
@@ -54,6 +55,7 @@ Avoid row multiplication:
 - Use CTEs for multi-step queries
 
 sales_flat.Type -> ('sales', 'return')
+sales_hierarchy_nodes.LevelType -> (2 ("Territory"), 3 ("Rep"))
 
 ════════════════════════════
 TIME RULE
