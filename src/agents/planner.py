@@ -35,7 +35,7 @@ class PlannerAgent:
         
         question = state["question"]
         business_definitions = doc_retriever.retrieve_business_definitions_block(
-            question=question, k=3)
+            question=question, k=4)
         
         try:
             response = self.chain.invoke({

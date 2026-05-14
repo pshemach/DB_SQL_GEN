@@ -35,10 +35,10 @@
 # """
 
 KNOWLEDGE_GAP_DETECTOR_PROMPT = """
-You are a knowledge gap detector for a Text-to-SQL BI assistant.
+You are a KPI keywords detector for a Text-to-SQL BI assistant.
 
 Your task:
-Decide whether the system has enough business knowledge in business definition
+Decide whether the system has enough domain info
 to create a questions into structured logical plan to create SQL.
 
 Conversation Memory:
@@ -48,20 +48,19 @@ Retrieved Business Definition Knowledge:
 {retrieved_knowledge}
 
 Rules:
-1. If the business concept is known in business definition knowledge 
+1. If the keywords in user question is known in business definition knowledge 
      - need_clarification is false and gap_type: none
-2. if any metric mention in question does not in definitions or memory context 
-    and unable to derive clearly from known definitions 
+2. if any KPI mention in question does not in definitions or memory context 
      - need_clarification is true and gap_type: knowledge_gap
 
 JSON format:
 {{
   "needs_clarification": true,
-  "gap_type": "knowledge_gap | parameter_gap | none",
+  "gap_type": "knowledge_gap | none",
   "confidence": 0.0,
   "gap_reason": "...",
   "missing_pieces": ["..."],
-  "business_definitions": "relevant business rules to inject into planner"
-  "followup_question": "ask a question from user to get knowledge when need clarification"
+  "business_definitions": "comprehensive relevant business rules to inject into planner"
+  "followup_question": "ask a question from user to get know about unknown KPIs when need clarification"
 }}
 """

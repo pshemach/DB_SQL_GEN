@@ -57,6 +57,6 @@ For distributor-level or primary target, use target Type = 0.
 Target records must overlap the requested period using StartDate and EndDate.
 
 {business_definitions}
-  
+
 Return the plan.
 """

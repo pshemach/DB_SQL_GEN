@@ -31,6 +31,8 @@ Rules:
 2. Include aggregation rules if the user gave them.
 3. Include filters/exclusions if the user gave them.
 4. Keep it reusable for future questions.
+5. Do not mention specific RepCodes etc.
+6. Keep definition as common for the system.
 """
 
 
