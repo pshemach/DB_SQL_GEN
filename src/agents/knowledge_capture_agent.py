@@ -63,11 +63,11 @@ class KnowledgeCaptureAgent:
 
             result = extract_json(response.content)
 
-            business_knowledge_store.add_definition(
-                name=result["name"],
-                keywords=result.get("keywords", []),
-                definition=result["definition"]
-            )
+            # business_knowledge_store.add_definition(
+            #     name=result["name"],
+            #     keywords=result.get("keywords", []),
+            #     definition=result["definition"]
+            # )
 
             if session_id:
                 chat_memory.resolve_latest_clarification(session_id, user_answer)

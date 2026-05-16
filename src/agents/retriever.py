@@ -94,8 +94,9 @@ class SchemaLinkerAgent:
             if plan:
                 selected_tables = self.select_tables(question, plan, all_tables)
             else:
-                # Fallback: use first 10 tables if no plan available
-                selected_tables = all_tables[:10]
+                # Fallback: use all using tables if no plan available
+                selected_tables = ['sales_flat', "sales_targets", 'sales_hierarchy_nodes','external_parties', 
+                                   'products', 'planned_routes', 'route_customer_assignments']
             
             # Step 3: Retrieve DDL schema for selected tables
             schema_context = db_manager.get_schema_for_tables(selected_tables)

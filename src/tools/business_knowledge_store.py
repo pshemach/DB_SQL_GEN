@@ -1,6 +1,6 @@
 import yaml
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from ..config import settings
 
 class BusinessKnowledgeStore:
@@ -11,7 +11,8 @@ class BusinessKnowledgeStore:
 
     def _load(self) -> Dict[str, Any]:
         if not self.yaml_path.exists():
-            return {}
+            self.yaml_path.parent.mkdir(parents=True, exist_ok=True)
+            self._save({"definitions": {}})
 
         with open(self.yaml_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
@@ -20,6 +21,48 @@ class BusinessKnowledgeStore:
 
     def reload(self):
         self.definitions = self._load()
+    
+    def _save(self, data: Dict[str, Any]):
+        with open(self.yaml_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(
+                data,
+                f,
+                allow_unicode=True,
+                sort_keys=False,
+                default_flow_style=False
+            )
+    def save_definitions(self):
+        self._save({"definitions": self.definitions})
+        
+    def list_definitions(self) -> Dict[str, Any]:
+        return self.definitions
+    
+    def get_definition(self, key: str) -> Optional[Dict[str, Any]]:
+        return self.definitions.get(key)
+    
+    def upsert_definition(
+        self,
+        key: str,
+        keywords: List[str],
+        definition: str
+    ):
+        clean_key = self.normalize_key(key)
+
+        self.definitions[clean_key] = {
+            "keywords": keywords,
+            "definition": definition.strip()
+        }
+
+        self.save_definitions()
+        self.reload()
+
+        return clean_key
+    
+    def delete_definition(self, key: str):
+        if key in self.definitions:
+            del self.definitions[key]
+            self.save_definitions()
+            self.reload()
 
     def get_all_definitions_text(self) -> str:
         parts = []
@@ -64,6 +107,15 @@ class BusinessKnowledgeStore:
                 allow_unicode=True,
                 sort_keys=False
             )
+            
+    @staticmethod
+    def normalize_key(value: str) -> str:
+        return (
+            value.strip()
+            .lower()
+            .replace(" ", "_")
+            .replace("-", "_")
+        )
 
 
 business_knowledge_store = BusinessKnowledgeStore(

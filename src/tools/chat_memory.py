@@ -118,8 +118,8 @@ class ChatMemoryStore:
             return ""
 
         messages = session.get("messages", [])[-max_messages:]
-        clarifications = session.get("clarifications", [])[-5:]
-        knowledge_gaps = session.get("knowledge_gaps", [])[-5:]
+        clarifications = session.get("clarifications", [])[-10:]
+        knowledge_gaps = session.get("knowledge_gaps", [])[-10:]
 
         parts = []
 

@@ -25,14 +25,20 @@ class SQLGeneratorAgent:
         
         self.llm = ChatAnthropic(
             model=settings.anthropic_model_fast,
-            api_key=settings.anthropic_api_key
+            api_key=settings.anthropic_api_key,
+            temperature=0.0
         )
 
         self.system_prompt = GENERATOR_PROMPT
         
         self.generation_prompt = ChatPromptTemplate.from_messages([
             ("system", self.system_prompt),
-            ("user", "Generate the SQL query:")
+            ("user", """LOGICAL PLAN:
+{plan}
+
+USER QUESTION:
+{question}
+""")
         ])
     
     def generate(self, state: AgentState, few_shot_examples=None) -> dict:

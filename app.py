@@ -293,14 +293,407 @@ Streamlit chat interface for Text-to-SQL agent.
 Uses current async LangGraph workflow: run_agent_async(question, session_id).
 """
 
+# import asyncio
+# import uuid
+# import streamlit as st
+# import pandas as pd
+# from loguru import logger
+
+# from src.graph import run_agent_async
+# from src.core.database import db_manager
+# import yaml
+# from src.tools.business_knowledge_store import business_knowledge_store
+
+# # =============================
+# # PAGE CONFIG
+# # =============================
+
+# st.set_page_config(
+#     page_title="Text-to-SQL Agent",
+#     page_icon="💬",
+#     layout="wide"
+# )
+
+# st.title("💬 Text-to-SQL Agent")
+# st.caption("Conversational BI assistant powered by LangGraph")
+
+
+# # =============================
+# # SESSION STATE
+# # =============================
+
+# if "session_id" not in st.session_state:
+#     st.session_state.session_id = str(uuid.uuid4())
+
+# if "messages" not in st.session_state:
+#     st.session_state.messages = []
+
+# if "last_result" not in st.session_state:
+#     st.session_state.last_result = None
+
+# if "query_count" not in st.session_state:
+#     st.session_state.query_count = 0
+
+
+# # =============================
+# # SIDEBAR
+# # =============================
+
+# with st.sidebar:
+#     st.header("⚙️ Session")
+
+#     st.text_input(
+#         "Session ID",
+#         value=st.session_state.session_id,
+#         disabled=True
+#     )
+
+#     if st.button("🔄 New Chat", use_container_width=True):
+#         st.session_state.session_id = str(uuid.uuid4())
+#         st.session_state.messages = []
+#         st.session_state.last_result = None
+#         st.session_state.query_count = 0
+#         st.rerun()
+        
+#     st.markdown("---")
+#     st.subheader("📘 Business Knowledge Base")
+    
+#     if st.button("🔄 Reload KB", use_container_width=True):
+#         business_knowledge_store.reload()
+#         st.success("Knowledge base reloaded")
+
+#     if st.button("➕ Add KPI Definition", use_container_width=True):
+#         st.session_state["kb_editor_mode"] = "add"
+#         st.session_state["selected_kpi"] = None
+
+#     definitions = business_knowledge_store.list_definitions()
+
+#     if not definitions:
+#         st.info("No KPI definitions found.")
+#     else:
+#         selected_kpi = st.selectbox(
+#             "Select KPI definition",
+#             options=list(definitions.keys()),
+#             key="kb_selected_kpi"
+#         )
+
+#         col1, col2, col3 = st.columns([1, 1, 4])
+
+#         with col1:
+#             if st.button("✏️ Edit", use_container_width=True):
+#                 st.session_state["kb_editor_mode"] = "edit"
+#                 st.session_state["selected_kpi"] = selected_kpi
+
+#         with col2:
+#             if st.button("🗑️ Delete", use_container_width=True):
+#                 business_knowledge_store.delete_definition(selected_kpi)
+#                 st.success(f"Deleted: {selected_kpi}")
+#                 st.rerun()
+
+#         current = definitions.get(selected_kpi, {})
+
+#         with st.expander("View Definition", expanded=False):
+#             st.markdown("**Keywords**")
+#             st.write(", ".join(current.get("keywords", [])))
+
+#             st.markdown("**Definition**")
+#             st.text(current.get("definition", ""))
+#     st.markdown("---")
+
+#     st.header("🗄️ Database")
+
+#     try:
+#         tables = db_manager.get_all_table_names()
+#         st.success(f"Connected: {len(tables)} tables")
+
+#         with st.expander("View Tables"):
+#             for table in tables:
+#                 st.text(f"• {table}")
+
+#     except Exception as e:
+#         st.error(f"Database error: {e}")
+
+#     st.markdown("---")
+
+#     st.header("📊 Stats")
+#     st.metric("Queries", st.session_state.query_count)
+
+#     st.markdown("---")
+
+#     show_plan = st.checkbox("Show Plan", value=True)
+#     show_sql = st.checkbox("Show SQL", value=True)
+#     show_debug = st.checkbox("Show Debug State", value=False)
+
+
+# # =============================
+# # HELPER
+# # =============================
+
+# def run_async_agent(question: str, session_id: str):
+#     """
+#     Runs async agent from Streamlit safely.
+#     """
+#     return asyncio.run(
+#         run_agent_async(
+#             question=question,
+#             session_id=session_id
+#         )
+#     )
+
+
+# def add_message(role: str, content: str, msg_type: str = "message"):
+#     st.session_state.messages.append({
+#         "role": role,
+#         "content": content,
+#         "type": msg_type
+#     })
+
+
+# def format_agent_response(result: dict) -> str:
+#     if result.get("waiting_for_user"):
+#         return result.get("question_to_user", "Please provide more details.")
+
+#     if result.get("error"):
+#         return f"Error: {result.get('error')}"
+
+#     if result.get("result_preview"):
+#         return str(result.get("result_preview"))
+
+#     if result.get("sql_query"):
+#         return "Query generated successfully."
+
+#     if result.get("final_answer"):
+#         return result.get("final_answer")
+
+#     return "Done."
+
+
+# # =============================
+# # CHAT HISTORY
+# # =============================
+
+# for msg in st.session_state.messages:
+#     with st.chat_message(msg["role"]):
+#         st.markdown(msg["content"])
+
+
+# # =============================
+# # CHAT INPUT
+# # =============================
+
+# user_question = st.chat_input("Ask a sales/business question...")
+
+# if user_question:
+#     add_message("user", user_question)
+
+#     with st.chat_message("user"):
+#         st.markdown(user_question)
+
+#     with st.chat_message("assistant"):
+#         with st.spinner("Thinking..."):
+#             try:
+#                 result = run_async_agent(
+#                     question=user_question,
+#                     session_id=st.session_state.session_id
+#                 )
+
+#                 st.session_state.last_result = result
+#                 st.session_state.query_count += 1
+
+#                 assistant_text = format_agent_response(result)
+
+#                 st.markdown(assistant_text)
+
+#                 add_message(
+#                     "assistant",
+#                     assistant_text,
+#                     "clarification" if result.get("waiting_for_user") else "answer"
+#                 )
+
+#             except Exception as e:
+#                 logger.error(f"Streamlit app error: {e}")
+#                 error_text = f"Unexpected error: {str(e)}"
+#                 st.error(error_text)
+#                 add_message("assistant", error_text, "error")
+
+
+# # =============================
+# # RESULT DETAILS
+# # =============================
+
+# result = st.session_state.last_result
+
+# if result:
+#     st.markdown("---")
+#     st.subheader("Agent Output")
+
+#     tab1, tab2, tab3, tab4 = st.tabs([
+#         "Result",
+#         "SQL",
+#         "Plan",
+#         "Debug"
+#     ])
+
+#     with tab1:
+#         if result.get("waiting_for_user"):
+#             st.info(result.get("question_to_user"))
+
+#         elif result.get("error"):
+#             st.error(result.get("error"))
+
+#         else:
+#             result_preview = result.get("result_preview")
+
+#             if result_preview:
+#                 st.text(result_preview)
+#             else:
+#                 st.info("No result preview available.")
+
+#             query_result = result.get("query_result")
+
+#             if query_result and isinstance(query_result, list):
+#                 try:
+#                     if len(query_result) > 0 and hasattr(query_result[0], "_mapping"):
+#                         df = pd.DataFrame([dict(row._mapping) for row in query_result])
+#                         st.dataframe(df, use_container_width=True)
+#                 except Exception:
+#                     pass
+
+#     with tab2:
+#         if show_sql and result.get("sql_query"):
+#             st.code(result["sql_query"], language="sql")
+
+#             st.download_button(
+#                 "Download SQL",
+#                 data=result["sql_query"],
+#                 file_name="query.sql",
+#                 mime="text/plain"
+#             )
+#         else:
+#             st.info("No SQL generated yet.")
+
+#     with tab3:
+#         if show_plan and result.get("plan"):
+#             st.text(result["plan"])
+#         else:
+#             st.info("No plan available.")
+
+#     with tab4:
+#         if show_debug:
+#             st.json(result)
+#         else:
+#             debug_summary = {
+#                 "session_id": result.get("session_id"),
+#                 "waiting_for_user": result.get("waiting_for_user"),
+#                 "question_to_user": result.get("question_to_user"),
+#                 "gap_type": result.get("gap_type"),
+#                 "gap_reason": result.get("gap_reason"),
+#                 "confidence": result.get("confidence"),
+#                 "relevant_tables": result.get("relevant_tables"),
+#                 "iterations": result.get("iterations"),
+#                 "execution_time_ms": result.get("execution_time_ms"),
+#                 "total_latency_ms": result.get("total_latency_ms"),
+#                 "cache_hit": result.get("cache_hit")
+#             }
+
+#             st.json(debug_summary)
+            
+# mode = st.session_state.get("kb_editor_mode")
+
+# if mode in ["add", "edit"]:
+#     st.markdown("---")
+
+#     is_edit = mode == "edit"
+#     selected_key = st.session_state.get("selected_kpi")
+
+#     existing = {}
+#     if is_edit and selected_key:
+#         existing = business_knowledge_store.get_definition(selected_key) or {}
+
+#     st.subheader("✏️ Edit KPI Definition" if is_edit else "➕ Add KPI Definition")
+
+#     with st.form("kb_definition_form"):
+#         kpi_key = st.text_input(
+#             "KPI Key",
+#             value=selected_key if is_edit else "",
+#             help="Example: productive_calls, outlet_productivity"
+#         )
+
+#         keywords_text = st.text_area(
+#             "Keywords",
+#             value="\n".join(existing.get("keywords", [])),
+#             height=120,
+#             help="Enter one keyword per line"
+#         )
+
+#         definition_text = st.text_area(
+#             "Definition",
+#             value=existing.get("definition", ""),
+#             height=220,
+#             help="Write business meaning, formula, filters, aggregation rules, and defaults"
+#         )
+
+#         col_save, col_cancel = st.columns([1, 1])
+
+#         with col_save:
+#             save_clicked = st.form_submit_button("💾 Save")
+
+#         with col_cancel:
+#             cancel_clicked = st.form_submit_button("Cancel")
+
+#         if save_clicked:
+#             if not kpi_key.strip():
+#                 st.error("KPI key is required.")
+#             elif not definition_text.strip():
+#                 st.error("Definition is required.")
+#             else:
+#                 keywords = [
+#                     x.strip()
+#                     for x in keywords_text.splitlines()
+#                     if x.strip()
+#                 ]
+
+#                 if not keywords:
+#                     st.error("At least one keyword is required.")
+#                 else:
+#                     saved_key = business_knowledge_store.upsert_definition(
+#                         key=kpi_key,
+#                         keywords=keywords,
+#                         definition=definition_text
+#                     )
+
+#                     st.success(f"Saved KPI definition: {saved_key}")
+
+#                     st.session_state["kb_editor_mode"] = None
+#                     st.session_state["selected_kpi"] = None
+#                     st.rerun()
+
+#         if cancel_clicked:
+#             st.session_state["kb_editor_mode"] = None
+#             st.session_state["selected_kpi"] = None
+#             st.rerun()
+
+
+"""
+Streamlit chat interface for Text-to-SQL agent.
+Includes:
+- Chat UI
+- Knowledge Base YAML editor
+- Result table
+- Graph view
+- SQL / Plan / Debug tabs
+"""
+
 import asyncio
 import uuid
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 from loguru import logger
 
 from src.graph import run_agent_async
 from src.core.database import db_manager
+from src.tools.business_knowledge_store import business_knowledge_store
 
 
 # =============================
@@ -333,6 +726,83 @@ if "last_result" not in st.session_state:
 if "query_count" not in st.session_state:
     st.session_state.query_count = 0
 
+if "kb_editor_mode" not in st.session_state:
+    st.session_state.kb_editor_mode = None
+
+if "selected_kpi" not in st.session_state:
+    st.session_state.selected_kpi = None
+
+
+# =============================
+# HELPERS
+# =============================
+
+def run_async_agent(question: str, session_id: str):
+    return asyncio.run(
+        run_agent_async(
+            question=question,
+            session_id=session_id
+        )
+    )
+
+
+def add_message(role: str, content: str, msg_type: str = "message"):
+    st.session_state.messages.append({
+        "role": role,
+        "content": content,
+        "type": msg_type
+    })
+
+
+def format_agent_response(result: dict) -> str:
+    if result.get("waiting_for_user"):
+        return result.get("question_to_user", "Please provide more details.")
+
+    if result.get("error"):
+        return f"Error: {result.get('error')}"
+
+    if result.get("query_result"):
+        return "Query executed successfully."
+
+    if result.get("sql_query"):
+        return "SQL generated successfully."
+
+    if result.get("final_answer"):
+        return result.get("final_answer")
+
+    return "Done."
+
+
+def result_to_dataframe(result: dict) -> pd.DataFrame:
+    query_result = result.get("query_result")
+
+    if not query_result:
+        return pd.DataFrame()
+
+    try:
+        # SQLAlchemy Row objects
+        if hasattr(query_result[0], "_mapping"):
+            return pd.DataFrame([dict(row._mapping) for row in query_result])
+
+        # List of dictionaries
+        if isinstance(query_result[0], dict):
+            return pd.DataFrame(query_result)
+
+        # List of tuples fallback
+        return pd.DataFrame(query_result)
+
+    except Exception as e:
+        logger.warning(f"Failed to convert query_result to DataFrame: {e}")
+        return pd.DataFrame()
+
+
+def get_numeric_columns(df: pd.DataFrame):
+    return df.select_dtypes(include=["number"]).columns.tolist()
+
+
+def get_text_columns(df: pd.DataFrame):
+    return df.select_dtypes(exclude=["number"]).columns.tolist()
+
 
 # =============================
 # SIDEBAR
@@ -355,6 +825,59 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
+
+    # =============================
+    # KNOWLEDGE BASE SIDEBAR
+    # =============================
+
+    st.subheader("📘 Business Knowledge Base")
+
+    if st.button("🔄 Reload KB", use_container_width=True):
+        business_knowledge_store.reload()
+        st.success("Knowledge base reloaded")
+
+    if st.button("➕ Add KPI Definition", use_container_width=True):
+        st.session_state["kb_editor_mode"] = "add"
+        st.session_state["selected_kpi"] = None
+
+    definitions = business_knowledge_store.list_definitions()
+
+    if not definitions:
+        st.info("No KPI definitions found.")
+    else:
+        selected_kpi = st.selectbox(
+            "Select KPI definition",
+            options=list(definitions.keys()),
+            key="kb_selected_kpi"
+        )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("✏️ Edit", use_container_width=True):
+                st.session_state["kb_editor_mode"] = "edit"
+                st.session_state["selected_kpi"] = selected_kpi
+
+        with col2:
+            if st.button("🗑️ Delete", use_container_width=True):
+                business_knowledge_store.delete_definition(selected_kpi)
+                st.success(f"Deleted: {selected_kpi}")
+                st.rerun()
+
+        current = definitions.get(selected_kpi, {})
+
+        with st.expander("View Definition", expanded=False):
+            st.markdown("**Keywords**")
+            st.write(", ".join(current.get("keywords", [])))
+
+            st.markdown("**Definition**")
+            st.text(current.get("definition", ""))
+
+    st.markdown("---")
+
+    # =============================
+    # DATABASE
+    # =============================
 
     st.header("🗄️ Database")
 
@@ -379,49 +902,6 @@ with st.sidebar:
     show_plan = st.checkbox("Show Plan", value=True)
     show_sql = st.checkbox("Show SQL", value=True)
     show_debug = st.checkbox("Show Debug State", value=False)
-
-
-# =============================
-# HELPER
-# =============================
-
-def run_async_agent(question: str, session_id: str):
-    """
-    Runs async agent from Streamlit safely.
-    """
-    return asyncio.run(
-        run_agent_async(
-            question=question,
-            session_id=session_id
-        )
-    )
-
-
-def add_message(role: str, content: str, msg_type: str = "message"):
-    st.session_state.messages.append({
-        "role": role,
-        "content": content,
-        "type": msg_type
-    })
-
-
-def format_agent_response(result: dict) -> str:
-    if result.get("waiting_for_user"):
-        return result.get("question_to_user", "Please provide more details.")
-
-    if result.get("error"):
-        return f"Error: {result.get('error')}"
-
-    if result.get("result_preview"):
-        return str(result.get("result_preview"))
-
-    if result.get("sql_query"):
-        return "Query generated successfully."
-
-    if result.get("final_answer"):
-        return result.get("final_answer")
-
-    return "Done."
 
 
 # =============================
@@ -457,7 +937,6 @@ if user_question:
                 st.session_state.query_count += 1
 
                 assistant_text = format_agent_response(result)
-
                 st.markdown(assistant_text)
 
                 add_message(
@@ -483,14 +962,20 @@ if result:
     st.markdown("---")
     st.subheader("Agent Output")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "Result",
+    tab_table, tab_graph, tab_sql, tab_plan, tab_debug = st.tabs([
+        "Extracted Table",
+        "Graph",
         "SQL",
         "Plan",
         "Debug"
     ])
 
-    with tab1:
+    df = result_to_dataframe(result)
+
+    # -----------------------------
+    # TABLE TAB
+    # -----------------------------
+    with tab_table:
         if result.get("waiting_for_user"):
             st.info(result.get("question_to_user"))
 
@@ -498,29 +983,118 @@ if result:
             st.error(result.get("error"))
 
         else:
-            result_preview = result.get("result_preview")
+            if not df.empty:
+                st.markdown("### Extracted Table")
+                st.dataframe(df, use_container_width=True)
 
-            if result_preview:
-                st.text(result_preview)
+                csv = df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="⬇️ Download CSV",
+                    data=csv,
+                    file_name="query_result.csv",
+                    mime="text/csv"
+                )
             else:
-                st.info("No result preview available.")
+                st.info("No tabular result available.")
 
-            query_result = result.get("query_result")
+                if result.get("result_preview"):
+                    st.markdown("### Result Preview")
+                    st.text(result.get("result_preview"))
 
-            if query_result and isinstance(query_result, list):
+    # -----------------------------
+    # GRAPH TAB
+    # -----------------------------
+    with tab_graph:
+        if result.get("waiting_for_user"):
+            st.info("Graph will be available after the query is completed.")
+
+        elif result.get("error"):
+            st.error(result.get("error"))
+
+        elif df.empty:
+            st.info("No data available for graph.")
+
+        else:
+            st.markdown("### Graph View")
+
+            numeric_cols = get_numeric_columns(df)
+            text_cols = get_text_columns(df)
+
+            if not numeric_cols:
+                st.warning("No numeric column found for chart.")
+            else:
+                all_cols = df.columns.tolist()
+
+                default_x_index = 0
+                if text_cols:
+                    default_x_index = all_cols.index(text_cols[0])
+
+                x_col = st.selectbox(
+                    "X Axis",
+                    options=all_cols,
+                    index=default_x_index,
+                    key="graph_x_col"
+                )
+
+                y_col = st.selectbox(
+                    "Y Axis",
+                    options=numeric_cols,
+                    key="graph_y_col"
+                )
+
+                chart_type = st.selectbox(
+                    "Chart Type",
+                    options=["Bar", "Line", "Pie"],
+                    key="chart_type"
+                )
+
+                chart_df = df.copy()
+
+                # Try sorting chart by Y value for better readability
                 try:
-                    if len(query_result) > 0 and hasattr(query_result[0], "_mapping"):
-                        df = pd.DataFrame([dict(row._mapping) for row in query_result])
-                        st.dataframe(df, use_container_width=True)
+                    chart_df = chart_df.sort_values(by=y_col, ascending=False)
                 except Exception:
                     pass
 
-    with tab2:
+                if chart_type == "Bar":
+                    fig = px.bar(
+                        chart_df,
+                        x=x_col,
+                        y=y_col,
+                        text=y_col,
+                        title=f"{y_col} by {x_col}"
+                    )
+                    fig.update_traces(textposition="outside")
+                    st.plotly_chart(fig, use_container_width=True)
+
+                elif chart_type == "Line":
+                    fig = px.line(
+                        chart_df,
+                        x=x_col,
+                        y=y_col,
+                        markers=True,
+                        title=f"{y_col} by {x_col}"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                elif chart_type == "Pie":
+                    fig = px.pie(
+                        chart_df,
+                        names=x_col,
+                        values=y_col,
+                        title=f"{y_col} share by {x_col}"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+    # -----------------------------
+    # SQL TAB
+    # -----------------------------
+    with tab_sql:
         if show_sql and result.get("sql_query"):
             st.code(result["sql_query"], language="sql")
 
             st.download_button(
-                "Download SQL",
+                "⬇️ Download SQL",
                 data=result["sql_query"],
                 file_name="query.sql",
                 mime="text/plain"
@@ -528,28 +1102,156 @@ if result:
         else:
             st.info("No SQL generated yet.")
 
-    with tab3:
+    # -----------------------------
+    # PLAN TAB
+    # -----------------------------
+    with tab_plan:
         if show_plan and result.get("plan"):
             st.text(result["plan"])
         else:
             st.info("No plan available.")
 
-    with tab4:
+    # -----------------------------
+    # DEBUG TAB
+    # -----------------------------
+    with tab_debug:
+        debug_summary = {
+            "session_id": result.get("session_id"),
+            "waiting_for_user": result.get("waiting_for_user"),
+            "question_to_user": result.get("question_to_user"),
+            "gap_type": result.get("gap_type"),
+            "gap_reason": result.get("gap_reason"),
+            "confidence": result.get("confidence"),
+            "relevant_tables": result.get("relevant_tables"),
+            "iterations": result.get("iterations"),
+            "execution_time_ms": result.get("execution_time_ms"),
+            "total_latency_ms": result.get("total_latency_ms"),
+            "cache_hit": result.get("cache_hit")
+        }
+
         if show_debug:
             st.json(result)
         else:
-            debug_summary = {
-                "session_id": result.get("session_id"),
-                "waiting_for_user": result.get("waiting_for_user"),
-                "question_to_user": result.get("question_to_user"),
-                "gap_type": result.get("gap_type"),
-                "gap_reason": result.get("gap_reason"),
-                "confidence": result.get("confidence"),
-                "relevant_tables": result.get("relevant_tables"),
-                "iterations": result.get("iterations"),
-                "execution_time_ms": result.get("execution_time_ms"),
-                "total_latency_ms": result.get("total_latency_ms"),
-                "cache_hit": result.get("cache_hit")
-            }
-
             st.json(debug_summary)
+
+
+# =============================
+# KNOWLEDGE BASE EDITOR
+# =============================
+
+mode = st.session_state.get("kb_editor_mode")
+
+if mode in ["add", "edit"]:
+    st.markdown("---")
+
+    is_edit = mode == "edit"
+    selected_key = st.session_state.get("selected_kpi")
+
+    existing = {}
+    if is_edit and selected_key:
+        existing = business_knowledge_store.get_definition(selected_key) or {}
+
+    st.subheader("✏️ Edit KPI Definition" if is_edit else "➕ Add KPI Definition")
+
+    with st.form("kb_definition_form"):
+        kpi_key = st.text_input(
+            "KPI Key",
+            value=selected_key if is_edit else "",
+            help="Example: productive_calls, outlet_productivity"
+        )
+
+        keywords_text = st.text_area(
+            "Keywords",
+            value="\n".join(existing.get("keywords", [])),
+            height=120,
+            help="Enter one keyword per line"
+        )
+
+        definition_text = st.text_area(
+            "Definition",
+            value=existing.get("definition", ""),
+            height=260,
+            help="Write business meaning, formula, filters, aggregation rules, and defaults"
+        )
+
+        with st.expander("📋 Definition Template"):
+            st.code(
+                """<KPI Name> measures ...
+
+Calculation:
+- Step 1:
+- Step 2:
+
+Filters:
+- Use current month if no time period is specified.
+- Apply RepCode when the question refers to a rep or says "my".
+
+Aggregation:
+- Explain whether this is single-level or multi-level aggregation.
+
+Exclusions:
+- Exclude returns unless specifically requested.
+""",
+                language="text"
+            )
+
+        col_save, col_cancel = st.columns([1, 1])
+
+        with col_save:
+            save_clicked = st.form_submit_button("💾 Save")
+
+        with col_cancel:
+            cancel_clicked = st.form_submit_button("Cancel")
+
+        if save_clicked:
+            if not kpi_key.strip():
+                st.error("KPI key is required.")
+            elif not definition_text.strip():
+                st.error("Definition is required.")
+            else:
+                keywords = [
+                    x.strip()
+                    for x in keywords_text.splitlines()
+                    if x.strip()
+                ]
+
+                if not keywords:
+                    st.error("At least one keyword is required.")
+                else:
+                    saved_key = business_knowledge_store.upsert_definition(
+                        key=kpi_key,
+                        keywords=keywords,
+                        definition=definition_text
+                    )
+
+                    st.success(f"Saved KPI definition: {saved_key}")
+
+                    st.session_state["kb_editor_mode"] = None
+                    st.session_state["selected_kpi"] = None
+                    st.rerun()
+
+        if cancel_clicked:
+            st.session_state["kb_editor_mode"] = None
+            st.session_state["selected_kpi"] = None
+            st.rerun()
+
+
+# =============================
+# RAW YAML PREVIEW
+# =============================
+
+with st.expander("🧾 Raw Knowledge YAML Preview"):
+    try:
+        import yaml
+
+        yaml_text = yaml.safe_dump(
+            {"definitions": business_knowledge_store.list_definitions()},
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False
+        )
+
+        st.code(yaml_text, language="yaml")
+
+    except Exception as e:
+        st.error(f"Failed to show YAML preview: {e}")

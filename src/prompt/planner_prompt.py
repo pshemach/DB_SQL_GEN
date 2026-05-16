@@ -42,6 +42,10 @@ explicitly describe each aggregation level. Do NOT collapse into one step.
 Conversation Memory:
 {memory_context}
 
+Critically keep in mind
+────────────────────────────────
+sales always refers to net sales, unless specifically told not to consider returns.
+
 BUSINESS DEFINITIONS
 ────────────────────────────────
 net sales:
