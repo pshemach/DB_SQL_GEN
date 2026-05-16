@@ -773,6 +773,28 @@ def format_agent_response(result: dict) -> str:
     return "Done."
 
 
+# def result_to_dataframe(result: dict) -> pd.DataFrame:
+#     query_result = result.get("query_result")
+
+#     if not query_result:
+#         return pd.DataFrame()
+
+#     try:
+#         # SQLAlchemy Row objects
+#         if hasattr(query_result[0], "_mapping"):
+#             return pd.DataFrame([dict(row._mapping) for row in query_result])
+
+#         # List of dictionaries
+#         if isinstance(query_result[0], dict):
+#             return pd.DataFrame(query_result)
+
+#         # List of tuples fallback
+#         return pd.DataFrame(query_result)
+
+#     except Exception as e:
+#         logger.warning(f"Failed to convert query_result to DataFrame: {e}")
+#         return pd.DataFrame()
+
 def result_to_dataframe(result: dict) -> pd.DataFrame:
     query_result = result.get("query_result")
 
@@ -780,16 +802,29 @@ def result_to_dataframe(result: dict) -> pd.DataFrame:
         return pd.DataFrame()
 
     try:
-        # SQLAlchemy Row objects
         if hasattr(query_result[0], "_mapping"):
-            return pd.DataFrame([dict(row._mapping) for row in query_result])
+            df = pd.DataFrame([dict(row._mapping) for row in query_result])
+        elif isinstance(query_result[0], dict):
+            df = pd.DataFrame(query_result)
+        else:
+            df = pd.DataFrame(query_result)
 
-        # List of dictionaries
-        if isinstance(query_result[0], dict):
-            return pd.DataFrame(query_result)
+        # Dynamic numeric conversion
+        for col in df.columns:
+            cleaned = (
+                df[col]
+                .astype(str)
+                .str.replace(",", "", regex=False)
+                .str.replace("%", "", regex=False)
+                .str.strip()
+            )
 
-        # List of tuples fallback
-        return pd.DataFrame(query_result)
+            converted = pd.to_numeric(cleaned, errors="coerce")
+
+            if converted.notna().sum() >= max(1, len(df) * 0.7):
+                df[col] = converted
+
+        return df
 
     except Exception as e:
         logger.warning(f"Failed to convert query_result to DataFrame: {e}")
@@ -1001,9 +1036,91 @@ if result:
                     st.markdown("### Result Preview")
                     st.text(result.get("result_preview"))
 
-    # -----------------------------
-    # GRAPH TAB
-    # -----------------------------
+    # # -----------------------------
+    # # GRAPH TAB
+    # # -----------------------------
+    # with tab_graph:
+    #     if result.get("waiting_for_user"):
+    #         st.info("Graph will be available after the query is completed.")
+
+    #     elif result.get("error"):
+    #         st.error(result.get("error"))
+
+    #     elif df.empty:
+    #         st.info("No data available for graph.")
+
+    #     else:
+    #         st.markdown("### Graph View")
+
+    #         numeric_cols = get_numeric_columns(df)
+    #         text_cols = get_text_columns(df)
+
+    #         if not numeric_cols:
+    #             st.warning("No numeric column found for chart.")
+    #         else:
+    #             all_cols = df.columns.tolist()
+
+    #             default_x_index = 0
+    #             if text_cols:
+    #                 default_x_index = all_cols.index(text_cols[0])
+
+    #             x_col = st.selectbox(
+    #                 "X Axis",
+    #                 options=all_cols,
+    #                 index=default_x_index,
+    #                 key="graph_x_col"
+    #             )
+
+    #             y_col = st.selectbox(
+    #                 "Y Axis",
+    #                 options=numeric_cols,
+    #                 key="graph_y_col"
+    #             )
+
+    #             chart_type = st.selectbox(
+    #                 "Chart Type",
+    #                 options=["Bar", "Line", "Pie"],
+    #                 key="chart_type"
+    #             )
+
+    #             chart_df = df.copy()
+
+    #             # Try sorting chart by Y value for better readability
+    #             try:
+    #                 chart_df = chart_df.sort_values(by=y_col, ascending=False)
+    #             except Exception:
+    #                 pass
+
+    #             if chart_type == "Bar":
+    #                 fig = px.bar(
+    #                     chart_df,
+    #                     x=x_col,
+    #                     y=y_col,
+    #                     text=y_col,
+    #                     title=f"{y_col} by {x_col}"
+    #                 )
+    #                 fig.update_traces(textposition="outside")
+    #                 st.plotly_chart(fig, use_container_width=True)
+
+    #             elif chart_type == "Line":
+    #                 fig = px.line(
+    #                     chart_df,
+    #                     x=x_col,
+    #                     y=y_col,
+    #                     markers=True,
+    #                     title=f"{y_col} by {x_col}"
+    #                 )
+    #                 st.plotly_chart(fig, use_container_width=True)
+
+    #             elif chart_type == "Pie":
+    #                 fig = px.pie(
+    #                     chart_df,
+    #                     names=x_col,
+    #                     values=y_col,
+    #                     title=f"{y_col} share by {x_col}"
+    #                 )
+    #                 st.plotly_chart(fig, use_container_width=True)
+    
     with tab_graph:
         if result.get("waiting_for_user"):
             st.info("Graph will be available after the query is completed.")
@@ -1017,74 +1134,252 @@ if result:
         else:
             st.markdown("### Graph View")
 
-            numeric_cols = get_numeric_columns(df)
-            text_cols = get_text_columns(df)
+            # -----------------------------
+            # Convert numeric-looking columns
+            # -----------------------------
+            chart_df = df.copy()
+
+            for col in chart_df.columns:
+                cleaned = (
+                    chart_df[col]
+                    .astype(str)
+                    .str.replace(",", "", regex=False)
+                    .str.replace("%", "", regex=False)
+                    .str.strip()
+                )
+
+                converted = pd.to_numeric(cleaned, errors="coerce")
+
+                # Convert only if most values are numeric
+                if converted.notna().sum() >= max(1, len(chart_df) * 0.7):
+                    chart_df[col] = converted
+
+            numeric_cols = chart_df.select_dtypes(include=["number"]).columns.tolist()
+            non_numeric_cols = [
+                col for col in chart_df.columns
+                if col not in numeric_cols
+            ]
 
             if not numeric_cols:
                 st.warning("No numeric column found for chart.")
+                st.write("Detected column types:")
+                st.write(chart_df.dtypes)
+                st.dataframe(chart_df.head(), use_container_width=True)
+
             else:
-                all_cols = df.columns.tolist()
+                # -----------------------------
+                # Dynamic default X axis
+                # -----------------------------
+                preferred_x_names = [
+                    "name", "customername", "customer_name", "outlet",
+                    "outletname", "repname", "rep_name", "repcode",
+                    "productname", "product_name", "route", "brand",
+                    "category", "type", "date"
+                ]
 
-                default_x_index = 0
-                if text_cols:
-                    default_x_index = all_cols.index(text_cols[0])
+                x_default = None
 
-                x_col = st.selectbox(
-                    "X Axis",
-                    options=all_cols,
-                    index=default_x_index,
-                    key="graph_x_col"
-                )
+                for preferred in preferred_x_names:
+                    for col in non_numeric_cols:
+                        normalized = col.lower().replace(" ", "").replace("_", "")
+                        if normalized == preferred.replace("_", ""):
+                            x_default = col
+                            break
+                    if x_default:
+                        break
 
-                y_col = st.selectbox(
-                    "Y Axis",
-                    options=numeric_cols,
-                    key="graph_y_col"
-                )
+                if not x_default:
+                    x_default = non_numeric_cols[0] if non_numeric_cols else chart_df.columns[0]
 
-                chart_type = st.selectbox(
-                    "Chart Type",
-                    options=["Bar", "Line", "Pie"],
-                    key="chart_type"
-                )
+                # -----------------------------
+                # Dynamic default Y metric
+                # -----------------------------
+                preferred_y_terms = [
+                    "percentage", "percent", "pct", "achievement",
+                    "sales", "target", "value", "amount", "qty",
+                    "quantity", "volume", "count", "calls", "visits"
+                ]
 
-                chart_df = df.copy()
+                y_default = None
 
-                # Try sorting chart by Y value for better readability
-                try:
-                    chart_df = chart_df.sort_values(by=y_col, ascending=False)
-                except Exception:
-                    pass
+                for term in preferred_y_terms:
+                    for col in numeric_cols:
+                        if term in col.lower():
+                            y_default = col
+                            break
+                    if y_default:
+                        break
 
-                if chart_type == "Bar":
+                if not y_default:
+                    y_default = numeric_cols[0]
+
+                # -----------------------------
+                # Dynamic color/group column
+                # -----------------------------
+                possible_group_cols = []
+
+                for col in non_numeric_cols:
+                    unique_count = chart_df[col].nunique(dropna=True)
+
+                    # Good grouping column: not too many unique values
+                    if 1 < unique_count <= 10 and col != x_default:
+                        possible_group_cols.append(col)
+
+                # -----------------------------
+                # Controls
+                # -----------------------------
+                col_a, col_b, col_c = st.columns(3)
+
+                with col_a:
+                    x_col = st.selectbox(
+                        "X Axis / Label",
+                        options=chart_df.columns.tolist(),
+                        index=chart_df.columns.tolist().index(x_default),
+                        key="graph_x_col"
+                    )
+
+                with col_b:
+                    y_col = st.selectbox(
+                        "Y Axis / Metric",
+                        options=numeric_cols,
+                        index=numeric_cols.index(y_default),
+                        key="graph_y_col"
+                    )
+
+                with col_c:
+                    chart_type = st.selectbox(
+                        "Chart Type",
+                        options=["Auto", "Bar", "Horizontal Bar", "Line", "Pie", "Scatter"],
+                        key="chart_type"
+                    )
+
+                color_col = None
+
+                if possible_group_cols:
+                    color_options = ["None"] + possible_group_cols
+                    selected_color = st.selectbox(
+                        "Group / Color By",
+                        options=color_options,
+                        key="graph_color_col"
+                    )
+
+                    if selected_color != "None":
+                        color_col = selected_color
+
+                        selected_groups = st.multiselect(
+                            f"Filter {color_col}",
+                            options=sorted(chart_df[color_col].dropna().unique()),
+                            default=sorted(chart_df[color_col].dropna().unique())
+                        )
+
+                        chart_df = chart_df[chart_df[color_col].isin(selected_groups)]
+
+                # -----------------------------
+                # Top N control
+                # -----------------------------
+                if len(chart_df) > 1:
+                    max_n = min(100, len(chart_df))
+                    top_n = st.slider(
+                        "Rows to show",
+                        min_value=1,
+                        max_value=max_n,
+                        value=min(20, max_n),
+                        step=1
+                    )
+                else:
+                    top_n = len(chart_df)
+
+                # Sort by selected metric
+                chart_df = chart_df.sort_values(by=y_col, ascending=False).head(top_n)
+
+                # -----------------------------
+                # Auto chart type
+                # -----------------------------
+                final_chart_type = chart_type
+
+                if chart_type == "Auto":
+                    if len(chart_df) <= 8 and chart_df[x_col].nunique() <= 8:
+                        final_chart_type = "Bar"
+                    elif len(chart_df) > 15:
+                        final_chart_type = "Horizontal Bar"
+                    else:
+                        final_chart_type = "Bar"
+
+                # -----------------------------
+                # Render chart
+                # -----------------------------
+                title = f"{y_col} by {x_col}"
+
+                if final_chart_type == "Bar":
                     fig = px.bar(
                         chart_df,
                         x=x_col,
                         y=y_col,
+                        color=color_col,
                         text=y_col,
-                        title=f"{y_col} by {x_col}"
+                        title=title
                     )
-                    fig.update_traces(textposition="outside")
+                    fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+                    fig.update_layout(xaxis_tickangle=-45)
                     st.plotly_chart(fig, use_container_width=True)
 
-                elif chart_type == "Line":
+                elif final_chart_type == "Horizontal Bar":
+                    fig = px.bar(
+                        chart_df.sort_values(by=y_col, ascending=True),
+                        x=y_col,
+                        y=x_col,
+                        color=color_col,
+                        text=y_col,
+                        orientation="h",
+                        title=title
+                    )
+                    fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+                    st.plotly_chart(fig, use_container_width=True)
+
+                elif final_chart_type == "Line":
                     fig = px.line(
                         chart_df,
                         x=x_col,
                         y=y_col,
+                        color=color_col,
                         markers=True,
-                        title=f"{y_col} by {x_col}"
+                        title=title
                     )
+                    fig.update_layout(xaxis_tickangle=-45)
                     st.plotly_chart(fig, use_container_width=True)
 
-                elif chart_type == "Pie":
+                elif final_chart_type == "Pie":
                     fig = px.pie(
                         chart_df,
                         names=x_col,
                         values=y_col,
+                        color=color_col,
                         title=f"{y_col} share by {x_col}"
                     )
                     st.plotly_chart(fig, use_container_width=True)
+
+                elif final_chart_type == "Scatter":
+                    fig = px.scatter(
+                        chart_df,
+                        x=x_col,
+                        y=y_col,
+                        color=color_col,
+                        size=y_col if y_col in numeric_cols else None,
+                        title=title
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                st.markdown("### Chart Data")
+                st.dataframe(chart_df, use_container_width=True)
+
+                with st.expander("Detected Columns"):
+                    st.write({
+                        "numeric_columns": numeric_cols,
+                        "non_numeric_columns": non_numeric_cols,
+                        "default_x": x_default,
+                        "default_y": y_default,
+                        "group_columns": possible_group_cols
+                    })
 
     # -----------------------------
     # SQL TAB
