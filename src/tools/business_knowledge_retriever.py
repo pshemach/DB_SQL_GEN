@@ -38,6 +38,39 @@ class BusinessKnowledgeRetriever:
             )
         return data.get("definitions", {})
     
+    def add_business_definition(self, name: str, keywords: List[str], definition: str):
+        """Add a new business definition to the vector store."""
+        doc = Document(
+            page_content=definition.strip(),
+            metadata={
+                "name": name,
+                "keywords": keywords
+            }
+        )
+        self.vectorstore.add_documents([doc])
+        
+    def update_business_definition(self, name: str, keywords: List[str], definition: str):
+        """Update an existing business definition by deleting and re-adding."""
+        self.vectorstore.delete(
+            where={"name": {"$eq": name}}
+        )
+        
+        doc = Document(
+            page_content=definition.strip(),
+            metadata={
+                "name": name,
+                "keywords":keywords
+            }
+        )
+        
+        self.vectorstore.add_documents([doc])
+        
+    def delete_business_definition(self, name: str):
+        """Delete a business definition from the vector store."""
+        self.vectorstore.delete(
+            where={"name": {"$eq": name}}
+        )
+    
     def seed_business_definitions(self):
         
         docs = []
