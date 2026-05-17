@@ -366,6 +366,92 @@ def get_chart_numeric_columns(df: pd.DataFrame):
 
     return numeric_cols
 
+def render_pivot_table(df: pd.DataFrame, key_prefix: str = "pivot"):
+    if df.empty:
+        st.info("No data available for pivot table.")
+        return
+
+    st.markdown("### Pivot Table")
+
+    # Detect numeric and non-numeric columns
+    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    all_cols = df.columns.tolist()
+
+    if not numeric_cols:
+        st.warning("No numeric columns available for pivot values.")
+        return
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        index_cols = st.multiselect(
+            "Rows",
+            options=all_cols,
+            default=[all_cols[0]] if all_cols else [],
+            key=f"{key_prefix}_index_cols"
+        )
+
+    with col2:
+        column_cols = st.multiselect(
+            "Columns",
+            options=[c for c in all_cols if c not in index_cols],
+            default=[],
+            key=f"{key_prefix}_column_cols"
+        )
+
+    with col3:
+        value_col = st.selectbox(
+            "Values",
+            options=numeric_cols,
+            key=f"{key_prefix}_value_col"
+        )
+
+    with col4:
+        agg_func = st.selectbox(
+            "Aggregation",
+            options=["sum", "mean", "count", "min", "max"],
+            key=f"{key_prefix}_agg_func"
+        )
+
+    if not index_cols:
+        st.warning("Please select at least one row field.")
+        return
+
+    try:
+        pivot_df = pd.pivot_table(
+            df,
+            index=index_cols,
+            columns=column_cols if column_cols else None,
+            values=value_col,
+            aggfunc=agg_func,
+            fill_value=0,
+            margins=True,
+            margins_name="Total"
+        )
+
+        # Flatten multi-index columns if needed
+        if isinstance(pivot_df.columns, pd.MultiIndex):
+            pivot_df.columns = [
+                " | ".join(str(x) for x in col if str(x) != "")
+                for col in pivot_df.columns
+            ]
+
+        pivot_df = pivot_df.reset_index()
+
+        st.dataframe(pivot_df, use_container_width=True)
+
+        csv = pivot_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="⬇️ Download Pivot CSV",
+            data=csv,
+            file_name="pivot_result.csv",
+            mime="text/csv",
+            key=f"{key_prefix}_download"
+        )
+
+    except Exception as e:
+        st.error(f"Failed to create pivot table: {e}")
+
 # =============================
 # SIDEBAR
 # =============================
@@ -676,22 +762,51 @@ if result:
                             # -----------------------------
                             # Top N
                             # -----------------------------
-                            max_n = min(100, len(chart_df))
+                            # max_n = min(100, len(chart_df))
 
-                            top_n = st.slider(
-                                "Rows to show",
-                                min_value=1,
-                                max_value=max_n,
-                                value=min(20, max_n),
-                                step=1,
-                                key=f"graph_top_n_{graph_key}"
-                            )
+                            # top_n = st.slider(
+                            #     "Rows to show",
+                            #     min_value=1,
+                            #     max_value=max_n,
+                            #     value=min(20, max_n),
+                            #     step=1,
+                            #     key=f"graph_top_n_{graph_key}"
+                            # )
 
-                            chart_df = (
-                                chart_df
-                                .sort_values(by=y_col, ascending=False)
-                                .head(top_n)
-                            )
+                            # chart_df = (
+                            #     chart_df
+                            #     .sort_values(by=y_col, ascending=False)
+                            #     .head(top_n)
+                            # )
+                            
+                            row_count = len(chart_df)
+
+                            if row_count == 0:
+                                st.warning("No rows available for chart after filtering.")
+                                st.dataframe(df, use_container_width=True)
+                            else:
+                                max_n = min(100, row_count)
+
+                                if row_count == 1:
+                                    top_n = 1
+                                    st.info("Only 1 row available for chart.")
+                                else:
+                                    top_n = st.slider(
+                                        "Rows to show",
+                                        min_value=1,
+                                        max_value=max_n,
+                                        value=min(20, max_n),
+                                        step=1,
+                                        key=f"graph_top_n_{graph_key}"
+                                    )
+
+                                chart_df = (
+                                    chart_df
+                                    .sort_values(by=y_col, ascending=False)
+                                    .head(top_n)
+                                )
+
+                                # continue render chart below this block
 
                             # -----------------------------
                             # Auto chart type

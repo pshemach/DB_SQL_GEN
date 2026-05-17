@@ -167,15 +167,17 @@ FILTERS & TIME (never flag):
 
 DERIVABLE CONCEPTS (never flag - can be inferred from schema):
   total, sum, count, average, min, max, growth, difference, variance, 
-  percentage, pct, ratio, rate, comparison, vs, versus, against, vs last
+  ratio, rate, comparison, vs, versus, against, vs last
 
 SPELLING VARIATIONS (treat as same KPI):
   "sales" = "net sales" = "actual sales"
-  "achievement" = "target achievement" = "attainment"
+  "achievement" = "achieved" = "target achievement" = "attainment" 
   "call" = "calls" = "productive call"
   "visit" = "visits" = "retail visit"
   "order" = "orders" = "purchase order"
-
+  "percentage" = "pct"
+  "Quantity" = "Qty"
+  
 ────────────────────────────────
 KNOWLEDGE GAP DECISION LOGIC
 ────────────────────────────────
