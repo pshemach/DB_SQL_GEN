@@ -2,12 +2,17 @@ import yaml
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from ..config import settings
+from .business_knowledge_retriever import business_knowledge_retriever
+
 
 class BusinessKnowledgeStore:
     def __init__(self, yaml_path: str = None):
         yaml_path = yaml_path or settings.business_doc_yaml_path
         self.yaml_path = Path(yaml_path)
         self.definitions = self._load()
+        
+        # Initialize vector store retriever
+        self.retriever = business_knowledge_retriever
 
     def _load(self) -> Dict[str, Any]:
         if not self.yaml_path.exists():
@@ -29,8 +34,14 @@ class BusinessKnowledgeStore:
                 f,
                 allow_unicode=True,
                 sort_keys=False,
-                default_flow_style=False
+                default_flow_style=False,
+                explicit_end=False,
+                explicit_start=False,
+                width=120,  # Prevents unnecessary line breaks
+                indent=2,   # Consistent indentation
+                default_style=None  # Preserve custom representer style
             )
+            
     def save_definitions(self):
         self._save({"definitions": self.definitions})
         
@@ -47,7 +58,8 @@ class BusinessKnowledgeStore:
         definition: str
     ):
         clean_key = self.normalize_key(key)
-
+        
+        # Update YAML
         self.definitions[clean_key] = {
             "keywords": keywords,
             "definition": definition.strip()
@@ -55,6 +67,13 @@ class BusinessKnowledgeStore:
 
         self.save_definitions()
         self.reload()
+        
+        # Update vector store
+        self.retriever.update_business_definition(
+            name=clean_key,
+            keywords=keywords,
+            definition=definition
+        )
 
         return clean_key
     
@@ -63,6 +82,9 @@ class BusinessKnowledgeStore:
             del self.definitions[key]
             self.save_definitions()
             self.reload()
+            
+            # Delete from vector store
+            self.retriever.delete_business_definition(name=key)
 
     def get_all_definitions_text(self) -> str:
         parts = []
@@ -106,6 +128,13 @@ class BusinessKnowledgeStore:
                 f,
                 allow_unicode=True,
                 sort_keys=False
+            )
+        
+        # Sync to vector store
+        self.retriever.add_business_definition(
+            name=key,
+            keywords=keywords,
+            definition=definition
             )
             
     @staticmethod
