@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     cache_similarity_threshold: float = Field(default=0.99, env="CACHE_SIMILARITY_THRESHOLD")
     
     # Agent Configuration
-    max_iterations: int = Field(default=3, env="MAX_ITERATIONS")
+    max_iterations: int = Field(default=1, env="MAX_ITERATIONS")
     enable_self_correction: bool = Field(default=True, env="ENABLE_SELF_CORRECTION")
     enable_dynamic_few_shot: bool = Field(default=True, env="ENABLE_DYNAMIC_FEW_SHOT")
     few_shot_examples_count: int = Field(default=3, env="FEW_SHOT_EXAMPLES_COUNT")

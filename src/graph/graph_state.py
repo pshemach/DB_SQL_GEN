@@ -86,3 +86,8 @@ class AgentState(TypedDict):
     start_time: Optional[float]  # For latency tracking
     total_latency_ms: Optional[float]
     cache_hit: Optional[bool]  # Whether result came from cache
+    
+    # Results 
+    result_summary: Optional[str]
+    visualization_config: Optional[dict]
+    table_title: Optional[str]

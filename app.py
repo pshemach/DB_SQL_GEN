@@ -673,17 +673,6 @@ Uses current async LangGraph workflow: run_agent_async(question, session_id).
 #             st.session_state["selected_kpi"] = None
 #             st.rerun()
 
-
-"""
-Streamlit chat interface for Text-to-SQL agent.
-Includes:
-- Chat UI
-- Knowledge Base YAML editor
-- Result table
-- Graph view
-- SQL / Plan / Debug tabs
-"""
-
 import asyncio
 import uuid
 import streamlit as st
@@ -838,6 +827,89 @@ def get_numeric_columns(df: pd.DataFrame):
 def get_text_columns(df: pd.DataFrame):
     return df.select_dtypes(exclude=["number"]).columns.tolist()
 
+def render_chart_from_config(df: pd.DataFrame, config: dict):
+    if df.empty:
+        st.info("No data available for chart.")
+        return
+
+    if not config or not config.get("enabled"):
+        st.info("No chart recommendation available.")
+        return
+
+    x_col = config.get("x_column")
+    y_col = config.get("y_column")
+    color_col = config.get("color_column")
+    chart_type = config.get("chart_type", "bar")
+
+    if x_col not in df.columns or y_col not in df.columns:
+        st.warning("Chart columns not found in result table.")
+        st.write("Available columns:", list(df.columns))
+        st.write("Chart config:", config)
+        return
+
+    if color_col not in df.columns:
+        color_col = None
+
+    chart_df = df.copy()
+
+    if y_col in chart_df.columns:
+        chart_df = chart_df.sort_values(by=y_col, ascending=False)
+
+    if chart_type == "horizontal_bar":
+        fig = px.bar(
+            chart_df.sort_values(by=y_col, ascending=True),
+            x=y_col,
+            y=x_col,
+            color=color_col,
+            orientation="h",
+            text=y_col,
+            title=f"{y_col} by {x_col}"
+        )
+        fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+
+    elif chart_type == "line":
+        fig = px.line(
+            chart_df,
+            x=x_col,
+            y=y_col,
+            color=color_col,
+            markers=True,
+            title=f"{y_col} by {x_col}"
+        )
+
+    elif chart_type == "pie":
+        fig = px.pie(
+            chart_df,
+            names=x_col,
+            values=y_col,
+            color=color_col,
+            title=f"{y_col} share by {x_col}"
+        )
+
+    elif chart_type == "scatter":
+        fig = px.scatter(
+            chart_df,
+            x=x_col,
+            y=y_col,
+            color=color_col,
+            size=y_col,
+            title=f"{y_col} by {x_col}"
+        )
+
+    else:
+        fig = px.bar(
+            chart_df,
+            x=x_col,
+            y=y_col,
+            color=color_col,
+            text=y_col,
+            title=f"{y_col} by {x_col}"
+        )
+        fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+        fig.update_layout(xaxis_tickangle=-45)
+
+    st.plotly_chart(fig, use_container_width=True)
+
 
 # =============================
 # SIDEBAR
@@ -914,29 +986,29 @@ with st.sidebar:
     # DATABASE
     # =============================
 
-    st.header("🗄️ Database")
+    # st.header("🗄️ Database")
 
-    try:
-        tables = db_manager.get_all_table_names()
-        st.success(f"Connected: {len(tables)} tables")
+    # try:
+    #     tables = db_manager.get_all_table_names()
+    #     st.success(f"Connected: {len(tables)} tables")
 
-        with st.expander("View Tables"):
-            for table in tables:
-                st.text(f"• {table}")
+    #     with st.expander("View Tables"):
+    #         for table in tables:
+    #             st.text(f"• {table}")
 
-    except Exception as e:
-        st.error(f"Database error: {e}")
+    # except Exception as e:
+    #     st.error(f"Database error: {e}")
 
     st.markdown("---")
 
     st.header("📊 Stats")
     st.metric("Queries", st.session_state.query_count)
 
-    st.markdown("---")
+    # st.markdown("---")
 
-    show_plan = st.checkbox("Show Plan", value=True)
-    show_sql = st.checkbox("Show SQL", value=True)
-    show_debug = st.checkbox("Show Debug State", value=False)
+    # show_plan = st.checkbox("Show Plan", value=True)
+    # show_sql = st.checkbox("Show SQL", value=True)
+    # show_debug = st.checkbox("Show Debug State", value=False)
 
 
 # =============================
@@ -997,19 +1069,50 @@ if result:
     st.markdown("---")
     st.subheader("Agent Output")
 
-    tab_table, tab_graph, tab_sql, tab_plan, tab_debug = st.tabs([
+    # tab_table, tab_graph, tab_sql, tab_plan, tab_debug = st.tabs([
+    #     "Extracted Table",
+    #     "Graph",
+    #     "SQL",
+    #     "Plan",
+    #     "Debug"
+    # ])
+    tab_table, tab_graph, tab_sql, tab_plan = st.tabs([
         "Extracted Table",
         "Graph",
         "SQL",
-        "Plan",
-        "Debug"
+        "Plan"
     ])
-
     df = result_to_dataframe(result)
 
     # -----------------------------
     # TABLE TAB
     # -----------------------------
+    # with tab_table:
+    #     if result.get("waiting_for_user"):
+    #         st.info(result.get("question_to_user"))
+
+    #     elif result.get("error"):
+    #         st.error(result.get("error"))
+
+    #     else:
+    #         if not df.empty:
+    #             st.markdown("### Extracted Table")
+    #             st.dataframe(df, use_container_width=True)
+
+    #             csv = df.to_csv(index=False).encode("utf-8")
+    #             st.download_button(
+    #                 label="⬇️ Download CSV",
+    #                 data=csv,
+    #                 file_name="query_result.csv",
+    #                 mime="text/csv"
+    #             )
+    #         else:
+    #             st.info("No tabular result available.")
+
+    #             if result.get("result_preview"):
+    #                 st.markdown("### Result Preview")
+    #                 st.text(result.get("result_preview"))
+    
     with tab_table:
         if result.get("waiting_for_user"):
             st.info(result.get("question_to_user"))
@@ -1018,8 +1121,13 @@ if result:
             st.error(result.get("error"))
 
         else:
+            if result.get("result_summary"):
+                st.success(result["result_summary"])
+
+            table_title = result.get("table_title", "Extracted Table")
+            st.markdown(f"### {table_title}")
+
             if not df.empty:
-                st.markdown("### Extracted Table")
                 st.dataframe(df, use_container_width=True)
 
                 csv = df.to_csv(index=False).encode("utf-8")
@@ -1031,10 +1139,6 @@ if result:
                 )
             else:
                 st.info("No tabular result available.")
-
-                if result.get("result_preview"):
-                    st.markdown("### Result Preview")
-                    st.text(result.get("result_preview"))
 
     # # -----------------------------
     # # GRAPH TAB
@@ -1121,6 +1225,316 @@ if result:
     #                 )
     #                 st.plotly_chart(fig, use_container_width=True)
     
+    # with tab_graph:
+    #     if result.get("waiting_for_user"):
+    #         st.info("Graph will be available after the query is completed.")
+
+    #     elif result.get("error"):
+    #         st.error(result.get("error"))
+
+    #     elif df.empty:
+    #         st.info("No data available for graph.")
+
+    #     else:
+    #         st.markdown("### Graph View")
+
+    #         # -----------------------------
+    #         # Convert numeric-looking columns
+    #         # -----------------------------
+    #         chart_df = df.copy()
+
+    #         for col in chart_df.columns:
+    #             cleaned = (
+    #                 chart_df[col]
+    #                 .astype(str)
+    #                 .str.replace(",", "", regex=False)
+    #                 .str.replace("%", "", regex=False)
+    #                 .str.strip()
+    #             )
+
+    #             converted = pd.to_numeric(cleaned, errors="coerce")
+
+    #             # Convert only if most values are numeric
+    #             if converted.notna().sum() >= max(1, len(chart_df) * 0.7):
+    #                 chart_df[col] = converted
+
+    #         numeric_cols = chart_df.select_dtypes(include=["number"]).columns.tolist()
+    #         non_numeric_cols = [
+    #             col for col in chart_df.columns
+    #             if col not in numeric_cols
+    #         ]
+
+    #         if not numeric_cols:
+    #             st.warning("No numeric column found for chart.")
+    #             st.write("Detected column types:")
+    #             st.write(chart_df.dtypes)
+    #             st.dataframe(chart_df.head(), use_container_width=True)
+
+    #         else:
+    #             # -----------------------------
+    #             # Dynamic default X axis
+    #             # -----------------------------
+    #             preferred_x_names = [
+    #                 "name", "customername", "customer_name", "outlet",
+    #                 "outletname", "repname", "rep_name", "repcode",
+    #                 "productname", "product_name", "route", "brand",
+    #                 "category", "type", "date"
+    #             ]
+
+    #             x_default = None
+
+    #             for preferred in preferred_x_names:
+    #                 for col in non_numeric_cols:
+    #                     normalized = col.lower().replace(" ", "").replace("_", "")
+    #                     if normalized == preferred.replace("_", ""):
+    #                         x_default = col
+    #                         break
+    #                 if x_default:
+    #                     break
+
+    #             if not x_default:
+    #                 x_default = non_numeric_cols[0] if non_numeric_cols else chart_df.columns[0]
+
+    #             # -----------------------------
+    #             # Dynamic default Y metric
+    #             # -----------------------------
+    #             preferred_y_terms = [
+    #                 "percentage", "percent", "pct", "achievement",
+    #                 "sales", "target", "value", "amount", "qty",
+    #                 "quantity", "volume", "count", "calls", "visits"
+    #             ]
+
+    #             y_default = None
+
+    #             for term in preferred_y_terms:
+    #                 for col in numeric_cols:
+    #                     if term in col.lower():
+    #                         y_default = col
+    #                         break
+    #                 if y_default:
+    #                     break
+
+    #             if not y_default:
+    #                 y_default = numeric_cols[0]
+
+    #             # -----------------------------
+    #             # Dynamic color/group column
+    #             # -----------------------------
+    #             possible_group_cols = []
+
+    #             for col in non_numeric_cols:
+    #                 unique_count = chart_df[col].nunique(dropna=True)
+
+    #                 # Good grouping column: not too many unique values
+    #                 if 1 < unique_count <= 10 and col != x_default:
+    #                     possible_group_cols.append(col)
+
+    #             # -----------------------------
+    #             # Controls
+    #             # -----------------------------
+    #             col_a, col_b, col_c = st.columns(3)
+
+    #             with col_a:
+    #                 x_col = st.selectbox(
+    #                     "X Axis / Label",
+    #                     options=chart_df.columns.tolist(),
+    #                     index=chart_df.columns.tolist().index(x_default),
+    #                     key="graph_x_col"
+    #                 )
+
+    #             with col_b:
+    #                 y_col = st.selectbox(
+    #                     "Y Axis / Metric",
+    #                     options=numeric_cols,
+    #                     index=numeric_cols.index(y_default),
+    #                     key="graph_y_col"
+    #                 )
+
+    #             with col_c:
+    #                 chart_type = st.selectbox(
+    #                     "Chart Type",
+    #                     options=["Auto", "Bar", "Horizontal Bar", "Line", "Pie", "Scatter"],
+    #                     key="chart_type"
+    #                 )
+
+    #             color_col = None
+
+    #             if possible_group_cols:
+    #                 color_options = ["None"] + possible_group_cols
+    #                 selected_color = st.selectbox(
+    #                     "Group / Color By",
+    #                     options=color_options,
+    #                     key="graph_color_col"
+    #                 )
+
+    #                 if selected_color != "None":
+    #                     color_col = selected_color
+
+    #                     selected_groups = st.multiselect(
+    #                         f"Filter {color_col}",
+    #                         options=sorted(chart_df[color_col].dropna().unique()),
+    #                         default=sorted(chart_df[color_col].dropna().unique())
+    #                     )
+
+    #                     chart_df = chart_df[chart_df[color_col].isin(selected_groups)]
+
+    #             # -----------------------------
+    #             # Top N control
+    #             # -----------------------------
+    #             if len(chart_df) > 1:
+    #                 max_n = min(100, len(chart_df))
+    #                 top_n = st.slider(
+    #                     "Rows to show",
+    #                     min_value=1,
+    #                     max_value=max_n,
+    #                     value=min(20, max_n),
+    #                     step=1
+    #                 )
+    #             else:
+    #                 top_n = len(chart_df)
+
+    #             # Sort by selected metric
+    #             chart_df = chart_df.sort_values(by=y_col, ascending=False).head(top_n)
+
+    #             # -----------------------------
+    #             # Auto chart type
+    #             # -----------------------------
+    #             final_chart_type = chart_type
+
+    #             if chart_type == "Auto":
+    #                 if len(chart_df) <= 8 and chart_df[x_col].nunique() <= 8:
+    #                     final_chart_type = "Bar"
+    #                 elif len(chart_df) > 15:
+    #                     final_chart_type = "Horizontal Bar"
+    #                 else:
+    #                     final_chart_type = "Bar"
+
+    #             # -----------------------------
+    #             # Render chart
+    #             # -----------------------------
+    #             title = f"{y_col} by {x_col}"
+
+    #             if final_chart_type == "Bar":
+    #                 fig = px.bar(
+    #                     chart_df,
+    #                     x=x_col,
+    #                     y=y_col,
+    #                     color=color_col,
+    #                     text=y_col,
+    #                     title=title
+    #                 )
+    #                 fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+    #                 fig.update_layout(xaxis_tickangle=-45)
+    #                 st.plotly_chart(fig, use_container_width=True)
+
+    #             elif final_chart_type == "Horizontal Bar":
+    #                 fig = px.bar(
+    #                     chart_df.sort_values(by=y_col, ascending=True),
+    #                     x=y_col,
+    #                     y=x_col,
+    #                     color=color_col,
+    #                     text=y_col,
+    #                     orientation="h",
+    #                     title=title
+    #                 )
+    #                 fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+    #                 st.plotly_chart(fig, use_container_width=True)
+
+    #             elif final_chart_type == "Line":
+    #                 fig = px.line(
+    #                     chart_df,
+    #                     x=x_col,
+    #                     y=y_col,
+    #                     color=color_col,
+    #                     markers=True,
+    #                     title=title
+    #                 )
+    #                 fig.update_layout(xaxis_tickangle=-45)
+    #                 st.plotly_chart(fig, use_container_width=True)
+
+    #             elif final_chart_type == "Pie":
+    #                 fig = px.pie(
+    #                     chart_df,
+    #                     names=x_col,
+    #                     values=y_col,
+    #                     color=color_col,
+    #                     title=f"{y_col} share by {x_col}"
+    #                 )
+    #                 st.plotly_chart(fig, use_container_width=True)
+
+    #             elif final_chart_type == "Scatter":
+    #                 fig = px.scatter(
+    #                     chart_df,
+    #                     x=x_col,
+    #                     y=y_col,
+    #                     color=color_col,
+    #                     size=y_col if y_col in numeric_cols else None,
+    #                     title=title
+    #                 )
+    #                 st.plotly_chart(fig, use_container_width=True)
+
+    #             st.markdown("### Chart Data")
+    #             st.dataframe(chart_df, use_container_width=True)
+
+    #             with st.expander("Detected Columns"):
+    #                 st.write({
+    #                     "numeric_columns": numeric_cols,
+    #                     "non_numeric_columns": non_numeric_cols,
+    #                     "default_x": x_default,
+    #                     "default_y": y_default,
+    #                     "group_columns": possible_group_cols
+    #                 })
+    
+    # with tab_graph:
+    #     if result.get("waiting_for_user"):
+    #         st.info("Graph will be available after the query is completed.")
+
+    #     elif result.get("error"):
+    #         st.error(result.get("error"))
+
+    #     elif df.empty:
+    #         st.info("No data available for graph.")
+
+    #     else:
+    #         st.markdown("### Graph View")
+
+    #         config = result.get("visualization_config")
+
+    #         if config:
+    #             st.markdown("#### Recommended Chart")
+    #             render_chart_from_config(df, config)
+
+    #             with st.expander("Visualization Config"):
+    #                 st.json(config)
+
+    #         else:
+    #             st.info("No visualization_config found. Showing manual chart builder.")
+
+    #             numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    #             label_cols = [c for c in df.columns if c not in numeric_cols]
+
+    #             if not numeric_cols or not label_cols:
+    #                 st.warning("No suitable columns found for chart.")
+    #                 st.write(df.dtypes)
+    #             else:
+    #                 x_col = st.selectbox("X Axis", label_cols)
+    #                 y_col = st.selectbox("Y Axis", numeric_cols)
+
+    #                 fig = px.bar(
+    #                     df.sort_values(by=y_col, ascending=False),
+    #                     x=x_col,
+    #                     y=y_col,
+    #                     text=y_col,
+    #                     title=f"{y_col} by {x_col}"
+    #                 )
+    #                 fig.update_traces(texttemplate="%{text:.2f}", textposition="outside")
+    #                 fig.update_layout(xaxis_tickangle=-45)
+
+    #                 st.plotly_chart(fig, use_container_width=True)
+
+    #         st.markdown("### Chart Data")
+    #         st.dataframe(df, use_container_width=True)
+    
     with tab_graph:
         if result.get("waiting_for_user"):
             st.info("Graph will be available after the query is completed.")
@@ -1134,9 +1548,8 @@ if result:
         else:
             st.markdown("### Graph View")
 
-            # -----------------------------
-            # Convert numeric-looking columns
-            # -----------------------------
+            graph_key = f"{st.session_state.session_id}_{st.session_state.query_count}"
+
             chart_df = df.copy()
 
             for col in chart_df.columns:
@@ -1150,15 +1563,11 @@ if result:
 
                 converted = pd.to_numeric(cleaned, errors="coerce")
 
-                # Convert only if most values are numeric
                 if converted.notna().sum() >= max(1, len(chart_df) * 0.7):
                     chart_df[col] = converted
 
             numeric_cols = chart_df.select_dtypes(include=["number"]).columns.tolist()
-            non_numeric_cols = [
-                col for col in chart_df.columns
-                if col not in numeric_cols
-            ]
+            non_numeric_cols = [col for col in chart_df.columns if col not in numeric_cols]
 
             if not numeric_cols:
                 st.warning("No numeric column found for chart.")
@@ -1167,9 +1576,6 @@ if result:
                 st.dataframe(chart_df.head(), use_container_width=True)
 
             else:
-                # -----------------------------
-                # Dynamic default X axis
-                # -----------------------------
                 preferred_x_names = [
                     "name", "customername", "customer_name", "outlet",
                     "outletname", "repname", "rep_name", "repcode",
@@ -1191,9 +1597,6 @@ if result:
                 if not x_default:
                     x_default = non_numeric_cols[0] if non_numeric_cols else chart_df.columns[0]
 
-                # -----------------------------
-                # Dynamic default Y metric
-                # -----------------------------
                 preferred_y_terms = [
                     "percentage", "percent", "pct", "achievement",
                     "sales", "target", "value", "amount", "qty",
@@ -1213,21 +1616,13 @@ if result:
                 if not y_default:
                     y_default = numeric_cols[0]
 
-                # -----------------------------
-                # Dynamic color/group column
-                # -----------------------------
                 possible_group_cols = []
 
                 for col in non_numeric_cols:
                     unique_count = chart_df[col].nunique(dropna=True)
-
-                    # Good grouping column: not too many unique values
                     if 1 < unique_count <= 10 and col != x_default:
                         possible_group_cols.append(col)
 
-                # -----------------------------
-                # Controls
-                # -----------------------------
                 col_a, col_b, col_c = st.columns(3)
 
                 with col_a:
@@ -1235,7 +1630,7 @@ if result:
                         "X Axis / Label",
                         options=chart_df.columns.tolist(),
                         index=chart_df.columns.tolist().index(x_default),
-                        key="graph_x_col"
+                        key=f"graph_x_col_{graph_key}"
                     )
 
                 with col_b:
@@ -1243,14 +1638,14 @@ if result:
                         "Y Axis / Metric",
                         options=numeric_cols,
                         index=numeric_cols.index(y_default),
-                        key="graph_y_col"
+                        key=f"graph_y_col_{graph_key}"
                     )
 
                 with col_c:
                     chart_type = st.selectbox(
                         "Chart Type",
                         options=["Auto", "Bar", "Horizontal Bar", "Line", "Pie", "Scatter"],
-                        key="chart_type"
+                        key=f"chart_type_{graph_key}"
                     )
 
                 color_col = None
@@ -1260,7 +1655,7 @@ if result:
                     selected_color = st.selectbox(
                         "Group / Color By",
                         options=color_options,
-                        key="graph_color_col"
+                        key=f"graph_color_col_{graph_key}"
                     )
 
                     if selected_color != "None":
@@ -1269,14 +1664,12 @@ if result:
                         selected_groups = st.multiselect(
                             f"Filter {color_col}",
                             options=sorted(chart_df[color_col].dropna().unique()),
-                            default=sorted(chart_df[color_col].dropna().unique())
+                            default=sorted(chart_df[color_col].dropna().unique()),
+                            key=f"graph_group_filter_{graph_key}_{color_col}"
                         )
 
                         chart_df = chart_df[chart_df[color_col].isin(selected_groups)]
 
-                # -----------------------------
-                # Top N control
-                # -----------------------------
                 if len(chart_df) > 1:
                     max_n = min(100, len(chart_df))
                     top_n = st.slider(
@@ -1284,17 +1677,14 @@ if result:
                         min_value=1,
                         max_value=max_n,
                         value=min(20, max_n),
-                        step=1
+                        step=1,
+                        key=f"graph_top_n_{graph_key}"
                     )
                 else:
                     top_n = len(chart_df)
 
-                # Sort by selected metric
                 chart_df = chart_df.sort_values(by=y_col, ascending=False).head(top_n)
 
-                # -----------------------------
-                # Auto chart type
-                # -----------------------------
                 final_chart_type = chart_type
 
                 if chart_type == "Auto":
@@ -1305,9 +1695,6 @@ if result:
                     else:
                         final_chart_type = "Bar"
 
-                # -----------------------------
-                # Render chart
-                # -----------------------------
                 title = f"{y_col} by {x_col}"
 
                 if final_chart_type == "Bar":
@@ -1385,7 +1772,8 @@ if result:
     # SQL TAB
     # -----------------------------
     with tab_sql:
-        if show_sql and result.get("sql_query"):
+        # if show_sql and result.get("sql_query"):
+        if result.get("sql_query"):
             st.code(result["sql_query"], language="sql")
 
             st.download_button(
@@ -1401,7 +1789,8 @@ if result:
     # PLAN TAB
     # -----------------------------
     with tab_plan:
-        if show_plan and result.get("plan"):
+        # if show_plan and result.get("plan"):
+        if result.get("plan"):
             st.text(result["plan"])
         else:
             st.info("No plan available.")
@@ -1409,25 +1798,28 @@ if result:
     # -----------------------------
     # DEBUG TAB
     # -----------------------------
-    with tab_debug:
-        debug_summary = {
-            "session_id": result.get("session_id"),
-            "waiting_for_user": result.get("waiting_for_user"),
-            "question_to_user": result.get("question_to_user"),
-            "gap_type": result.get("gap_type"),
-            "gap_reason": result.get("gap_reason"),
-            "confidence": result.get("confidence"),
-            "relevant_tables": result.get("relevant_tables"),
-            "iterations": result.get("iterations"),
-            "execution_time_ms": result.get("execution_time_ms"),
-            "total_latency_ms": result.get("total_latency_ms"),
-            "cache_hit": result.get("cache_hit")
-        }
+    # with tab_debug:
+    #     debug_summary = {
+    #         "session_id": result.get("session_id"),
+    #         "waiting_for_user": result.get("waiting_for_user"),
+    #         "question_to_user": result.get("question_to_user"),
+    #         "gap_type": result.get("gap_type"),
+    #         "gap_reason": result.get("gap_reason"),
+    #         "confidence": result.get("confidence"),
+    #         "relevant_tables": result.get("relevant_tables"),
+    #         "iterations": result.get("iterations"),
+    #         "execution_time_ms": result.get("execution_time_ms"),
+    #         "total_latency_ms": result.get("total_latency_ms"),
+    #         "cache_hit": result.get("cache_hit"),
+    #         "result_summary": result.get("result_summary"),
+    #         "table_title": result.get("table_title"),
+    #         "visualization_config": result.get("visualization_config"),
+    #     }
 
-        if show_debug:
-            st.json(result)
-        else:
-            st.json(debug_summary)
+    #     if show_debug:
+    #         st.json(result)
+    #     else:
+    #         st.json(debug_summary)
 
 
 # =============================

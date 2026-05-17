@@ -72,3 +72,7 @@ def route_after_gap_detection(state: AgentState) -> Literal["clarify", "planner"
         return "clarify"
     return "planner"
 
+def route_after_executor(state):
+    if state.get("error"):
+        return "reflect"
+    return "result_formatter"

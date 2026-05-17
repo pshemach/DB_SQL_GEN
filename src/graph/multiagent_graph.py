@@ -20,14 +20,16 @@ from ..agents import (
     reflector_node,
     knowledge_gap_detector_node,
     clarification_node,
-    conversation_router_node
+    conversation_router_node,
+    result_formatter_node
 )
 
 from .conditional_methods import (
     add_start_time,
     should_continue,
     route_after_conversation_router,
-    route_after_gap_detection
+    route_after_gap_detection,
+    route_after_executor
     )
 from .nodes import (
     memory_loader_node,
@@ -100,6 +102,8 @@ def build_graph() -> StateGraph:
     workflow.add_node("generator", generator_node)
     workflow.add_node("executor", executor_node)    # Execute and validate
     workflow.add_node("reflector", reflector_node)  # Fix errors if any
+    workflow.add_node("result_formatter", result_formatter_node)
+    
     workflow.add_node("cache_result", cache_result_node)  # Store successful result
     
     workflow.add_node("save_memory", save_memory_node)
@@ -140,16 +144,29 @@ def build_graph() -> StateGraph:
     workflow.add_edge("schema_retriever", "generator")
     workflow.add_edge("generator", "executor")
     
+    workflow.add_edge("executor", "result_formatter")
+    
     # After execution, decide: success (cache), error (reflect), or give up (end)
+    # workflow.add_conditional_edges(
+    #     "executor", 
+    #     should_continue,
+    #     {
+    #         "end": "save_memory",
+    #         "cache_success": "cache_result",
+    #         "reflect": "reflector"
+    #     }
+    # )
+    
     workflow.add_conditional_edges(
-        "executor", 
-        should_continue,
+        "executor",
+        route_after_executor,
         {
-            "end": "save_memory",
-            "cache_success": "cache_result",
-            "reflect": "reflector"
+            "reflect": "reflector",
+            "result_formatter": "result_formatter"
         }
-    )
+        )
+    
+    workflow.add_edge("result_formatter", "cache_result")
     
     workflow.add_edge("cache_result", "save_memory")
     # After reflection, retry execution
