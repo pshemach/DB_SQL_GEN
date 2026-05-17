@@ -25,21 +25,16 @@ definitions:
       For distributor-level or primary target, use target Type = 0.
       Target records must overlap the requested period using StartDate and EndDate.
 
-  monthly_sales_target_vs_current_achievement:
+  target_vs_achievement:
     keywords:
       - target vs achievement
-      - monthly sales target vs current achievement
       - sales target vs achievement
-      - target balance
-      - balance needed
+      - target vs achievement percentage
     definition: |
       Monthly Sales Target vs Current Achievement compares the selected rep's current month target against actual achievement.
       Target is the sum of rep-level target values for the current month.
       Current Achievement is net sales for the current month.
-      Balance Needed is Target minus Current Achievement.
-      Current Run Rate is Current Achievement divided by elapsed days in the month.
-      Required Run Rate is Balance Needed divided by remaining days in the month.
-      If the remaining days are zero, avoid division by zero.
+      need percentage as achievement over target.
 
   required_sales_to_achieve_target:
     keywords:
