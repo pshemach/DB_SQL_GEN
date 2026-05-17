@@ -1,4 +1,5 @@
 from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from ..config import settings
 from ..graph.graph_state import AgentState
@@ -33,11 +34,17 @@ Rules:
 
 class IntentSwitchAgent:
     def __init__(self):
-        self.llm = ChatOpenAI(
-            model=settings.openai_model_fast,
-            api_key=settings.openai_api_key,
-            temperature=0
+        # self.llm = ChatOpenAI(
+        #     model=settings.openai_model_fast,
+        #     api_key=settings.openai_api_key,
+        #     temperature=0
+        # )
+        
+        self.llm = ChatAnthropic(
+            model=settings.anthropic_model_fast,
+            api_key=settings.anthropic_api_key
         )
+
 
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", INTENT_SWITCH_PROMPT),
