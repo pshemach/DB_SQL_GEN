@@ -72,7 +72,29 @@ def route_after_gap_detection(state: AgentState) -> Literal["clarify", "planner"
         return "clarify"
     return "planner"
 
-def route_after_executor(state):
-    if state.get("error"):
-        return "reflect"
-    return "result_formatter"
+def route_after_executor(state: AgentState) -> Literal["reflect", "result_formatter", "save_memory"]:
+    """
+    Route after SQL execution.
+
+    Flow:
+    - success => result_formatter
+    - first error => reflector
+    - error after one retry => save_memory/end
+    """
+
+    # Success
+    if state.get("error") is None:
+        return "result_formatter"
+
+    # Stop after one retry attempt
+    if state.get("iterations", 0) >= 1:
+        logger.warning("SQL still failed after one retry. Stopping workflow.")
+        return "save_memory"
+
+    # If executor says not retryable
+    if not state.get("should_retry", True):
+        logger.warning("SQL error is not retryable. Stopping workflow.")
+        return "save_memory"
+
+    # First failure: allow one reflection
+    return "reflect"

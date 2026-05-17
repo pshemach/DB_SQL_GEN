@@ -144,7 +144,7 @@ def build_graph() -> StateGraph:
     workflow.add_edge("schema_retriever", "generator")
     workflow.add_edge("generator", "executor")
     
-    workflow.add_edge("executor", "result_formatter")
+    # workflow.add_edge("executor", "result_formatter")
     
     # After execution, decide: success (cache), error (reflect), or give up (end)
     # workflow.add_conditional_edges(
@@ -157,14 +157,23 @@ def build_graph() -> StateGraph:
     #     }
     # )
     
+    # workflow.add_conditional_edges(
+    #     "executor",
+    #     route_after_executor,
+    #     {
+    #         "reflect": "reflector",
+    #         "result_formatter": "result_formatter"
+    #     }
+    #     )
     workflow.add_conditional_edges(
-        "executor",
-        route_after_executor,
-        {
-            "reflect": "reflector",
-            "result_formatter": "result_formatter"
-        }
-        )
+    "executor",
+    route_after_executor,
+    {
+        "reflect": "reflector",
+        "result_formatter": "result_formatter",
+        "save_memory": "save_memory"
+    }
+)
     
     workflow.add_edge("result_formatter", "cache_result")
     
