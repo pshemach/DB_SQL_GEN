@@ -451,6 +451,157 @@ def render_pivot_table(df: pd.DataFrame, key_prefix: str = "pivot"):
 
     except Exception as e:
         st.error(f"Failed to create pivot table: {e}")
+        
+def render_dynamic_graph(df: pd.DataFrame, key_prefix: str):
+    chart_df = prepare_chart_dataframe(df)
+
+    numeric_cols = get_chart_numeric_columns(chart_df)
+    non_numeric_cols = [col for col in chart_df.columns if col not in numeric_cols]
+
+    if not numeric_cols:
+        st.warning("No numeric column found for chart.")
+        st.write(chart_df.dtypes)
+        return
+
+    x_default = non_numeric_cols[0] if non_numeric_cols else chart_df.columns[0]
+    y_default = numeric_cols[0]
+
+    col_a, col_b, col_c = st.columns(3)
+
+    with col_a:
+        x_col = st.selectbox(
+            "X Axis",
+            options=chart_df.columns.tolist(),
+            index=chart_df.columns.tolist().index(x_default),
+            key=f"{key_prefix}_x"
+        )
+
+    with col_b:
+        y_col = st.selectbox(
+            "Y Axis",
+            options=numeric_cols,
+            index=numeric_cols.index(y_default),
+            key=f"{key_prefix}_y"
+        )
+
+    with col_c:
+        chart_type = st.selectbox(
+            "Chart Type",
+            options=["Bar", "Horizontal Bar", "Line", "Pie", "Scatter"],
+            key=f"{key_prefix}_type"
+        )
+
+    chart_df = chart_df.dropna(subset=[x_col, y_col])
+
+    if chart_df.empty:
+        st.warning("No rows available for selected chart columns.")
+        return
+
+    row_count = len(chart_df)
+
+    if row_count == 1:
+        top_n = 1
+    else:
+        top_n = st.slider(
+            "Rows to show",
+            min_value=1,
+            max_value=min(100, row_count),
+            value=min(20, row_count),
+            step=1,
+            key=f"{key_prefix}_topn"
+        )
+
+    chart_df = chart_df.sort_values(by=y_col, ascending=False).head(top_n)
+
+    if chart_type == "Horizontal Bar":
+        fig = px.bar(
+            chart_df.sort_values(by=y_col, ascending=True),
+            x=y_col,
+            y=x_col,
+            orientation="h",
+            text=y_col,
+            title=f"{y_col} by {x_col}"
+        )
+
+    elif chart_type == "Line":
+        fig = px.line(
+            chart_df,
+            x=x_col,
+            y=y_col,
+            markers=True,
+            title=f"{y_col} by {x_col}"
+        )
+
+    elif chart_type == "Pie":
+        fig = px.pie(
+            chart_df,
+            names=x_col,
+            values=y_col,
+            title=f"{y_col} share by {x_col}"
+        )
+
+    elif chart_type == "Scatter":
+        fig = px.scatter(
+            chart_df,
+            x=x_col,
+            y=y_col,
+            size=y_col,
+            title=f"{y_col} by {x_col}"
+        )
+
+    else:
+        fig = px.bar(
+            chart_df,
+            x=x_col,
+            y=y_col,
+            text=y_col,
+            title=f"{y_col} by {x_col}"
+        )
+        fig.update_layout(xaxis_tickangle=-45)
+
+    st.plotly_chart(fig, use_container_width=True)
+        
+def render_agent_output_inline(result: dict, key_prefix: str):
+    df = result_to_dataframe(result)
+
+    if result.get("waiting_for_user"):
+        st.info(result.get("question_to_user"))
+        return
+
+    if result.get("error"):
+        st.error(result.get("error"))
+        return
+
+    if result.get("result_summary"):
+        st.success(result["result_summary"])
+
+    if not df.empty:
+        with st.expander("📊 Result Table", expanded=True):
+            st.dataframe(df, use_container_width=True)
+
+            csv = df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="⬇️ Download CSV",
+                data=csv,
+                file_name="query_result.csv",
+                mime="text/csv",
+                key=f"{key_prefix}_csv"
+            )
+
+    if result.get("sql_query"):
+        with st.expander("SQL", expanded=False):
+            st.code(result["sql_query"], language="sql")
+
+    if result.get("plan"):
+        with st.expander("Plan", expanded=False):
+            st.text(result["plan"])
+
+    if not df.empty:
+        with st.expander("📈 Graph", expanded=False):
+            render_dynamic_graph(
+                df=df,
+                key_prefix=f"{key_prefix}_graph"
+            )
 
 # =============================
 # SIDEBAR
@@ -608,7 +759,15 @@ if result:
             st.markdown(f"### {table_title}")
 
             if not df.empty:
+                st.markdown("### Raw Result Table")
                 st.dataframe(df, use_container_width=True)
+                
+                st.markdown("---")
+                with st.expander("📊 Create Pivot Table", expanded=False):
+                    render_pivot_table(
+                        df,
+                        key_prefix=f"pivot_{st.session_state.session_id}_{st.session_state.query_count}"
+                    )
 
                 csv = df.to_csv(index=False).encode("utf-8")
                 st.download_button(
@@ -923,29 +1082,3 @@ if result:
             st.text(result["plan"])
         else:
             st.info("No plan available.")
-
-    # -----------------------------
-    # DEBUG TAB
-    # -----------------------------
-    # with tab_debug:
-    #     debug_summary = {
-    #         "session_id": result.get("session_id"),
-    #         "waiting_for_user": result.get("waiting_for_user"),
-    #         "question_to_user": result.get("question_to_user"),
-    #         "gap_type": result.get("gap_type"),
-    #         "gap_reason": result.get("gap_reason"),
-    #         "confidence": result.get("confidence"),
-    #         "relevant_tables": result.get("relevant_tables"),
-    #         "iterations": result.get("iterations"),
-    #         "execution_time_ms": result.get("execution_time_ms"),
-    #         "total_latency_ms": result.get("total_latency_ms"),
-    #         "cache_hit": result.get("cache_hit"),
-    #         "result_summary": result.get("result_summary"),
-    #         "table_title": result.get("table_title"),
-    #         "visualization_config": result.get("visualization_config"),
-    #     }
-
-    #     if show_debug:
-    #         st.json(result)
-    #     else:
-    #         st.json(debug_summary)
