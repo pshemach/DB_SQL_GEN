@@ -94,24 +94,15 @@ class CriticAgent:
             }
     
     def reflect_and_fix(self, state: AgentState) -> dict:
-        """
-        Analyze error and generate corrected SQL.
-        
-        Args:
-            state: Current agent state with error information
-            
-        Returns:
-            Updated state with corrected SQL
-        """
         logger.info("CRITIC: Reflecting on error and fixing SQL")
         
         iterations = state.get("iterations", 0)
         
-        # Check if we've exceeded max iterations
         if iterations >= settings.max_iterations:
             logger.error(f"Max iterations ({settings.max_iterations}) reached")
             return {
                 "should_retry": False,
+                "iterations": iterations,  # ← ADD THIS
                 "error": f"Failed to generate valid SQL after {settings.max_iterations} attempts"
             }
         
@@ -132,8 +123,8 @@ class CriticAgent:
                 "error": error
             })
             
-            # Clean the fixed SQL
-            from agents.generator import SQLGeneratorAgent
+            # ✅ CHANGE 1: fix the import path
+            from ..agents.generator import SQLGeneratorAgent
             generator = SQLGeneratorAgent()
             fixed_sql = generator._clean_sql(response.content)
             
@@ -150,6 +141,7 @@ class CriticAgent:
             logger.error(f"Reflection error: {e}")
             return {
                 "error": f"Failed to correct SQL: {str(e)}",
+                "iterations": iterations + 1,  # ✅ CHANGE 2: increment even on crash
                 "should_retry": False
             }
     
