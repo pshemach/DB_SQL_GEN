@@ -4,6 +4,23 @@ from typing import List, Dict, Any, Optional
 from ..config import settings
 from .business_knowledge_retriever import business_knowledge_retriever
 
+class LiteralString(str):
+    pass
+
+
+def literal_str_representer(dumper, data):
+    return dumper.represent_scalar(
+        "tag:yaml.org,2002:str",
+        data,
+        style="|"
+    )
+
+
+class CustomYamlDumper(yaml.SafeDumper):
+    pass
+
+
+CustomYamlDumper.add_representer(LiteralString, literal_str_representer)
 
 class BusinessKnowledgeStore:
     def __init__(self, yaml_path: str = None):
@@ -28,18 +45,18 @@ class BusinessKnowledgeStore:
         self.definitions = self._load()
     
     def _save(self, data: Dict[str, Any]):
+        data = {
+            "definitions": self._format_definitions_for_yaml()
+        }
         with open(self.yaml_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(
+            yaml.dump(
                 data,
                 f,
+                Dumper=CustomYamlDumper,
                 allow_unicode=True,
                 sort_keys=False,
                 default_flow_style=False,
-                explicit_end=False,
-                explicit_start=False,
-                width=120,  # Prevents unnecessary line breaks
-                indent=2,   # Consistent indentation
-                default_style=None  # Preserve custom representer style
+                width=1000
             )
             
     def save_definitions(self):
@@ -115,27 +132,36 @@ class BusinessKnowledgeStore:
         return matches
 
     def add_definition(self, name: str, keywords: List[str], definition: str):
-        key = name.lower().replace(" ", "_")
+        key = self.normalize_key(name)
 
         self.definitions[key] = {
             "keywords": keywords,
-            "definition": definition
+            "definition": definition.strip()
         }
 
-        with open(self.yaml_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(
-                {"definitions": self.definitions},
-                f,
-                allow_unicode=True,
-                sort_keys=False
-            )
-        
-        # Sync to vector store
+        self.save_definitions()
+        self.reload()
+
         self.retriever.add_business_definition(
             name=key,
             keywords=keywords,
             definition=definition
-            )
+        )
+
+        return key
+        
+    def _format_definitions_for_yaml(self):
+        formatted = {}
+
+        for key, value in self.definitions.items():
+            definition = value.get("definition", "")
+
+            formatted[key] = {
+                "keywords": value.get("keywords", []),
+                "definition": LiteralString(definition.strip())
+            }
+
+        return formatted
             
     @staticmethod
     def normalize_key(value: str) -> str:
