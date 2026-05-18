@@ -20,8 +20,8 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("💬 Text-to-SQL Agent")
-st.caption("Conversational BI assistant powered by LangGraph")
+st.title("SFA SmartAnalyst")
+st.caption("Your AI-Powered Sales Intelligence Assistant")
 
 # =============================
 # RAW YAML PREVIEW
