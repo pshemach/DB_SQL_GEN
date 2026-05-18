@@ -60,7 +60,7 @@ class QueryRequest(BaseModel):
     session_id: Optional[str] = Field(default=None, description="Conversation/session ID")
 
     use_cache: bool = Field(default=True, description="Whether to use semantic cache")
-    max_iterations: int = Field(default=3, description="Max correction attempts")
+    max_iterations: int = Field(default=2, description="Max correction attempts")
 
 
 class QueryResponse(BaseModel):
@@ -117,7 +117,7 @@ class QueryResponse(BaseModel):
     # =============================
     result_summary: Optional[str] = None
     table_title: Optional[str] = None
-    visualization_config: Optional[Dict[str, Any]] = None
+    # visualization_config: Optional[Dict[str, Any]] = None
 
     # =============================
     # RUNTIME
@@ -125,6 +125,11 @@ class QueryResponse(BaseModel):
     total_latency_ms: Optional[float] = None
     iterations: int = 0
     cache_hit: bool = False
+    
+    # chart_json: Optional[Dict[str, Any]] = None
+    # chart_image_base64: Optional[str] = None
+    
+    visualizations: Optional[List[Dict[str, Any]]] = None
 
 
 class ExampleRequest(BaseModel):

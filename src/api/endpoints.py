@@ -342,7 +342,9 @@ async def query_database(request: QueryRequest):
             # result interpretation / visualization
             result_summary=result.get("result_summary"),
             table_title=result.get("table_title"),
-            visualization_config=result.get("visualization_config"),
+            # visualization_config=result.get("visualization_config"),
+            
+            visualizations=result.get("visualizations"),
 
             # runtime
             total_latency_ms=result.get("total_latency_ms"),
@@ -350,7 +352,10 @@ async def query_database(request: QueryRequest):
             cache_hit=result.get("cache_hit", False),
 
             # optional debug
-            messages=result.get("messages")
+            messages=result.get("messages"),
+            
+            # chart_json=result.get("chart_json"),
+            # chart_image_base64=result.get("chart_image_base64"),
         )
 
     except Exception as e:

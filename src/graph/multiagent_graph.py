@@ -241,7 +241,12 @@ def run_agent(question: str) -> dict:
         "should_retry": True,
         "messages": [],
         "start_time": None,
-        "cache_hit": False
+        "cache_hit": False,
+        "result_summary": None,
+        "table_title": None,
+        "visualization_config": None,
+        "chart_json": None,
+        "chart_image_base64": None,
     }
     
     try:

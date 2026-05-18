@@ -123,7 +123,6 @@ class CriticAgent:
                 "error": error
             })
             
-            # ✅ CHANGE 1: fix the import path
             from ..agents.generator import SQLGeneratorAgent
             generator = SQLGeneratorAgent()
             fixed_sql = generator._clean_sql(response.content)
