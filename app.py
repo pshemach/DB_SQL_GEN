@@ -27,21 +27,21 @@ st.caption("Your AI-Powered Sales Intelligence Assistant")
 # RAW YAML PREVIEW
 # =============================
 
-with st.expander("🧾 Raw Knowledge Preview"):
-    try:
-        import yaml
+# with st.expander("🧾 Raw Knowledge Preview"):
+#     try:
+#         import yaml
 
-        yaml_text = yaml.safe_dump(
-            {"definitions": business_knowledge_store.list_definitions()},
-            allow_unicode=True,
-            sort_keys=False,
-            default_flow_style=False
-        )
+#         yaml_text = yaml.safe_dump(
+#             {"definitions": business_knowledge_store.list_definitions()},
+#             allow_unicode=True,
+#             sort_keys=False,
+#             default_flow_style=False
+#         )
 
-        st.code(yaml_text, language="yaml")
+#         st.code(yaml_text, language="yaml")
 
-    except Exception as e:
-        st.error(f"Failed to show YAML preview: {e}")
+#     except Exception as e:
+#         st.error(f"Failed to show YAML preview: {e}")
         
 # =============================
 # KNOWLEDGE BASE EDITOR
