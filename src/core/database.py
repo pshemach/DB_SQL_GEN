@@ -79,6 +79,11 @@ class DatabaseManager:
         """
         try:
             columns = self.inspector.get_columns(table_name)
+            # Serialize SQLAlchemy column types to string representation for msgpack/JSON serializability
+            for col in columns:
+                if "type" in col:
+                    col["type"] = str(col["type"])
+                    
             pk = self.inspector.get_pk_constraint(table_name)
             fks = self.inspector.get_foreign_keys(table_name)
             indexes = self.inspector.get_indexes(table_name)
@@ -106,7 +111,7 @@ class DatabaseManager:
         """
         try:
             # Use sqlglot to parse and validate
-            parsed = sqlglot.parse_one(sql)
+            parsed = sqlglot.parse_one(sql, read="mysql")
             if parsed:
                 return True, None
             return False, "Failed to parse SQL"

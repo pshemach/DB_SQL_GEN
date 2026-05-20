@@ -7,6 +7,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 from ..core import db_manager
+from ..core.security import SQLSecurityGuard
 from ..graph.graph_state import AgentState
 from ..config import settings
 from ..prompt import REFLECTION_PROMPT
@@ -54,7 +55,7 @@ class CriticAgent:
             }
         
         try:
-            # Execute the query
+            # Execute the query directly without security guardrails as requested
             result, error, exec_time = db_manager.execute_query(
                 sql_query,
                 timeout=settings.query_timeout_seconds
@@ -77,8 +78,11 @@ class CriticAgent:
                 logger.info(f"Query executed successfully in {exec_time:.2f}ms")
                 result_preview = self._format_result_preview(result)
                 
+                # Serialize query results to primitive-safe dicts for msgpack checkpointing safety
+                serialized_result = self._serialize_result(result)
+                
                 return {
-                    "query_result": result,
+                    "query_result": serialized_result,
                     "result_preview": result_preview,
                     "execution_time_ms": exec_time,
                     "error": None,
@@ -92,6 +96,42 @@ class CriticAgent:
                 "error_type": "runtime",
                 "should_retry": True
             }
+
+    def _serialize_result(self, result) -> list:
+        """
+        Converts raw database Row objects, datetimes, and Decimals into msgpack-friendly primitives.
+        """
+        import datetime
+        from decimal import Decimal
+
+        if not result:
+            return []
+
+        def serialize_val(val):
+            if isinstance(val, (datetime.date, datetime.datetime)):
+                return val.isoformat()
+            elif isinstance(val, Decimal):
+                return float(val)
+            elif isinstance(val, dict):
+                return {k: serialize_val(v) for k, v in val.items()}
+            elif isinstance(val, (list, tuple)):
+                return [serialize_val(v) for v in val]
+            return val
+
+        serialized = []
+        for row in result:
+            if hasattr(row, "_mapping"):
+                row_dict = dict(row._mapping)
+            elif isinstance(row, dict):
+                row_dict = row
+            else:
+                try:
+                    row_dict = list(row)
+                except Exception:
+                    row_dict = row
+            
+            serialized.append(serialize_val(row_dict))
+        return serialized
     
     def reflect_and_fix(self, state: AgentState) -> dict:
         logger.info("CRITIC: Reflecting on error and fixing SQL")

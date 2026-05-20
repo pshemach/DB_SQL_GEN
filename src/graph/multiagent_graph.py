@@ -5,6 +5,7 @@ Implements the DRGC (Decomposition-Retrieval-Generation-Correction) framework.
 
 from typing import Literal
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 from loguru import logger
 import time
 
@@ -193,8 +194,15 @@ def compile_graph():
         Compiled graph ready for execution
     """
     workflow = build_graph()
-    app = workflow.compile()
-    logger.info("Graph compiled and ready")
+    
+    # In enterprise production, replace this with PostgresSaver(conn_pool)
+    checkpointer = MemorySaver()
+    
+    app = workflow.compile(
+        checkpointer=checkpointer,
+        interrupt_before=["clarifier"]  # Native interruption to halt and ask the user for KPI/param clarifications
+    )
+    logger.info("Graph compiled successfully with native checkpointer & interrupts enabled.")
     return app
 
 # Create global graph instance

@@ -2,15 +2,16 @@
 Schema Linker Agent (Selector): Identifies relevant tables and columns.
 """
 
-from typing import List
+from typing import List, Dict
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
-from ..core import  db_manager
+from ..core import db_manager
 from ..graph.graph_state import AgentState
 from ..config import settings
 from ..prompt import TABLE_SELECTION_TABLE, COLUMN_SELECTION_TABLE
+from ..tools.schema_vector_store import schema_vector_store
 
 class SchemaLinkerAgent:
     """
@@ -28,40 +29,40 @@ class SchemaLinkerAgent:
             api_key=settings.anthropic_api_key
         )
         self.table_selection_prompt = ChatPromptTemplate.from_messages([
-                ("system", TABLE_SELECTION_TABLE),
-                 ("human","{question}")
-                 ])
+            ("system", TABLE_SELECTION_TABLE),
+            ("human", "Question: {question}\nCandidate Tables: {candidate_tables}")
+        ])
         
         self.column_selection_prompt = ChatPromptTemplate.from_messages([
             ("system", COLUMN_SELECTION_TABLE)
         ])
-    def select_tables(self, question: str, plan: str, all_tables: List[str]) -> List[str]:
+        
+    def select_tables(self, question: str, plan: str, candidate_tables: List[str]) -> List[str]:
         """
-        Select relevant tables using LLM reasoning.
+        Select relevant tables using LLM reasoning from pruned candidate list.
         
         Args:
             question: User's question
             plan: Logical plan
-            all_tables: All available table names
+            candidate_tables: List of pre-filtered candidate table names
             
         Returns:
             List of relevant table names
         """
-        
         try:
             chain = self.table_selection_prompt | self.llm
             response = chain.invoke({
                 "question": question,
                 "plan": plan,
-                # "all_tables": ", ".join(all_tables)
+                "candidate_tables": ", ".join(candidate_tables)
             })
             
             # Parse comma-separated table names
             selected = [t.strip() for t in response.content.split(",")]
-            # Filter out any invalid table names
-            selected = [t for t in selected if t in all_tables]
+            # Filter out any table names not in the candidates list
+            selected = [t for t in selected if t in candidate_tables]
             
-            logger.info(f"Selected {len(selected)} tables from {len(all_tables)} available")
+            logger.info(f"SchemaLinker: Selected {len(selected)} tables from {len(candidate_tables)} vector candidates.")
             return selected
             
         except Exception as e:
@@ -72,7 +73,9 @@ class SchemaLinkerAgent:
             
     def retrieve_schema(self, state: AgentState) -> dict:
         """
-        Retrieve and prune schema information to only relevant tables.
+        Retrieve and prune schema information using a 2-stage retriever:
+        Stage 1: Vector search for candidates
+        Stage 2: LLM pruning of candidates and key validation
         
         Args:
             state: Current agent state
@@ -80,28 +83,38 @@ class SchemaLinkerAgent:
         Returns:
             Updated state with schema context
         """
-        logger.info("SCHEMA LINKER: Retrieving relevant tables and schema")
+        logger.info("SCHEMA LINKER: Retrieving relevant tables and schema using Vector candidates")
         
         question = state["question"]
         plan = state.get("plan", "")
         
         try:
-            # Step 1: Get all available tables
-            all_tables = db_manager.get_all_table_names()
-            logger.info(f"Database has {len(all_tables)} tables")
+            # Stage 1: Vector similarity candidate retrieval
+            # Merge question and plan to capture both the vocabulary and structural intent
+            query_context = f"{question} {plan}" if plan else question
+            candidate_tables = schema_vector_store.retrieve_candidate_tables(query_context, k=15)
+            logger.info(f"SchemaLinker Stage 1: Found {len(candidate_tables)} candidate tables from VectorDB.")
             
-            # Step 2: Select relevant tables using LLM
+            # Stage 2: Select relevant tables from vector candidates using LLM
             if plan:
-                selected_tables = self.select_tables(question, plan, all_tables)
+                selected_tables = self.select_tables(question, plan, candidate_tables)
             else:
-                # Fallback: use all using tables if no plan available
-                selected_tables = ['sales_flat', "sales_targets", 'sales_hierarchy_nodes','external_parties', 
-                                   'products', 'planned_routes', 'route_customer_assignments']
+                # Fallback: use core subset present in candidates
+                core_fallback = ['sales_flat', "sales_targets", 'sales_hierarchy_nodes', 'external_parties', 
+                                 'products', 'planned_routes', 'route_customer_assignments']
+                selected_tables = [t for t in core_fallback if t in candidate_tables]
+                if not selected_tables:
+                    selected_tables = ['sales_flat', 'sales_targets', 'sales_hierarchy_nodes']
             
-            # Step 3: Retrieve DDL schema for selected tables
+            # Enforce Mandatory Rules: If sales_targets is selected, sales_hierarchy_nodes MUST be selected.
+            if "sales_targets" in selected_tables and "sales_hierarchy_nodes" not in selected_tables:
+                selected_tables.append("sales_hierarchy_nodes")
+                logger.info("SchemaLinker: Appended mandatory bridge 'sales_hierarchy_nodes'.")
+            
+            # Retrieve DDL schema for selected tables
             schema_context = db_manager.get_schema_for_tables(selected_tables)
             
-            # Step 4: Get metadata (keys, indexes, etc.)
+            # Get metadata (keys, indexes, etc.)
             schema_metadata = {}
             for table in selected_tables:
                 metadata = db_manager.get_table_metadata(table)

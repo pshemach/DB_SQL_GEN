@@ -24,7 +24,7 @@ def memory_loader_node(state: dict) -> dict:
     
     
 def clarification_resolver_node(state: dict) -> dict:
-    previous_state = state["previous_state"]
+    previous_state = state.get("previous_state") or state
     user_answer = state["question"]
     session_id = state["session_id"]
 
