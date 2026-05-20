@@ -47,6 +47,16 @@ class CriticAgent:
         logger.info("CRITIC: Executing and validating SQL query")
         
         sql_query = state.get("sql_query")
+        allowed_rep_codes = state.get("allowed_rep_codes") or []
+        
+        if not allowed_rep_codes:
+            return {
+                "error": "Access denied. No allowed rep codes were provided.",
+                "error_type": "access_denied",
+                "access_denied": True,
+                "should_retry": False
+            }
+        
         if not sql_query:
             return {
                 "error": "No SQL query to execute",
@@ -55,8 +65,9 @@ class CriticAgent:
         
         try:
             # Execute the query
-            result, error, exec_time = db_manager.execute_query(
+            result, error, exec_time = db_manager.allowed_execute_query(
                 sql_query,
+                allowed_rep_codes=allowed_rep_codes,
                 timeout=settings.query_timeout_seconds
             )
             

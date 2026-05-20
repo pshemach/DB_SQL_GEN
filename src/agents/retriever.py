@@ -61,6 +61,9 @@ class SchemaLinkerAgent:
             # Filter out any invalid table names
             selected = [t for t in selected if t in all_tables]
             
+            if "sales_hierarchy_nodes" not in selected:
+                selected.append("sales_hierarchy_nodes")
+                
             logger.info(f"Selected {len(selected)} tables from {len(all_tables)} available")
             return selected
             

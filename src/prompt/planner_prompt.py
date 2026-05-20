@@ -44,8 +44,7 @@ Conversation Memory:
 
 Critically keep in mind
 ────────────────────────────────
-sales always refers to net sales, unless specifically told not to consider returns.
-If user ask about rep and rep detail not mention in the question then use rep MATREP001
+sales always refers to net sales, unless specifically told in question not to consider returns.
 
 BUSINESS DEFINITIONS
 ────────────────────────────────

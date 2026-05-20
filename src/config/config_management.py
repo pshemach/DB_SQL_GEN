@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     enable_self_correction: bool = Field(default=True, env="ENABLE_SELF_CORRECTION")
     enable_dynamic_few_shot: bool = Field(default=True, env="ENABLE_DYNAMIC_FEW_SHOT")
     few_shot_examples_count: int = Field(default=3, env="FEW_SHOT_EXAMPLES_COUNT")
-    query_timeout_seconds: int = Field(default=30, env="QUERY_TIMEOUT_SECONDS")
+    query_timeout_seconds: int = Field(default=60, env="QUERY_TIMEOUT_SECONDS")
 
     # LangSmith
     langchain_tracing_v2: bool  = Field(default=False, env="LANGCHAIN_TRACING_V2")

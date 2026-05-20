@@ -28,7 +28,12 @@ _setup_langsmith()
     run_type= "chain",                    # shows as a chain in the UI
     tags    = ["text-to-sql", "openai", "anthropic"],
 )
-async def run_agent_async(question: str, session_id: str | None = None) -> dict:
+async def run_agent_async(
+    question: str,
+    session_id: str | None = None,
+    allowed_rep_codes: list[str] | None = None,
+    user_role: str | None = None
+) -> dict:
     
     session_id = chat_memory.get_or_create_session(session_id)
 
@@ -36,6 +41,12 @@ async def run_agent_async(question: str, session_id: str | None = None) -> dict:
         "session_id": session_id,
         "question": question,
         "original_question": question,
+        
+        "allowed_rep_codes": allowed_rep_codes or [],
+        "user_role": user_role,
+        "security_filter_sql": None,
+        "access_denied": False,
+        "access_denied_reason": None,
 
         "previous_state": None,
         "messages": [],

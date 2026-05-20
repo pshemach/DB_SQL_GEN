@@ -11,6 +11,7 @@ from loguru import logger
 from ..config import settings
 from pathlib import Path
 import re
+import time 
 
 class DatabaseManager:
     """Manages database connections and operations."""
@@ -124,7 +125,6 @@ class DatabaseManager:
         Returns:
             Tuple of (result, error_message, execution_time_ms)
         """
-        import time
         
         timeout = timeout or settings.query_timeout_seconds
         start = time.time()
@@ -157,7 +157,51 @@ class DatabaseManager:
             execution_time = (time.time() - start) * 1000
             logger.error(f"Unexpected error executing query: {e}")
             return None, str(e), execution_time
-    
+        
+    def allowed_execute_query(self, sql: str, allowed_rep_codes: List[str], timeout: Optional[int] = None) -> tuple[Any, Optional[str], Optional[float]]:
+        """
+        Execute query with allowed rep codes filtering.
+        Binds @AllowedNodes variable that SQL can use with FIND_IN_SET().
+        """
+        timeout = timeout or settings.query_timeout_seconds
+        start = time.time()
+        
+        try:
+            # Validate syntax
+            is_valid, syntax_error = self.validate_sql_syntax(sql)
+            if not is_valid:
+                return None, f"Syntax Error: {syntax_error}", None
+            
+            allowed_nodes = ",".join(allowed_rep_codes)
+            
+            # Execute query with allowed_nodes parameter
+            with self.engine.connect() as conn:
+                # Set the user variable for the connection session
+                conn.execute(text("SET @AllowedNodes = :allowed_nodes"), {"allowed_nodes": allowed_nodes})
+                
+                # Now execute the actual query
+                result = conn.execute(text(sql))
+                
+                # Fetch results for SELECT queries
+                if result.returns_rows:
+                    rows = result.fetchall()
+                    execution_time = (time.time() - start) * 1000
+                    logger.info(f"Query executed: {len(rows)} rows in {execution_time:.2f}ms")
+                    return rows, None, execution_time
+                else:
+                    execution_time = (time.time() - start) * 1000
+                    return f"Query executed successfully. Rows affected: {result.rowcount}", None, execution_time
+                        
+        except SQLAlchemyError as e:
+            execution_time = (time.time() - start) * 1000
+            error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+            logger.error(f"SQL execution error: {error_msg}")
+            return None, error_msg, execution_time
+        except Exception as e:
+            execution_time = (time.time() - start) * 1000
+            logger.error(f"Unexpected error executing query: {e}")
+            return None, str(e), execution_time
+        
     def close(self):
         """Close database connections."""
         self.engine.dispose()

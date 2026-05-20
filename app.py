@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from loguru import logger
+from typing import Optional
 
 from src.graph import run_agent_async
 from src.core.database import db_manager
@@ -170,11 +171,20 @@ if "selected_kpi" not in st.session_state:
 # HELPERS
 # =============================
 
-def run_async_agent(question: str, session_id: str):
+def run_async_agent(
+    question: str,
+    session_id: str,
+    user_role: Optional[str] = None,
+    allowed_rep_codes: Optional[list] = None,
+    user_id: Optional[str] = None
+):
+    """Execute query with user context for access control and logging."""
     return asyncio.run(
         run_agent_async(
             question=question,
-            session_id=session_id
+            session_id=session_id,
+            user_role=user_role,
+            allowed_rep_codes=allowed_rep_codes
         )
     )
 
@@ -602,6 +612,76 @@ def render_agent_output_inline(result: dict, key_prefix: str):
                 df=df,
                 key_prefix=f"{key_prefix}_graph"
             )
+            
+# =============================
+# USER AUTHENTICATION
+# =============================
+
+if "user" not in st.session_state:
+    st.session_state.user = None
+    st.session_state.user_role = None
+    st.session_state.allowed_rep_codes = None
+
+# Login sidebar
+with st.sidebar:
+    st.subheader("👤 User Login")
+    
+    if st.session_state.user is None:
+        user_role = st.selectbox(
+            "User Role",
+            options=["rep", "asm", "rsm", "customer"],
+            key="login_role"
+        )
+        
+        if user_role == "rep":
+            rep_code_input = st.text_input(
+                "Rep Code (e.g., MATREP001)",
+                key="login_rep_code"
+            )
+            allowed_reps = [rep_code_input] if rep_code_input else []
+            
+        elif user_role == "asm":
+            st.info("ASM can access multiple rep codes")
+            rep_codes_text = st.text_area(
+                "Rep Codes (one per line)",
+                value="",
+                key="login_asm_codes"
+            )
+            allowed_reps = [r.strip() for r in rep_codes_text.split("\n") if r.strip()]
+            
+        elif user_role == "rsm":
+            st.info("RSM can access all rep codes")
+            allowed_reps = ["ALL"]
+            
+        else:  # customer
+            st.info("Customer has limited access")
+            allowed_reps = []
+        
+        if st.button("Login", use_container_width=True):
+            if user_role == "rep" and not rep_code_input:
+                st.error("Please enter Rep Code")
+            else:
+                st.session_state.user = f"user_{user_role}_{uuid.uuid4().hex[:8]}"
+                st.session_state.user_role = user_role
+                st.session_state.allowed_rep_codes = allowed_reps
+                st.success(f"Logged in as {user_role}")
+                st.rerun()
+    
+    else:
+        st.success(f"✅ Logged in as: **{st.session_state.user_role.upper()}**")
+        if st.session_state.allowed_rep_codes and st.session_state.allowed_rep_codes != ["ALL"]:
+            st.info(f"Rep Codes: {', '.join(st.session_state.allowed_rep_codes)}")
+        
+        if st.button("Logout", use_container_width=True):
+            st.session_state.user = None
+            st.session_state.user_role = None
+            st.session_state.allowed_rep_codes = None
+            st.rerun()
+
+# Require login to continue
+if st.session_state.user is None:
+    st.warning("⚠️ Please login first")
+    st.stop()
 
 # =============================
 # SIDEBAR
@@ -704,8 +784,10 @@ if user_question:
             try:
                 result = run_async_agent(
                     question=user_question,
-                    session_id=st.session_state.session_id
-                )
+                    session_id=st.session_state.session_id,
+                    user_role=st.session_state.user_role,             
+                    allowed_rep_codes=st.session_state.allowed_rep_codes,  
+                    user_id=st.session_state.user )                   
 
                 st.session_state.last_result = result
                 st.session_state.query_count += 1

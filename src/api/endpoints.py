@@ -302,7 +302,9 @@ async def query_database(request: QueryRequest):
     try:
         result = await run_agent_async(
             question=request.question,
-            session_id=request.session_id
+            session_id=request.session_id,
+            user_role=request.user_role,             
+            allowed_rep_codes=request.allowed_rep_codes  
         )
 
         return QueryResponse(

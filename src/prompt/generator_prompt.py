@@ -129,15 +129,15 @@ CRITICAL: JOIN RULES (Most common mistakes occur here)
    - external_parties: DIMENSION (1 row per CustomerCode)
 
 2. FACT-TO-FACT JOINS ARE DANGEROUS
-   ❌ WRONG: JOIN sales_flat to sales_targets directly
+   WRONG: JOIN sales_flat to sales_targets directly
       → Causes row multiplication (n-to-n join creates cartesian product)
-   ✅ CORRECT: Aggregate each fact table separately, then join aggregates
+   CORRECT: Aggregate each fact table separately, then join aggregates
       → Use CTEs to aggregate first, join at aggregated level
 
 3. FACT-TO-DIMENSION JOINS ARE SAFE
-   ✅ CORRECT: sales_flat JOIN sales_hierarchy_nodes ON sf.RepId = shn.Id
+   CORRECT: sales_flat JOIN sales_hierarchy_nodes ON sf.RepId = shn.Id
       → No row multiplication (many-to-one join)
-   ✅ CORRECT: sales_flat JOIN products ON sf.ProductCode = p.Code
+   CORRECT: sales_flat JOIN products ON sf.ProductCode = p.Code
       → Safe: every ProductCode matches exactly one product row
 
 4. WHICH JOINS ARE ALLOWED
@@ -153,11 +153,11 @@ CRITICAL: JOIN RULES (Most common mistakes occur here)
      Example: GROUP BY (Date, RepId) before joining
 
    NEVER DO THIS (Creates duplicate rows):
-   - ❌ SELECT sf.* FROM sales_flat sf JOIN sales_targets st ON sf.RepId = st.RepId
+   - SELECT sf.* FROM sales_flat sf JOIN sales_targets st ON sf.RepId = st.RepId
      → If a rep has 100 sales and 5 targets, result has 500 rows
    
    CORRECT VERSION:
-   - ✅ SELECT RepId, SUM(sales_flat.Amount) as sales, SUM(sales_targets.Target) as target
+   - SELECT RepId, SUM(sales_flat.Amount) as sales, SUM(sales_targets.Target) as target
        FROM (SELECT RepId, SUM(Amount) as Amount FROM sales_flat GROUP BY RepId) sf
        JOIN (SELECT RepId, SUM(Target) as Target FROM sales_targets GROUP BY RepId) st
        ON sf.RepId = st.RepId
@@ -233,6 +233,29 @@ TIME FILTERS
 Current month:
   sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
   AND sf.Date < DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)
+
+════════════════════════════════════════════════════════════════
+MANDATORY ROW-LEVEL SECURITY RULE
+════════════════════════════════════════════════════════════════
+The request provides allowed rep codes through the runtime variable @AllowedNodes.
+
+Every query that uses sales_flat must join sales_hierarchy_nodes and filter allowed reps.
+
+Required pattern:
+
+INNER JOIN sales_hierarchy_nodes AS shn ON shn.Id = sf.RepId
+
+WHERE FIND_IN_SET(shn.Code, @AllowedNodes) > 0
+
+Rules:
+1. Always use shn.Code as the RepCode.
+2. Do not use sf.RepCode for access control.
+3. Do not generate SET @AllowedNodes.
+4. Do not generate unrestricted rep-level SQL.
+5. If sales_flat appears in a CTE, apply the shn join and FIND_IN_SET filter inside that CTE.
+6. If the SQL has multiple CTEs using sales_flat, each CTE must include the security filter.
+7. If sales_targets is used, join sales_hierarchy_nodes as shn ON shn.Id = st.RepId and apply FIND_IN_SET(shn.Code, @AllowedNodes) > 0.
+8. If the user asks for all reps, still restrict results using FIND_IN_SET(shn.Code, @AllowedNodes) > 0.
 
 ════════════════════════════════════════════════════════════════
 FINAL OUTPUT RULE
