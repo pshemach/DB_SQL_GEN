@@ -1,6 +1,7 @@
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from uuid import uuid4
+from loguru import logger
 
 
 class ChatMemoryStore:
@@ -46,6 +47,28 @@ class ChatMemoryStore:
         message_type: str = "message",
         metadata: Optional[Dict[str, Any]] = None
     ):
+        """
+        Add a conversational message to the session.
+        
+        Valid message_type values:
+        - "message": Regular message
+        - "question": User question
+        - "answer": Assistant answer to user
+        - "clarification_question": Question asking user for clarification
+        - "error": Error message
+        
+        DO NOT use for technical artifacts:
+        - "sql": Use set_last_state() instead - SQL is internal and shouldn't be in conversation memory
+        - "plan": Use set_last_state() instead - Plans are internal reasoning artifacts
+        """
+        # Prevent technical artifacts from polluting conversation memory
+        if message_type in ["sql", "plan"]:
+            logger.warning(
+                f"Prevented {message_type} from being saved as conversational message. "
+                f"Store technical artifacts in last_state instead."
+            )
+            return
+        
         self.sessions[session_id]["messages"].append({
             "role": role,
             "type": message_type,
@@ -112,12 +135,22 @@ class ChatMemoryStore:
         self.sessions[session_id]["updated_at"] = datetime.utcnow().isoformat()
 
     def build_memory_context(self, session_id: str, max_messages: int = 10) -> str:
+        """
+        Build memory context for LLM reasoning.
+        Excludes technical artifacts (SQL, plan) to keep context clean.
+        """
         session = self.sessions.get(session_id)
 
         if not session:
             return ""
 
-        messages = session.get("messages", [])[-max_messages:]
+        # Filter messages: exclude technical artifacts (sql, plan)
+        all_messages = session.get("messages", [])
+        messages = [
+            msg for msg in all_messages 
+            if msg.get("type") not in ["sql", "plan"]
+        ][-max_messages:]
+        
         clarifications = session.get("clarifications", [])[-10:]
         knowledge_gaps = session.get("knowledge_gaps", [])[-10:]
 

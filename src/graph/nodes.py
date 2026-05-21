@@ -86,27 +86,42 @@ def new_question_reset_node(state: dict) -> dict:
     
 
 def save_memory_node(state: AgentState) -> dict:
+    """
+    Save conversation memory (only user questions and assistant answers).
+    
+    Technical artifacts (SQL, plan) are NOT saved as messages but stored in last_state
+    so they don't pollute the memory context used by the LLM for reasoning.
+    """
     session_id = state.get("session_id")
 
     if not session_id:
         return {}
 
+    # Determine what assistant message to save, in priority order
+    assistant_content = None
+    message_type = None
+    
     if state.get("waiting_for_user"):
+        # Save the clarification question the assistant asked
         assistant_content = state.get("question_to_user")
         message_type = "clarification_question"
-    elif state.get("final_answer"):
-        assistant_content = state.get("final_answer")
-        message_type = "answer"
-    elif state.get("sql_query"):
-        assistant_content = state.get("sql_query")
-        message_type = "sql"
-    elif state.get("plan"):
-        assistant_content = state.get("plan")
-        message_type = "plan"
-    else:
+    
+    elif state.get("error"):
+        # Save errors
         assistant_content = state.get("error")
         message_type = "error"
-
+    
+    elif state.get("result_summary"):
+        # Save result summary when query succeeds
+        assistant_content = state.get("result_summary")
+        message_type = "answer"
+    
+    elif state.get("final_answer"):
+        # Save final answers
+        assistant_content = state.get("final_answer")
+        message_type = "answer"
+    
+    # Save the assistant message if we have one
     if assistant_content:
         chat_memory.add_message(
             session_id=session_id,
@@ -114,7 +129,11 @@ def save_memory_node(state: AgentState) -> dict:
             content=assistant_content,
             message_type=message_type
         )
+    
+    # DO NOT save SQL queries, plans as messages - they are internal artifacts
+    # They are preserved in last_state for reference, but not in conversation memory
 
+    # Always save the full state for retrieval if needed
     chat_memory.set_last_state(session_id, state)
 
     return {
