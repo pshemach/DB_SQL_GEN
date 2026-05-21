@@ -127,3 +127,23 @@ class AgentState(TypedDict):
     security_filter_sql: Optional[str]
     access_denied: Optional[bool]
     access_denied_reason: Optional[str]
+    
+    
+# --- INNER SUB-GRAPH STATE ---
+class SQLSubState(TypedDict):
+    # Inputs passed from Parent
+    question: str
+    business_definitions: Optional[str]
+    
+    # Working properties (Isolated from conversation history)
+    plan: Optional[str]
+    plan_steps: Optional[List[str]]
+    relevant_tables: Optional[List[str]]
+    schema_context: Optional[str]
+    sql_query: Optional[str]
+    error: Optional[str]
+    iterations: int
+    should_retry: bool
+    
+    # Outputs to pass back to Parent
+    subgraph_output: Optional[dict]

@@ -44,21 +44,10 @@ from ..tools import (
     )
 from ..config import settings
 from ..tools.chat_memory import chat_memory
-
-def _setup_langsmith():
-    """
-    Set LangChain environment variables from settings so every
-    """
-    if not settings.langchain_tracing_v2:
-        return                           # tracing off — skip
-
-    os.environ["LANGCHAIN_TRACING_V2"]  = "true"
-    os.environ["LANGCHAIN_API_KEY"]     = settings.langchain_api_key
-    os.environ["LANGCHAIN_PROJECT"]     = settings.langchain_project
-    os.environ["LANGCHAIN_ENDPOINT"]    = settings.langchain_endpoint
+from ..utils.langsmith_utils import setup_langsmith
 
 # Call once when this module is imported
-_setup_langsmith()
+setup_langsmith()
 
 
 def build_graph() -> StateGraph:
