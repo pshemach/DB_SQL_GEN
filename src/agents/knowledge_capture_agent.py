@@ -2,6 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
+from langsmith import traceable
 
 from ..config import settings
 from ..utils.json_utils import extract_json
@@ -58,9 +59,26 @@ class KnowledgeCaptureAgent:
 
         self.chain = self.prompt | self.llm
 
-    def capture(self, previous_state: dict, user_answer: str) -> dict:
-        original_question = previous_state.get("pending_original_question") or previous_state.get("question")
-        session_id = previous_state.get("session_id")
+    def capture(self, state: dict) -> dict:
+        """
+        Capture business knowledge from clarification answer.
+        
+        Expects in state:
+        - pending_original_question: The original question from user
+        - clarification_answer: The user's answer to clarification
+        - session_id: Session identifier
+        """
+        original_question = state.get("pending_original_question") or state.get("question")
+        user_answer = state.get("clarification_answer", "")
+        session_id = state.get("session_id")
+
+        if not user_answer:
+            logger.warning("No clarification answer in state")
+            return {
+                **state,
+                "needs_clarification": False,
+                "waiting_for_user": False
+            }
 
         try:
             response = self.chain.invoke({
@@ -70,12 +88,7 @@ class KnowledgeCaptureAgent:
 
             result = extract_json(response.content)
 
-            # business_knowledge_store.add_definition(
-            #     name=result["name"],
-            #     keywords=result.get("keywords", []),
-            #     definition=result["definition"]
-            # )
-
+            # Resolve clarification in memory
             if session_id:
                 chat_memory.resolve_latest_clarification(session_id, user_answer)
                 chat_memory.resolve_latest_knowledge_gap(session_id)
@@ -89,7 +102,7 @@ User Provided Business Definition:
 """.strip()
 
             return {
-                **previous_state,
+                **state,
                 "question": combined_question,
                 "clarification_answer": user_answer,
                 "business_definitions": result["definition"],
@@ -101,10 +114,16 @@ User Provided Business Definition:
         except Exception as e:
             logger.error(f"Knowledge capture failed: {e}")
             return {
-                **previous_state,
+                **state,
                 "error": f"Knowledge capture failed: {str(e)}",
                 "should_retry": False
             }
 
 
 knowledge_capture_agent = KnowledgeCaptureAgent()
+
+
+@traceable(name="knowledge_capture_node", run_type="chain", tags=["agent", "knowledge-capture"])
+def knowledge_capture_node(state: dict) -> dict:
+    """Node wrapper for knowledge capture agent."""
+    return knowledge_capture_agent.capture(state)

@@ -9,6 +9,8 @@ from typing import Optional
 from src.graph import run_agent_async
 from src.core.database import db_manager
 from src.tools.business_knowledge_store import business_knowledge_store
+from src.tools.chat_memory import chat_memory
+from src.guardrails.pipeline import guardrail_pipeline
 
 
 # =============================
@@ -179,14 +181,46 @@ def run_async_agent(
     user_id: Optional[str] = None
 ):
     """Execute query with user context for access control and logging."""
-    return asyncio.run(
-        run_agent_async(
+    
+    async def execute_with_guardrails():
+        # === GUARDRAILS CHECK ===
+        guardrail_context = {
+            "conversation_history": [],
+            "previous_topics": [],
+            "user_role": user_role
+        }
+        
+        # Get conversation context from chat memory if session exists
+        if session_id:
+            session = chat_memory.get_session(session_id)
+            if session:
+                guardrail_context["conversation_history"] = session.get("messages", [])
+        
+        # Evaluate guardrails
+        guardrail_result = await guardrail_pipeline.evaluate(
+            question,
+            guardrail_context
+        )
+        
+        # If guardrails reject, return error
+        if not guardrail_result.get("passed", False):
+            logger.warning(f"Query rejected by guardrails: {guardrail_result.get('reason')}")
+            return {
+                "error": guardrail_result.get("reason", "Query rejected by safety checks"),
+                "error_type": "guardrail_rejection",
+                "waiting_for_user": False,
+                "session_id": session_id
+            }
+        
+        # === PROCEED TO AGENT ===
+        return await run_agent_async(
             question=question,
             session_id=session_id,
             user_role=user_role,
             allowed_rep_codes=allowed_rep_codes
         )
-    )
+    
+    return asyncio.run(execute_with_guardrails())
 
 
 def add_message(role: str, content: str, msg_type: str = "message"):

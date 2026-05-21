@@ -67,10 +67,16 @@ def route_after_conversation_router(state: dict) -> Literal[
 
     return "gap_detector"
 
-def route_after_gap_detection(state: AgentState) -> Literal["clarify", "planner"]:
+def route_after_gap_detection(state: AgentState) -> Literal["clarify", "follow_up_detector"]:
+    """
+    Route after knowledge gap detection.
+    
+    - If clarification needed: ask user
+    - Otherwise: proceed to follow-up detection
+    """
     if state.get("needs_clarification"):
         return "clarify"
-    return "planner"
+    return "follow_up_detector"
 
 def route_after_executor(state: AgentState) -> Literal["reflect", "result_formatter", "save_memory"]:
     # Success
@@ -89,3 +95,21 @@ def route_after_executor(state: AgentState) -> Literal["reflect", "result_format
 
     logger.info(f"↻ Reflecting on error (iteration {state.get('iterations', 0) + 1}/{settings.max_iterations})")
     return "reflect"
+
+
+def route_after_follow_up_detection(state: AgentState) -> Literal["planner", "transform_result"]:
+    """
+    Route based on follow-up type detection.
+    
+    - new_query: Run full planner → schema_retriever → generator → executor flow
+    - filter/transform: Apply in-memory transformation to cached result
+    - refinement/clarification: Treat as new query and run planner
+    """
+    follow_up_type = state.get("follow_up_type", "new_query")
+    
+    if follow_up_type in ["filter", "transform"]:
+        logger.info(f"→ Follow-up detected: {follow_up_type}, applying cached result transformation")
+        return "transform_result"
+    else:
+        logger.info(f"→ New query or refinement, running full planning flow ({follow_up_type})")
+        return "planner"

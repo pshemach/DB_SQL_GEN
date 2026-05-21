@@ -21,15 +21,19 @@ from ..agents import (
     knowledge_gap_detector_node,
     clarification_node,
     conversation_router_node,
-    result_formatter_node
+    result_formatter_node,
+    knowledge_capture_node
 )
+from ..agents.follow_up_detector import follow_up_detector_node
+from ..agents.result_transformer import transform_result_node
 
 from .conditional_methods import (
     add_start_time,
     should_continue,
     route_after_conversation_router,
     route_after_gap_detection,
-    route_after_executor
+    route_after_executor,
+    route_after_follow_up_detection
     )
 from .nodes import (
     memory_loader_node,
@@ -84,6 +88,10 @@ def build_graph() -> StateGraph:
     
     workflow.add_node("gap_detector", knowledge_gap_detector_node)
     workflow.add_node("clarifier", clarification_node)
+    workflow.add_node("knowledge_capture", knowledge_capture_node)
+    
+    workflow.add_node("follow_up_detector", follow_up_detector_node)
+    workflow.add_node("transform_result", transform_result_node)
     
     workflow.add_node("planner", planner_node)
     
@@ -122,12 +130,26 @@ def build_graph() -> StateGraph:
         route_after_gap_detection,
         {
             "clarify": "clarifier",
-            "planner": "planner"
+            "follow_up_detector": "follow_up_detector"
         }
     )
     
-    workflow.add_edge("clarifier", "save_memory")
-    workflow.add_edge("save_memory", END)
+    # Clarification flow: ask user → capture knowledge → re-analyze
+    workflow.add_edge("clarifier", "knowledge_capture")
+    workflow.add_edge("knowledge_capture", "gap_detector")  # Feedback loop
+    
+    # Follow-up detection routing
+    workflow.add_conditional_edges(
+        "follow_up_detector",
+        route_after_follow_up_detection,
+        {
+            "planner": "planner",
+            "transform_result": "transform_result"
+        }
+    )
+    
+    # Transform result node routes to formatter
+    workflow.add_edge("transform_result", "result_formatter")
     
     workflow.add_edge("planner", "schema_retriever")
     workflow.add_edge("schema_retriever", "generator")

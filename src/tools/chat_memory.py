@@ -181,5 +181,94 @@ class ChatMemoryStore:
 
         return "\n".join(parts)
 
+    def add_discovered_knowledge(
+        self,
+        session_id: str,
+        original_question: str,
+        clarification_question: str,
+        user_answer: str,
+        extracted_knowledge: dict
+    ):
+        """
+        Store discovered business knowledge in chat memory.
+        This knowledge is session-scoped and used to answer follow-up questions.
+        
+        Args:
+            session_id: Current session
+            original_question: "Show YTD productivity"
+            clarification_question: "How is YTD calculated?"
+            user_answer: "Sum of calls / total calls, YTD"
+            extracted_knowledge: {
+                "metric_name": "YTD Productivity Rate",
+                "formula": "SUM(productive_calls) / SUM(total_calls)",
+                "filters": ["period=YTD", "group_by=region"],
+                "confidence": 0.8
+            }
+        """
+        if session_id not in self.sessions:
+            self.get_or_create_session(session_id)
+        
+        # Mark clarification as resolved with the knowledge
+        self.resolve_latest_clarification(session_id, user_answer)
+        
+        # Store discovered knowledge
+        if "discovered_knowledge" not in self.sessions[session_id]:
+            self.sessions[session_id]["discovered_knowledge"] = []
+        
+        self.sessions[session_id]["discovered_knowledge"].append({
+            "original_question": original_question,
+            "clarification_q": clarification_question,
+            "user_answer": user_answer,
+            "extracted": extracted_knowledge,
+            "created_at": datetime.utcnow().isoformat()
+        })
+        
+        self.sessions[session_id]["updated_at"] = datetime.utcnow().isoformat()
+        logger.info(f"✓ Discovered knowledge stored: {extracted_knowledge.get('metric_name')}")
+
+    def get_discovered_knowledge(self, session_id: str) -> str:
+        """
+        Get all discovered knowledge as formatted text for LLM context.
+        
+        Returns:
+            Formatted string like:
+            "DISCOVERED IN THIS SESSION:
+             - YTD Productivity Rate: SUM(calls)/SUM(total), by region"
+        """
+        session = self.sessions.get(session_id, {})
+        knowledge_list = session.get("discovered_knowledge", [])
+        
+        if not knowledge_list:
+            return ""
+        
+        formatted = "DISCOVERED IN THIS SESSION:\n"
+        for item in knowledge_list:
+            extracted = item.get("extracted", {})
+            metric = extracted.get("metric_name", "Unknown")
+            formula = extracted.get("formula", "Unknown")
+            formatted += f"- {metric}: {formula}\n"
+        
+        return formatted
+
+    def get_session_context_for_planner(self, session_id: str) -> dict:
+        """
+        Get complete context for planner including discovered knowledge.
+        
+        Returns:
+            {
+                "conversation_history": [messages],
+                "discovered_knowledge_text": "DISCOVERED...",
+                "discovered_knowledge_list": [extracted dicts]
+            }
+        """
+        session = self.sessions.get(session_id, {})
+        
+        return {
+            "messages": session.get("messages", []),
+            "discovered_knowledge_text": self.get_discovered_knowledge(session_id),
+            "discovered_knowledge_list": session.get("discovered_knowledge", []),
+            "clarifications": session.get("clarifications", [])
+        }
+
 
 chat_memory = ChatMemoryStore()

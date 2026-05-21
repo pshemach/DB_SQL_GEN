@@ -197,11 +197,14 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+from langsmith import traceable
 
 from ..graph import run_agent_async
 from ..tools import seed_examples, semantic_cache, few_shot_retriever
+from ..tools.chat_memory import chat_memory
 from ..core import db_manager
 from ..config import settings
+from ..guardrails.pipeline import guardrail_pipeline
 
 from .data_models import (
     QueryRequest,
@@ -282,6 +285,7 @@ async def health_check():
 # MAIN QUERY ENDPOINT
 # =============================
 
+@traceable(name="text_to_sql_query", run_type="chain", tags=["api", "query-execution"])
 @app.post("/query", response_model=QueryResponse)
 async def query_database(request: QueryRequest):
     """
@@ -300,6 +304,38 @@ async def query_database(request: QueryRequest):
     logger.info(f"Session ID: {request.session_id}")
 
     try:
+        # === GUARDRAILS CHECK ===
+        # Run pre-graph validation pipeline
+        guardrail_context = {
+            "conversation_history": [],
+            "previous_topics": [],
+            "user_role": request.user_role
+        }
+        
+        # Get conversation context from chat memory if session exists
+        if request.session_id:
+            session = chat_memory.get_session(request.session_id)
+            if session:
+                guardrail_context["conversation_history"] = session.get("messages", [])
+        
+        # Evaluate guardrails
+        guardrail_result = await guardrail_pipeline.evaluate(
+            request.question,
+            guardrail_context
+        )
+        
+        # If guardrails reject, return early
+        if not guardrail_result.get("passed", False):
+            logger.warning(f"Query rejected by guardrails: {guardrail_result.get('reason')}")
+            return QueryResponse(
+                success=False,
+                error=guardrail_result.get("reason", "Query rejected by safety checks"),
+                error_type="guardrail_rejection",
+                session_id=request.session_id,
+                waiting_for_user=False
+            )
+        
+        # === PROCEED TO AGENT GRAPH ===
         result = await run_agent_async(
             question=request.question,
             session_id=request.session_id,
