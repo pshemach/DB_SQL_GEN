@@ -9,6 +9,7 @@ from typing import Any
 
 import sqlglot
 from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 
@@ -147,9 +148,13 @@ def pre_exec_critic_node(state: SQLSubState) -> dict:
     if not settings.enable_pre_exec_critic:
         return {}
 
-    llm = ChatAnthropic(
-        model=settings.anthropic_model_fast,
-        api_key=settings.anthropic_api_key,
+    # llm = ChatAnthropic(
+    #     model=settings.anthropic_model_fast,
+    #     api_key=settings.anthropic_api_key,
+    # )
+    llm = ChatOpenAI(
+        model=settings.openai_model_fast,
+        api_key=settings.openai_api_key
     )
     prompt = ChatPromptTemplate.from_messages([
         ("system", "Review this SQL for safety and correctness. Reply APPROVE or REJECT: reason."),
