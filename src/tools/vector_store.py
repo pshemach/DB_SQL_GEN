@@ -4,8 +4,8 @@ Vector store for dynamic few-shot example retrieval.
 
 from typing import List, Dict
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
+from .embeddings import get_embeddings
 from loguru import logger
 from ..config import settings
 import os
@@ -21,10 +21,7 @@ class FewShotRetriever:
             logger.info("Dynamic few-shot learning disabled")
             return
         
-        # Initialize embeddings with HuggingFace model (local)
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=settings.embedding_model
-        )
+        self.embeddings = get_embeddings()
         
         # Initialize vector store
         persist_directory = settings.vector_store_path

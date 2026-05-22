@@ -8,9 +8,9 @@ import hashlib
 import json
 from diskcache import Cache
 from loguru import logger
-from langchain_huggingface import HuggingFaceEmbeddings
 import numpy as np
 from ..config import settings
+from .embeddings import get_embeddings
 
 class SemanticCache:
     """
@@ -29,22 +29,35 @@ class SemanticCache:
         # Initialize disk cache
         self.cache = Cache("./cache/semantic_cache")
         
-        # Initialize embedding model with HuggingFace (local)
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=settings.embedding_model
+        self.embeddings = get_embeddings()
+
+        logger.info(
+            f"Semantic cache initialized (OpenAI {settings.embedding_model}, "
+            f"threshold: {self.threshold})"
         )
         
-        logger.info(f"Semantic cache initialized (threshold: {self.threshold})")
-        
-    def _compute_embedding(self, text: str) -> np.ndarray:
+    def _compute_embedding(self, text: str) -> np.ndarray | None:
         """Compute embedding vector for text."""
         try:
             embedding = self.embeddings.embed_query(text)
-            return np.array(embedding)
+            return np.array(embedding, dtype=np.float64)
         except Exception as e:
             logger.error(f"Embedding error: {e}")
             return None
-            
+
+    @staticmethod
+    def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+        """Cosine similarity in [0, 1] for normalized embedding vectors."""
+        a = np.asarray(a, dtype=np.float64).flatten()
+        b = np.asarray(b, dtype=np.float64).flatten()
+        if a.shape != b.shape or a.size == 0:
+            return 0.0
+        norm_a = np.linalg.norm(a)
+        norm_b = np.linalg.norm(b)
+        if norm_a == 0.0 or norm_b == 0.0:
+            return 0.0
+        return float(np.dot(a, b) / (norm_a * norm_b))
+
     def get(self, question: str) -> Optional[dict]:
         """
         Retrieve cached result for a question.

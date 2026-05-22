@@ -1,7 +1,7 @@
 from pathlib import Path
 import yaml
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
+from .embeddings import get_embeddings
 from langchain_chroma import Chroma
 import os
 from typing import List, Dict
@@ -16,10 +16,7 @@ class BusinessKnowledgeRetriever:
         self.yaml_path = yaml_path or settings.business_doc_yaml_path
         self.business_info_dict = self._load_yaml()
         
-        # Initialize embeddings with HuggingFace model (local)
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=settings.embedding_model
-        )
+        self.embeddings = get_embeddings()
         
         # Initialize vector store
         persist_directory = settings.vector_store_path

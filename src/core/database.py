@@ -84,13 +84,15 @@ class DatabaseManager:
             fks = self.inspector.get_foreign_keys(table_name)
             indexes = self.inspector.get_indexes(table_name)
             
-            return {
+            from ..utils.serialization import sanitize_state
+
+            return sanitize_state({
                 "name": table_name,
                 "columns": columns,
                 "primary_key": pk,
                 "foreign_keys": fks,
-                "indexes": indexes
-            }
+                "indexes": indexes,
+            })
         except Exception as e:
             logger.error(f"Error getting metadata for {table_name}: {e}")
             return {}

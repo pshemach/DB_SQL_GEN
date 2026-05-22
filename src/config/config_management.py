@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     chroma_collection_name: str = Field(default="sql_examples", env="SQL_EXAMPLES_COLLECTION_NAME")
     business_definition_collection_name: str = Field(default="business_definition", env="")
     
-    # Embedding Configuration (using sentence-transformers for local embeddings)
-    embedding_model: str = Field(default="all-MiniLM-L6-v2", env="EMBEDDING_MODEL")
+    # Embedding Configuration (OpenAI)
+    embedding_model: str = Field(default="text-embedding-3-small", env="EMBEDDING_MODEL")
     
     # Caching Configuration (Disk Cache)
     enable_semantic_cache: bool = Field(default=True, env="ENABLE_SEMANTIC_CACHE")
@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     enable_dynamic_few_shot: bool = Field(default=True, env="ENABLE_DYNAMIC_FEW_SHOT")
     few_shot_examples_count: int = Field(default=3, env="FEW_SHOT_EXAMPLES_COUNT")
     query_timeout_seconds: int = Field(default=60, env="QUERY_TIMEOUT_SECONDS")
+
+    # Production graph feature flags
+    enable_production_graph: bool = Field(default=True, env="ENABLE_PRODUCTION_GRAPH")
+    enable_clarify: bool = Field(default=True, env="ENABLE_CLARIFY")
+    enable_transform_previous: bool = Field(default=True, env="ENABLE_TRANSFORM_PREVIOUS")
+    enable_pre_exec_critic: bool = Field(default=False, env="ENABLE_PRE_EXEC_CRITIC")
+    enable_result_verifier: bool = Field(default=True, env="ENABLE_RESULT_VERIFIER")
+    graph_recursion_limit: int = Field(default=50, env="GRAPH_RECURSION_LIMIT")
+    graph_timeout_seconds: int = Field(default=120, env="GRAPH_TIMEOUT_SECONDS")
+    sql_max_rows: int = Field(default=1000, env="SQL_MAX_ROWS")
 
     # LangSmith
     langchain_tracing_v2: bool  = Field(default=False, env="LANGCHAIN_TRACING_V2")

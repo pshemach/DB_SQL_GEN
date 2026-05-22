@@ -71,6 +71,10 @@ class QueryRequest(BaseModel):
 
     use_cache: bool = Field(default=True, description="Whether to use semantic cache")
     max_iterations: int = Field(default=2, description="Max correction attempts")
+    clarification_answer: Optional[str] = Field(
+        default=None,
+        description="User answer when resuming from a clarification interrupt (HITL)",
+    )
 
 
 class QueryResponse(BaseModel):

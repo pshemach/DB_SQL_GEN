@@ -9,6 +9,7 @@ from .knowledge_capture_agent import KnowledgeCaptureAgent, knowledge_capture_no
 from .intent_switch_agent import IntentSwitchAgent, intent_switch_agent
 from .clarification_agent import ClarificationAgent, clarification_node
 from .conversation_router_agent import ConversationRouterAgent, conversation_router_node
+from .turn_router import TurnRouterAgent, turn_router_node
 from .result_formatter_agent import ResultFormatterAgent, result_formatter_node
 
 
@@ -22,5 +23,6 @@ __all__ = [
     "IntentSwitchAgent", "intent_switch_agent",
     "ClarificationAgent", "clarification_node",
      "ConversationRouterAgent", "conversation_router_node",
+     "TurnRouterAgent", "turn_router_node",
      "ResultFormatterAgent", "result_formatter_node"
 ]

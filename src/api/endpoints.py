@@ -339,8 +339,9 @@ async def query_database(request: QueryRequest):
         result = await run_agent_async(
             question=request.question,
             session_id=request.session_id,
-            user_role=request.user_role,             
-            allowed_rep_codes=request.allowed_rep_codes  
+            user_role=request.user_role,
+            allowed_rep_codes=request.allowed_rep_codes,
+            clarification_answer=request.clarification_answer,
         )
 
         return QueryResponse(
@@ -406,26 +407,11 @@ async def query_database(request: QueryRequest):
 # =============================
 
 def serialize_query_result(query_result):
-    """
-    Converts SQLAlchemy Row objects or raw rows into JSON-safe format.
-    """
-
-    if not query_result:
-        return None
+    """Delegates to shared serializer (handles DATE, Decimal, Row, etc.)."""
+    from ..utils.serialization import serialize_query_result as _serialize
 
     try:
-        serialized = []
-
-        for row in query_result:
-            if hasattr(row, "_mapping"):
-                serialized.append(dict(row._mapping))
-            elif isinstance(row, dict):
-                serialized.append(row)
-            else:
-                serialized.append(list(row))
-
-        return serialized
-
+        return _serialize(query_result)
     except Exception as e:
         logger.warning(f"Failed to serialize query result: {e}")
         return None

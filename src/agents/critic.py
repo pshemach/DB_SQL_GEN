@@ -10,6 +10,8 @@ from ..core import db_manager
 from ..graph.graph_state import AgentState
 from ..config import settings
 from ..prompt import REFLECTION_PROMPT
+from ..utils.error_taxonomy import classify_db_error, is_retryable
+from ..utils.serialization import sanitize_state, serialize_query_result
 
 
 class CriticAgent:
@@ -74,27 +76,29 @@ class CriticAgent:
             if error:
                 # Query failed - prepare for reflection
                 logger.warning(f"Query execution failed: {error}")
-                error_type = self._classify_error(error)
-                
+                error_type = classify_db_error(error)
+                retry = is_retryable(error_type, True) and settings.enable_self_correction
+
                 return {
                     "error": error,
                     "error_type": error_type,
                     "query_result": None,
                     "execution_time_ms": exec_time,
-                    "should_retry": True
+                    "should_retry": retry,
                 }
             else:
                 # Query succeeded
                 logger.info(f"Query executed successfully in {exec_time:.2f}ms")
-                result_preview = self._format_result_preview(result)
-                
-                return {
-                    "query_result": result,
+                safe_result = serialize_query_result(result)
+                result_preview = self._format_result_preview(safe_result or result)
+
+                return sanitize_state({
+                    "query_result": safe_result,
                     "result_preview": result_preview,
                     "execution_time_ms": exec_time,
                     "error": None,
-                    "should_retry": False
-                }
+                    "should_retry": False,
+                })
                 
         except Exception as e:
             logger.error(f"Execution error: {e}")
@@ -106,7 +110,11 @@ class CriticAgent:
     
     def reflect_and_fix(self, state: AgentState) -> dict:
         logger.info("CRITIC: Reflecting on error and fixing SQL")
-        
+
+        if not is_retryable(state.get("error_type"), state.get("should_retry", True)):
+            logger.warning(f"Error type {state.get('error_type')} is not retryable")
+            return {"should_retry": False}
+
         iterations = state.get("iterations", 0)
         
         if iterations >= settings.max_iterations:
@@ -154,31 +162,6 @@ class CriticAgent:
                 "iterations": iterations + 1,  # ✅ CHANGE 2: increment even on crash
                 "should_retry": False
             }
-    
-    def _classify_error(self, error_msg: str) -> str:
-        """
-        Classify error type for better handling.
-        
-        Args:
-            error_msg: Error message from database
-            
-        Returns:
-            Error category
-        """
-        error_lower = error_msg.lower()
-        
-        if "column" in error_lower and ("does not exist" in error_lower or "not found" in error_lower):
-            return "column_not_found"
-        elif "table" in error_lower and ("does not exist" in error_lower or "not found" in error_lower):
-            return "table_not_found"
-        elif "syntax" in error_lower:
-            return "syntax_error"
-        elif "ambiguous" in error_lower:
-            return "ambiguous_column"
-        elif "timeout" in error_lower:
-            return "timeout"
-        else:
-            return "runtime_error"
     
     def _format_result_preview(self, result, max_rows: int = 5) -> str:
         """
