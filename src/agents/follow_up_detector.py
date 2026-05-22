@@ -1,5 +1,6 @@
 """Follow-Up Detector Agent - Classify query type and detect cached result reusability."""
 from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from loguru import logger
 from src.tools.result_cache import result_cache
 from src.config import settings
@@ -11,7 +12,11 @@ class FollowUpDetector:
     """Detect if query is follow-up and determine if cached result can be reused."""
 
     def __init__(self):
-        self.llm = ChatAnthropic(model=settings.anthropic_model_fast)
+        self.llm = ChatOpenAI(
+            model=settings.openai_model_fast,
+            api_key=settings.openai_api_key
+        )
+        # self.llm = ChatAnthropic(model=settings.anthropic_model_fast)
 
     def detect(self, state: dict) -> dict:
         """

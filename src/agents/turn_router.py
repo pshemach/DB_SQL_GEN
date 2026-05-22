@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 
@@ -68,9 +69,14 @@ Rules:
 
 class TurnRouterAgent:
     def __init__(self):
-        self.llm = ChatAnthropic(
-            model=settings.anthropic_model_fast,
-            api_key=settings.anthropic_api_key,
+        # self.llm = ChatAnthropic(
+        #     model=settings.anthropic_model_fast,
+        #     api_key=settings.anthropic_api_key,
+        # )
+        
+        self.llm = ChatOpenAI(
+            model=settings.openai_model_fast,
+            api_key=settings.openai_api_key
         )
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", TURN_ROUTER_PROMPT),

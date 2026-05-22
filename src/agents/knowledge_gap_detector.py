@@ -12,14 +12,14 @@ from ..graph.graph_state import AgentState
 
 class KnowledgeGapDetectorAgent:
     def __init__(self):
-        # self.llm = ChatOpenAI(
-        #     model=settings.openai_model_fast,
-        #     api_key=settings.openai_api_key
-        # )  
-        self.llm = ChatAnthropic(
-            model_name=settings.anthropic_model_fast,
-            api_key=settings.anthropic_api_key
-        )
+        self.llm = ChatOpenAI(
+            model=settings.openai_model_fast,
+            api_key=settings.openai_api_key
+        )  
+        # self.llm = ChatAnthropic(
+        #     model_name=settings.anthropic_model_fast,
+        #     api_key=settings.anthropic_api_key
+        # )
         
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", KNOWLEDGE_GAP_DETECTOR_PROMPT),
