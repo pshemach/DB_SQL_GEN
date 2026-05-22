@@ -51,7 +51,7 @@ class FollowUpDetector:
 
         # Analyze if this is a follow-up
         analysis = self._analyze_query_relationship(
-            previous_question=cached.question,
+            previous_question=cached.original_question,
             current_question=current_question,
             cached_tables=cached.tables_used
         )

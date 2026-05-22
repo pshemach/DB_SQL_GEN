@@ -1,7 +1,9 @@
 import time
 from ..tools.chat_memory import chat_memory
 from ..tools import semantic_cache
+from ..tools.result_cache import result_cache
 from ..agents import knowledge_capture_agent
+from ..utils.serialization import serialize_query_result
 from .graph_state import AgentState
 
 def memory_loader_node(state: dict) -> dict:
@@ -146,18 +148,44 @@ def save_memory_node(state: AgentState) -> dict:
 def cache_result_node(state: AgentState) -> dict:
     """
     Stores successful query results in semantic cache for future use.
-    Only caches when query executed without errors.
+    Also caches the last result set per session for follow-up lookups (no re-SQL).
     """
-    # Only cache if query was successful
-    if state.get("error") is None and state.get("sql_query"):
+    if state.get("error") is not None:
+        return {}
+
+    question_key = state.get("enriched_question") or state.get("question") or ""
+
+    if state.get("sql_query") and not state.get("reused_previous_result"):
         result_to_cache = {
             "sql_query": state["sql_query"],
             "query_result": state.get("query_result"),
             "result_preview": state.get("result_preview"),
             "plan": state.get("plan"),
-            "relevant_tables": state.get("relevant_tables")
+            "relevant_tables": state.get("relevant_tables"),
         }
-        
-        semantic_cache.set(state["question"], result_to_cache)
-    
+        semantic_cache.set(question_key, result_to_cache)
+
+    # Session result cache: only after a fresh SQL run (not transform / semantic hit)
+    if state.get("reused_previous_result") or state.get("turn_action") in (
+        "transform_previous",
+        "cache_hit",
+    ):
+        return {}
+
+    session_id = state.get("session_id")
+    rows = serialize_query_result(state.get("query_result"))
+    if session_id and isinstance(rows, list) and rows:
+        tables = state.get("relevant_tables") or []
+        if isinstance(tables, str):
+            tables = [tables]
+        schema = {str(k): type(v).__name__ for k, v in rows[0].items()}
+        result_cache.cache_result(
+            session_id=session_id,
+            question=question_key,
+            sql=state.get("sql_query") or "",
+            data=rows,
+            tables=list(tables),
+            schema=schema,
+        )
+
     return {}

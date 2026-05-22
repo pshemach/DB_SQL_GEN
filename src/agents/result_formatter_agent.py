@@ -182,13 +182,7 @@ from ..utils.json_utils import extract_json
 # """
 
 RESULT_FORMATTER_PROMPT = """
-You are a BI result formatter.
-
-Your task:
-Given the user question and executed result table metadata, return:
-1. short business summary
-2. table title
-3. up to 3 suitable visualizations
+You are a BI result formatter for a field sales analytics assistant.
 
 User Question:
 {question}
@@ -196,10 +190,12 @@ User Question:
 SQL:
 {sql_query}
 
+Row count: {row_count}
+
 Columns:
 {columns}
 
-Sample Rows:
+Sample Rows (use ONLY these values in the summary — do not invent numbers):
 {sample_rows}
 
 Numeric Columns:
@@ -208,22 +204,29 @@ Numeric Columns:
 Category Columns:
 {category_columns}
 
-Rules:
-1. Return ONLY valid JSON.
-2. Do not invent numbers.
-3. Return 0 to 3 visualizations.
-4. Each visualization must use only provided columns.
-5. Prefer bar / horizontal_bar for category vs metric.
-6. Prefer line for trend/date columns.
-7. Prefer pie only for small category-share cases.
-8. Avoid duplicate graphs with the same meaning.
-9. If no suitable chart exists, return an empty visualizations array.
-10.Select chart type for meaning full business columns. 
+Data hints:
+{data_hints}
+
+Your task — return ONLY valid JSON:
+1. **summary**: 2–4 sentences that directly answer the user's question in plain business language.
+   - For a single aggregate row (e.g. one net_sales value), state the metric name and exact value from sample rows.
+   - For multiple rows, highlight the top insight (highest/lowest, total, or trend).
+   - Mention the time scope if visible in the question or SQL (e.g. "current month").
+   - Format monetary amounts with **Rs** prefix (e.g. Rs 12,345.67) — not for percentages or counts.
+   - Use thousands separators for large numbers in the summary text.
+2. **table_title**: Short business title for the table.
+3. **visualizations**: 0–3 charts using only provided column names.
+
+Chart rules:
+- Prefer bar / horizontal_bar for category vs metric.
+- Prefer line when x is a date/time column.
+- Prefer pie only for ≤8 categories showing share of one metric.
+- For a single aggregate value (one row, one metric), use bar with a simple row label on x and the metric on y, or return [] if not meaningful.
 
 JSON format:
 {{
-  "summary": "short summary",
-  "table_title": "business table title",
+  "summary": "...",
+  "table_title": "...",
   "visualizations": [
     {{
       "title": "chart title",
@@ -662,10 +665,12 @@ class ResultFormatterAgent:
         rows = state.get("query_result") or []
 
         if not rows:
+            msg = "No records found for the requested query."
             return {
-                "result_summary": "No records found for the requested query.",
+                "result_summary": msg,
+                "final_answer": msg,
                 "table_title": "Query Result",
-                "visualizations": []
+                "visualizations": [],
             }
 
         df = self._rows_to_dataframe(rows)
@@ -681,20 +686,38 @@ class ResultFormatterAgent:
         numeric_columns = self._get_numeric_columns(df)
         category_columns = [col for col in df.columns if col not in numeric_columns]
 
+        reused = bool(state.get("reused_previous_result"))
+        max_sample = 100 if reused else 25
+        sample_df = df.head(max_sample) if len(df) > max_sample else df
         sample_rows = (
-            df.head(10)
-            .where(pd.notna(df), None)
-            .to_dict(orient="records")
+            sample_df.where(pd.notna(sample_df), None).to_dict(orient="records")
         )
+        data_hints = self._build_data_hints(df, numeric_columns, category_columns)
+        fallback_summary = self._build_data_driven_summary(
+            df, state.get("question", ""), numeric_columns
+        )
+        table_title = self._table_title(state, reused)
+
+        if reused or len(df) <= 15:
+            return {
+                "result_summary": fallback_summary,
+                "final_answer": fallback_summary,
+                "table_title": table_title,
+                "visualizations": self._visualizations_for_df(
+                    df, numeric_columns, category_columns
+                ),
+            }
 
         try:
             response = self.chain.invoke({
                 "question": state.get("question", ""),
                 "sql_query": state.get("sql_query", ""),
+                "row_count": len(df),
                 "columns": list(df.columns),
                 "sample_rows": sample_rows,
                 "numeric_columns": numeric_columns,
-                "category_columns": category_columns
+                "category_columns": category_columns,
+                "data_hints": data_hints,
             })
 
             result = extract_json(response.content)
@@ -722,10 +745,13 @@ class ResultFormatterAgent:
                     category_columns=category_columns
                 )
 
+            summary = (result.get("summary") or "").strip() or fallback_summary
+
             return {
-                "result_summary": result.get("summary") or "Query executed successfully.",
-                "table_title": result.get("table_title") or "Query Result",
-                "visualizations": visualizations
+                "result_summary": summary,
+                "final_answer": summary,
+                "table_title": result.get("table_title") or table_title,
+                "visualizations": visualizations,
             }
 
         except Exception as e:
@@ -745,10 +771,184 @@ class ResultFormatterAgent:
             )
 
             return {
-                "result_summary": "Query executed successfully.",
-                "table_title": "Query Result",
-                "visualizations": visualizations
+                "result_summary": fallback_summary,
+                "final_answer": fallback_summary,
+                "table_title": table_title,
+                "visualizations": visualizations,
             }
+
+    def _table_title(self, state: dict, reused: bool) -> str:
+        q = (state.get("question") or "").strip()
+        if reused and "Follow-up:" in q:
+            line = q.split("Follow-up:")[-1].strip().split("\n")[0]
+            return (line[:80] + "…") if len(line) > 80 else line or "Follow-up results"
+        if reused:
+            return "Follow-up results"
+        return "Query results"
+
+    def _visualizations_for_df(
+        self, df: pd.DataFrame, numeric_columns: list, category_columns: list
+    ) -> list:
+        if df.empty or not numeric_columns:
+            return []
+        specs = self._fallback_visualization_specs(
+            df=df,
+            numeric_columns=numeric_columns,
+            category_columns=category_columns,
+        )
+        return self._build_visualizations(
+            df=df,
+            raw_visualizations=specs,
+            numeric_columns=numeric_columns,
+            category_columns=category_columns,
+        )
+
+    _CURRENCY_COLUMN_TERMS = (
+        "sales", "revenue", "amount", "value", "target", "in_sales",
+        "net", "gross", "price", "cost", "margin", "earning",
+    )
+    _NON_CURRENCY_COLUMN_TERMS = (
+        "percent", "pct", "percentage", "ratio", "count", "qty",
+        "quantity", "calls", "visits", "rank", "index", "id",
+    )
+
+    @staticmethod
+    def _is_currency_column(column_name: str | None) -> bool:
+        if not column_name:
+            return True
+        c = column_name.lower()
+        if any(t in c for t in ResultFormatterAgent._NON_CURRENCY_COLUMN_TERMS):
+            return False
+        return any(t in c for t in ResultFormatterAgent._CURRENCY_COLUMN_TERMS)
+
+    @staticmethod
+    def _format_number(value, column_name: str | None = None) -> str:
+        try:
+            num = float(value)
+            if abs(num) >= 1000:
+                formatted = f"{num:,.2f}".rstrip("0").rstrip(".")
+            else:
+                formatted = f"{num:.2f}".rstrip("0").rstrip(".")
+            if ResultFormatterAgent._is_currency_column(column_name):
+                symbol = settings.currency_symbol or "Rs"
+                return f"{symbol} {formatted}"
+            return formatted
+        except (TypeError, ValueError):
+            return str(value)
+
+    @staticmethod
+    def _humanize_column(name: str) -> str:
+        return name.replace("_", " ").strip().title()
+
+    def _build_data_hints(
+        self, df: pd.DataFrame, numeric_columns: list, category_columns: list
+    ) -> str:
+        symbol = settings.currency_symbol or "Rs"
+        lines = [
+            f"Total rows: {len(df)}",
+            f"Currency for monetary columns: {symbol}",
+        ]
+        if len(df) == 1 and numeric_columns:
+            for col in numeric_columns:
+                val = df[col].iloc[0]
+                if pd.notna(val):
+                    lines.append(
+                        f"Single value — {self._humanize_column(col)}: "
+                        f"{self._format_number(val, col)}"
+                    )
+        elif numeric_columns and len(df) > 1:
+            col = self._choose_best_numeric_column(numeric_columns)
+            series = df[col].dropna()
+            if not series.empty:
+                lines.append(
+                    f"{self._humanize_column(col)} — min: {self._format_number(series.min(), col)}, "
+                    f"max: {self._format_number(series.max(), col)}, "
+                    f"sum: {self._format_number(series.sum(), col)}"
+                )
+        if category_columns and len(df) > 1:
+            lines.append(f"Categories available: {', '.join(category_columns[:5])}")
+        return "\n".join(lines)
+
+    def _build_data_driven_summary(
+        self, df: pd.DataFrame, question: str, numeric_columns: list
+    ) -> str:
+        """Deterministic summary grounded in actual query results."""
+        if df.empty:
+            return (
+                "No rows match your follow-up filter on the previous result. "
+                "See the prior answer for the full customer list."
+            )
+        if not numeric_columns:
+            return f"Found **{len(df)}** matching row(s). See the table below."
+
+        q = (question or "").strip()
+        period = ""
+        if any(t in q.lower() for t in ("month", "week", "today", "year", "quarter")):
+            period = " for the requested period"
+        elif "current" in (q + " ").lower() or "this month" in q.lower():
+            period = " for the current month"
+
+        if len(df) == 1:
+            parts = []
+            for col in numeric_columns[:3]:
+                val = df[col].iloc[0]
+                if pd.notna(val):
+                    parts.append(
+                        f"**{self._humanize_column(col)}** is "
+                        f"**{self._format_number(val, col)}**"
+                    )
+            if parts:
+                return (
+                    f"Based on your data{period}, "
+                    + " and ".join(parts)
+                    + "."
+                )
+
+        if len(df) == 1 and len(df.columns) == 1:
+            col = df.columns[0]
+            val = df[col].iloc[0]
+            if pd.notna(val):
+                return (
+                    f"**{self._humanize_column(col)}**{period} is "
+                    f"**{self._format_number(val, col)}**."
+                )
+
+        primary = self._choose_best_numeric_column(numeric_columns)
+        series = df[primary].dropna()
+        if series.empty:
+            return f"Found {len(df)} row(s). No numeric values to summarize."
+
+        top_idx = series.idxmax()
+        top_row = df.loc[top_idx]
+        label_col = None
+        for c in df.columns:
+            if c != primary and c not in numeric_columns:
+                label_col = c
+                break
+
+        if len(df) == 1 and label_col is not None:
+            label = top_row.get(label_col, top_idx)
+            val = top_row[primary]
+            return (
+                f"Based on the previous result{period}, "
+                f"**{label}** has **{self._humanize_column(primary)}** of "
+                f"**{self._format_number(val, primary)}**."
+            )
+
+        if label_col is not None:
+            label = top_row.get(label_col, top_idx)
+            return (
+                f"Showing **{len(df)}** results{period}. "
+                f"Highest **{self._humanize_column(primary)}** is "
+                f"**{self._format_number(series.max(), primary)}** ({label})."
+            )
+
+        return (
+            f"Showing **{len(df)}** results{period}. "
+            f"**{self._humanize_column(primary)}** ranges from "
+            f"**{self._format_number(series.min(), primary)}** to "
+            f"**{self._format_number(series.max(), primary)}**."
+        )
 
     def _rows_to_dataframe(self, rows):
         if hasattr(rows[0], "_mapping"):
@@ -1140,11 +1340,19 @@ class ResultFormatterAgent:
             )
             fig.update_layout(xaxis_tickangle=-45)
 
-        fig.update_layout(
+        layout_kwargs = dict(
             template="plotly_white",
             height=500,
-            margin=dict(l=40, r=40, t=70, b=40)
+            margin=dict(l=40, r=40, t=70, b=40),
         )
+        symbol = settings.currency_symbol or "Rs"
+        if self._is_currency_column(y_col):
+            prefix = f"{symbol} "
+            if chart_type == "horizontal_bar":
+                layout_kwargs["xaxis"] = dict(tickprefix=prefix)
+            else:
+                layout_kwargs["yaxis"] = dict(tickprefix=prefix)
+        fig.update_layout(**layout_kwargs)
 
         return fig
 

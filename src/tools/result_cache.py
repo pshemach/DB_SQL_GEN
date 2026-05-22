@@ -23,7 +23,12 @@ class CachedQueryResult:
     columns_used: List[str]
     timestamp: str
     ttl_seconds: int = 3600  # 1 hour default
-    
+
+    @property
+    def question(self) -> str:
+        """Alias for original_question (legacy callers)."""
+        return self.original_question
+
     def is_expired(self) -> bool:
         """Check if cache entry is stale."""
         try:

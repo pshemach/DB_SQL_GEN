@@ -18,6 +18,7 @@ from ..tools import business_knowledge_store, business_knowledge_retriever
 from ..tools.result_cache import result_cache
 from ..utils.json_utils import extract_json
 from ..utils.metrics import set_router_action
+from ..utils.cached_result_ops import extract_numeric_threshold, is_ranking_question
 
 
 TURN_ROUTER_PROMPT = """You are the conversation orchestrator for a Text-to-SQL sales analytics assistant.
@@ -34,6 +35,10 @@ Retrieved business knowledge:
 {retrieved_knowledge}
 
 Previous question (if follow-up): {previous_question}
+Last result available in session (rows cached): {has_cached_result}
+Last result context:
+{last_result_context}
+
 Current question: {question}
 
 Return ONLY valid JSON:
@@ -54,9 +59,10 @@ Rules:
 3. NEVER ask the user for: time period, date range, rep code, customer, product, route, or other filters — these are handled by the system (rep scope is injected; use sensible SQL defaults for dates if unspecified, e.g. current month).
 4. If the question is clear enough to query (e.g. "net sales", "sales this month"), action MUST be run_sql even if dates/filters are not spelled out.
 5. If same session has previous result and user wants filter/sort/limit only, action is transform_previous.
-6. If off-topic (weather, jokes, unrelated), action is chitchat.
-7. If question is empty or nonsense, action is deny.
-8. Default for analytics/data questions: run_sql.
+6. If user refers to the prior table/list ("second best of that", "third in that list", "from that ranking") and last result is cached, action MUST be transform_previous (do not run_sql).
+7. If off-topic (weather, jokes, unrelated), action is chitchat.
+8. If question is empty or nonsense, action is deny.
+9. Default for analytics/data questions: run_sql.
 """
 
 
@@ -105,6 +111,10 @@ class TurnRouterAgent:
 
         retrieved_knowledge = _retrieve_business_knowledge(question)
         previous_question = _previous_question(session_id)
+        cached = result_cache.get_cached_result(session_id) if session_id else None
+        last_result_context = (
+            result_cache.get_result_context(session_id) if session_id else ""
+        )
 
         try:
             response = self.chain.invoke({
@@ -115,15 +125,25 @@ class TurnRouterAgent:
                 "memory_context": state.get("memory_context") or "",
                 "retrieved_knowledge": retrieved_knowledge,
                 "previous_question": previous_question or "",
+                "has_cached_result": "yes" if cached else "no",
+                "last_result_context": last_result_context or "(none)",
             })
             result = extract_json(response.content) or _parse_json_fallback(response.content)
         except Exception as e:
-            logger.warning(f"Turn router LLM failed: {e}, defaulting to run_sql")
-            result = {"action": "run_sql", "confidence": 0.5, "follow_up_type": "new_query"}
+            logger.warning(f"Turn router LLM failed: {e}")
+            if cached:
+                result = {
+                    "action": "transform_previous",
+                    "confidence": 0.5,
+                    "follow_up_type": "refinement",
+                }
+            else:
+                result = {"action": "run_sql", "confidence": 0.5, "follow_up_type": "new_query"}
 
         action = _normalize_action(result.get("action", "run_sql"))
         action = _apply_feature_flags(action, result)
         action, result = _apply_clarify_policy(action, result, question)
+        action = _apply_cache_follow_up_policy(action, result, cached, question)
 
         out: dict[str, Any] = {
             "turn_action": action,
@@ -183,7 +203,7 @@ def _previous_question(session_id: str | None) -> str | None:
     if not session_id:
         return None
     cached = result_cache.get_cached_result(session_id)
-    return cached.question if cached else None
+    return cached.original_question if cached else None
 
 
 def _is_clarification_answer(message: str, prev: dict) -> bool:
@@ -225,6 +245,36 @@ _PARAMETER_CLARIFY_MARKERS = (
     "specify:",
     "could you please specify",
 )
+
+
+def _apply_cache_follow_up_policy(
+    action: str, result: dict, cached: Any, question: str
+) -> str:
+    """
+    When the session already has a result set, prefer reusing it for follow-up
+    types the router labels as non-new, or when the question is clearly a
+    filter/ranking on numeric data (no phrase lists tied to one chat).
+    """
+    if not cached or not settings.enable_transform_previous:
+        return action
+    follow_up = (result.get("follow_up_type") or "new_query").strip().lower()
+    confidence = float(result.get("confidence") or 0.0)
+
+    if follow_up in ("filter", "transform", "refinement", "lookup", "clarification"):
+        if action == "run_sql":
+            logger.info(
+                f"Turn router: follow_up_type={follow_up} with cache → transform_previous"
+            )
+            return "transform_previous"
+
+    if action == "run_sql" and follow_up == "new_query" and confidence < 0.85:
+        if extract_numeric_threshold(question) or is_ranking_question(question):
+            logger.info(
+                "Turn router: numeric filter/ranking with cache → transform_previous"
+            )
+            return "transform_previous"
+
+    return action
 
 
 def _apply_clarify_policy(action: str, result: dict, question: str) -> tuple[str, dict]:

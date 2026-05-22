@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     graph_recursion_limit: int = Field(default=50, env="GRAPH_RECURSION_LIMIT")
     graph_timeout_seconds: int = Field(default=120, env="GRAPH_TIMEOUT_SECONDS")
     sql_max_rows: int = Field(default=1000, env="SQL_MAX_ROWS")
+    currency_symbol: str = Field(default="Rs", env="CURRENCY_SYMBOL")
 
     # LangSmith
     langchain_tracing_v2: bool  = Field(default=False, env="LANGCHAIN_TRACING_V2")
