@@ -105,13 +105,14 @@ class ResultCache:
         if not cached:
             return ""
         
+        sample_size = min(20, len(cached.result_data))
         return f"""
 LAST QUERY CONTEXT:
 - Question: {cached.original_question}
 - Tables: {', '.join(cached.tables_used)}
 - Columns: {', '.join(cached.columns_used)}
 - Rows returned: {len(cached.result_data)}
-- Data sample: {json.dumps(cached.result_data[:2], default=str)}
+- Data sample ({sample_size} rows): {json.dumps(cached.result_data[:sample_size], default=str)}
 """
     
     def clear_session(self, session_id: str):

@@ -31,6 +31,7 @@ from .production_conditional import (
     route_after_authz,
     route_after_cache,
     route_after_hitl,
+    route_after_transform,
     route_after_turn_router,
 )
 from .conditional_methods import add_start_time
@@ -117,7 +118,11 @@ def build_production_graph() -> StateGraph:
         {"turn_router": "turn_router", "sql_pipeline": "sql_pipeline"},
     )
 
-    workflow.add_edge("transform_result", "formatter")
+    workflow.add_conditional_edges(
+        "transform_result",
+        route_after_transform,
+        {"formatter": "formatter", "sql_pipeline": "sql_pipeline"},
+    )
     workflow.add_edge("sql_pipeline", "formatter")
     workflow.add_edge("safe_response", "save_memory")
     workflow.add_edge("formatter", "cache_result")

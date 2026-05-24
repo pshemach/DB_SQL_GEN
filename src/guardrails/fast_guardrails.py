@@ -8,6 +8,7 @@ from loguru import logger
 from langsmith import traceable
 
 from .base import BaseGuardrail, GuardrailDecision, GuardrailResult
+from .social_messages import is_social_message
 
 
 class InputValidationGuardrail(BaseGuardrail):
@@ -23,8 +24,19 @@ class InputValidationGuardrail(BaseGuardrail):
     async def evaluate(self, question: str, context: dict) -> GuardrailDecision:
         start = datetime.now()
         
+        stripped = (question or "").strip()
+
+        # Greetings / small talk (handled by agent chitchat, not analytics)
+        if is_social_message(stripped):
+            return GuardrailDecision(
+                result=GuardrailResult.PASS,
+                reason="Social message (greeting/chitchat)",
+                guardrail_name="InputValidation",
+                processing_time_ms=(datetime.now() - start).total_seconds() * 1000,
+            )
+
         # Length check
-        if not question or len(question.strip()) < self.MIN_LENGTH:
+        if not stripped or len(stripped) < self.MIN_LENGTH:
             return GuardrailDecision(
                 result=GuardrailResult.REJECT,
                 reason="Question too short",

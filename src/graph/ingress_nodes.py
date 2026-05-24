@@ -130,16 +130,28 @@ def safe_response_node(state: AgentState) -> dict:
         msg = state.get("access_denied_reason") or state.get("error") or "Access denied."
     elif state.get("turn_action") == "chitchat":
         msg = (
-            "I can help with sales and reporting questions about your data. "
-            "Please ask a specific business question."
+            "Hello! I'm your sales analytics assistant. "
+            "Ask me about net sales, customers, products, rep performance, KPIs, "
+            "or targets for the current period."
         )
     else:
         msg = state.get("error") or "Unable to process your request."
 
+    # Clear prior query artifacts so UI/history do not show last SQL table or charts
     return {
         "final_answer": msg,
         "result_summary": msg,
         "waiting_for_user": False,
+        "query_result": None,
+        "result_preview": None,
+        "visualizations": [],
+        "sql_query": None,
+        "sql_explanation": None,
+        "plan": None,
+        "plan_steps": None,
+        "table_title": None,
+        "relevant_tables": None,
+        "error": None if state.get("turn_action") == "chitchat" else state.get("error"),
     }
 
 

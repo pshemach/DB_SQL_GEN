@@ -10,11 +10,12 @@ from loguru import logger
 from typing import Optional
 
 from src.graph import run_agent_async
-from src.utils.serialization import serialize_query_result
+from src.utils.serialization import json_safe_value, serialize_query_result
 from src.core.database import db_manager
 from src.tools.business_knowledge_store import business_knowledge_store
 from src.tools.chat_memory import chat_memory
 from src.guardrails.pipeline import guardrail_pipeline
+from src.guardrails.social_messages import is_social_message
 
 
 # =============================
@@ -177,12 +178,75 @@ if "selected_kpi" not in st.session_state:
 # HELPERS
 # =============================
 
+def _has_analytics_payload(result: dict) -> bool:
+    """True when this turn actually produced query output (ignore stale turn_action)."""
+    qr = result.get("query_result")
+    if isinstance(qr, list) and len(qr) > 0:
+        return True
+    if isinstance(qr, dict) and qr:
+        return True
+    if result.get("visualizations"):
+        return True
+    if result.get("sql_query"):
+        return True
+    return False
+
+
+def is_non_analytics_turn(result: dict) -> bool:
+    """Greeting, chitchat, or deny — no table/chart/SQL from this turn."""
+    # Checkpoint can keep turn_action=chitchat from a prior hello; data wins
+    if _has_analytics_payload(result):
+        return False
+
+    if result.get("error") and not result.get("final_answer") and not result.get("result_summary"):
+        return False
+
+    action = (result.get("turn_action") or "").lower()
+    if action in ("chitchat", "deny"):
+        return True
+
+    q = (result.get("question") or "").strip()
+    if "Follow-up:" in q:
+        q = q.split("Follow-up:")[-1].strip()
+    if is_social_message(q):
+        return True
+
+    return bool(result.get("final_answer") or result.get("result_summary"))
+
+
 def prepare_result_for_ui(result: dict) -> dict:
     """Normalize agent result for Streamlit display and session storage."""
     out = dict(result)
+    if is_non_analytics_turn(out):
+        out["query_result"] = None
+        out["visualizations"] = []
+        out["sql_query"] = None
+        out["sql_explanation"] = None
+        out["plan"] = None
+        out["plan_steps"] = None
+        out["result_preview"] = None
+        out["table_title"] = None
+        return out
     if out.get("query_result") is not None:
         out["query_result"] = serialize_query_result(out["query_result"])
     return out
+
+
+def _arrow_safe_cell(value):
+    """Normalize a single cell for Streamlit / PyArrow (numpy, Decimal, SQL types)."""
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    safe = json_safe_value(value)
+    if safe is None:
+        return None
+    if isinstance(safe, (int, float, bool, str)):
+        return safe
+    return str(safe)
 
 
 def sanitize_df_for_streamlit(df: pd.DataFrame) -> pd.DataFrame:
@@ -197,30 +261,43 @@ def sanitize_df_for_streamlit(df: pd.DataFrame) -> pd.DataFrame:
         s = out[col]
         dtype_name = str(s.dtype)
 
-        if isinstance(s.dtype, pd.StringDtype) or dtype_name == "string":
-            out[col] = s.astype(object).where(s.notna(), None)
+        # pandas 2.x object columns (numpy ObjectDType) break PyArrow
+        if (
+            pd.api.types.is_object_dtype(s)
+            or "ObjectDType" in dtype_name
+            or isinstance(s.dtype, pd.StringDtype)
+            or dtype_name == "string"
+        ):
+            cleaned = s.map(_arrow_safe_cell)
+            numeric = pd.to_numeric(cleaned, errors="coerce")
+            if numeric.notna().sum() >= max(1, len(out) * 0.5):
+                out[col] = numeric
+            else:
+                out[col] = cleaned.map(
+                    lambda x: None if x is None else str(x)
+                )
             continue
 
         if pd.api.types.is_datetime64_any_dtype(s) or pd.api.types.is_timedelta64_dtype(s):
-            out[col] = s.apply(lambda x: x.isoformat() if pd.notna(x) else None)
-            continue
-
-        if pd.api.types.is_numeric_dtype(s) or pd.api.types.is_bool_dtype(s):
-            continue
-
-        if s.dtype == object:
-            out[col] = s.apply(
-                lambda x: (
-                    None
-                    if x is None or (isinstance(x, float) and pd.isna(x))
-                    else x
-                    if isinstance(x, (int, float, bool))
-                    else str(x)
-                )
+            out[col] = s.map(
+                lambda x: x.isoformat() if pd.notna(x) else None
             )
             continue
 
-        out[col] = s.astype(object).where(s.notna(), None)
+        if pd.api.types.is_bool_dtype(s):
+            out[col] = s.astype(bool)
+            continue
+
+        if pd.api.types.is_numeric_dtype(s):
+            try:
+                import numpy as np
+                if isinstance(s.dtype, np.dtype) and s.dtype.kind in ("i", "u", "f"):
+                    out[col] = pd.to_numeric(s, errors="coerce")
+            except ImportError:
+                pass
+            continue
+
+        out[col] = s.map(_arrow_safe_cell)
 
     return out
 
@@ -254,15 +331,20 @@ def run_async_agent(
             guardrail_context
         )
         
-        # If guardrails reject, return error
+        # If guardrails reject, return error (unless greeting — let agent handle chitchat)
         if not guardrail_result.get("passed", False):
-            logger.warning(f"Query rejected by guardrails: {guardrail_result.get('reason')}")
-            return {
-                "error": guardrail_result.get("reason", "Query rejected by safety checks"),
-                "error_type": "guardrail_rejection",
-                "waiting_for_user": False,
-                "session_id": session_id
-            }
+            if not is_social_message(question):
+                logger.warning(
+                    f"Query rejected by guardrails: {guardrail_result.get('reason')}"
+                )
+                return {
+                    "error": guardrail_result.get(
+                        "reason", "Query rejected by safety checks"
+                    ),
+                    "error_type": "guardrail_rejection",
+                    "waiting_for_user": False,
+                    "session_id": session_id,
+                }
         
         # === PROCEED TO AGENT ===
         return await run_agent_async(
@@ -359,11 +441,18 @@ def render_assistant_in_chat(result: dict, key_prefix: str):
     if summary:
         st.markdown(summary)
 
+    if is_non_analytics_turn(result):
+        return
+
     df = result_to_dataframe(result)
     if not df.empty:
         title = result.get("table_title") or "Results"
         with st.expander(f"📊 {title}", expanded=len(df) <= 5):
-            st.dataframe(df, width="stretch", hide_index=True)
+            try:
+                st.dataframe(df, width="stretch", hide_index=True)
+            except Exception as display_err:
+                logger.warning(f"st.dataframe failed, using string fallback: {display_err}")
+                st.dataframe(df.astype(str), width="stretch", hide_index=True)
             csv = df.to_csv(index=False).encode("utf-8")
             st.download_button(
                 label="⬇️ Download CSV",
@@ -408,16 +497,30 @@ def render_assistant_in_chat(result: dict, key_prefix: str):
 def result_to_dataframe(result: dict) -> pd.DataFrame:
     query_result = result.get("query_result")
 
-    if not query_result:
+    if query_result is None:
+        return pd.DataFrame()
+
+    if isinstance(query_result, str):
+        return pd.DataFrame()
+
+    if isinstance(query_result, dict):
+        rows = [query_result]
+    elif isinstance(query_result, list):
+        rows = query_result
+    else:
+        return pd.DataFrame()
+
+    if not rows:
         return pd.DataFrame()
 
     try:
-        if hasattr(query_result[0], "_mapping"):
-            df = pd.DataFrame([dict(row._mapping) for row in query_result])
-        elif isinstance(query_result[0], dict):
-            df = pd.DataFrame(query_result)
+        first = rows[0]
+        if hasattr(first, "_mapping"):
+            df = pd.DataFrame([dict(row._mapping) for row in rows])
+        elif isinstance(first, dict):
+            df = pd.DataFrame(rows)
         else:
-            df = pd.DataFrame(query_result)
+            return pd.DataFrame()
 
         # Dynamic numeric conversion (avoid pandas StringDtype — breaks Arrow)
         for col in df.columns:

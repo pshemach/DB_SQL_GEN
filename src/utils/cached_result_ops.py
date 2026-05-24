@@ -1,181 +1,156 @@
-"""Deterministic pandas ops on cached query rows for follow-up turns."""
+"""Execute validated transform specs on cached rows (safe pandas only)."""
 
 from __future__ import annotations
 
-import re
-from typing import Any, Literal, Optional
+from typing import Any
 
 import pandas as pd
+from loguru import logger
 
-from .follow_up_utils import extract_limit_from_question, extract_rank_from_question
+from .transform_spec_postprocess import resolve_column
 
-Op = Literal["gt", "gte", "lt", "lte", "eq"]
-
-_VALUE_COLUMN_HINTS = (
-    "netsales",
-    "net_sales",
-    "sales",
-    "revenue",
-    "amount",
-    "total",
-    "value",
-    "achievement",
-    "target",
-    "in_sales",
-)
-
-_SUPERLATIVE_MAX = re.compile(
-    r"\b(best|highest|top|maximum|max|leading|greatest)\b",
-    re.I,
-)
-_SUPERLATIVE_MIN = re.compile(
-    r"\b(worst|lowest|bottom|minimum|min|poorest|smallest)\b",
-    re.I,
-)
+_FILTER_OPS = {"gt", "gte", "lt", "lte", "eq", "ne", "contains"}
 
 
-def extract_numeric_threshold(question: str) -> Optional[tuple[Op, float]]:
-    """Parse comparisons like 'above 30000', 'greater than 1.5m'."""
-    q = (question or "").lower().replace(",", "")
-    patterns: list[tuple[str, Op]] = [
-        (r"(?:above|over|more\s+than|greater\s+than|>\s*)\s*([\d.]+)\s*([km])?", "gt"),
-        (r"(?:at\s+least|minimum\s+of|>=\s*)\s*([\d.]+)\s*([km])?", "gte"),
-        (r"(?:below|under|less\s+than|fewer\s+than|<\s*)\s*([\d.]+)\s*([km])?", "lt"),
-        (r"(?:at\s+most|maximum\s+of|<=\s*)\s*([\d.]+)\s*([km])?", "lte"),
-        (r"(?:equal\s+to|exactly)\s*([\d.]+)\s*([km])?", "eq"),
-    ]
-    for pattern, op in patterns:
-        m = re.search(pattern, q)
-        if m:
-            val = float(m.group(1))
-            suffix = (m.group(2) or "").lower()
-            if suffix == "k":
-                val *= 1000
-            elif suffix == "m":
-                val *= 1_000_000
-            return op, val
-    return None
-
-
-def is_ranking_question(question: str) -> bool:
-    q = question or ""
-    return bool(_SUPERLATIVE_MAX.search(q) or _SUPERLATIVE_MIN.search(q))
-
-
-def pick_value_column(df: pd.DataFrame, question: str = "") -> Optional[str]:
-    numeric = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
-    if not numeric:
-        for c in df.columns:
-            try:
-                pd.to_numeric(df[c].replace({",": ""}, regex=True), errors="coerce")
-                numeric.append(c)
-            except Exception:
-                pass
-    if not numeric:
-        return None
-
-    q = (question or "").lower()
-    for col in numeric:
-        key = col.lower().replace(" ", "_")
-        if any(h in key for h in _VALUE_COLUMN_HINTS) or any(
-            h in q for h in _VALUE_COLUMN_HINTS if h in key
-        ):
-            return col
-    return numeric[0]
-
-
-def pick_label_column(df: pd.DataFrame, value_col: str) -> Optional[str]:
-    for c in df.columns:
-        if c == value_col:
-            continue
-        if not pd.api.types.is_numeric_dtype(df[c]):
-            return c
-    return None
-
-
-def _coerce_numeric(df: pd.DataFrame, col: str) -> pd.Series:
-    return pd.to_numeric(
-        df[col].astype(str).str.replace(",", "", regex=False),
-        errors="coerce",
-    )
-
-
-def apply_filter(df: pd.DataFrame, col: str, op: Op, value: float) -> pd.DataFrame:
-    series = _coerce_numeric(df, col)
-    if op == "gt":
-        mask = series > value
-    elif op == "gte":
-        mask = series >= value
-    elif op == "lt":
-        mask = series < value
-    elif op == "lte":
-        mask = series <= value
-    else:
-        mask = series == value
-    return df.loc[mask.fillna(False)].copy()
-
-
-def apply_cached_follow_up(
+def execute_transform_spec(
     data: list[dict[str, Any]],
-    question: str,
+    spec: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """
-    Apply follow-up logic on the previous result set (no SQL).
-    Returns (rows, metadata about transform).
+    Apply a post-processed transform spec.
+    Returns (rows, metadata). metadata.type=needs_new_sql triggers SQL fallback.
     """
     if not data:
-        return [], {"type": "empty"}
+        return [], {"type": "empty", "spec": spec}
+
+    if spec.get("needs_new_sql") or not spec.get("can_answer_from_cache"):
+        return [], {"type": "needs_new_sql", "spec": spec}
 
     df = pd.DataFrame(data)
-    meta: dict[str, Any] = {"type": "reuse_cache"}
-    q = question or ""
+    columns = [str(c) for c in df.columns]
+    meta: dict[str, Any] = {
+        "type": spec.get("operation", "use_all"),
+        "spec": spec,
+        "steps_applied": [],
+    }
 
-    rank = extract_rank_from_question(q)
-    if rank is not None:
-        index = (len(df) - 1) if rank == -1 else (rank - 1)
-        if 0 <= index < len(df):
-            return [df.iloc[index].to_dict()], {"type": "lookup", "rank": rank}
-        return [], {"type": "lookup", "rank": rank, "error": "rank_out_of_range"}
-
-    value_col = pick_value_column(df, q)
-    if value_col is None:
-        limit = extract_limit_from_question(q)
-        if limit:
-            return df.head(limit).to_dict("records"), {"type": "limit", "limit": limit}
+    # 1) Per-group top rows (e.g. best product per rep)
+    group_cfg = spec.get("group_top_per")
+    if isinstance(group_cfg, dict):
+        df, step = _apply_group_top_per(df, group_cfg, columns)
+        if step.get("skipped"):
+            return [], {"type": "needs_new_sql", "spec": spec, "reason": step.get("reason")}
+        meta["steps_applied"].append(step)
+        meta["rows_after"] = len(df)
         return df.to_dict("records"), meta
 
-    threshold = extract_numeric_threshold(q)
-    if threshold is not None:
-        op, val = threshold
-        filtered = apply_filter(df, value_col, op, val)
-        meta = {
-            "type": "filter",
-            "column": value_col,
-            "op": op,
-            "value": val,
-            "rows_before": len(df),
-            "rows_after": len(filtered),
-        }
-        return filtered.to_dict("records"), meta
+    # 2) Filters
+    for f in spec.get("filters") or []:
+        if not isinstance(f, dict):
+            continue
+        col = f.get("column") or resolve_column(f.get("column"), columns)
+        if not col or col not in df.columns:
+            continue
+        op = (f.get("op") or "eq").lower()
+        val = f.get("value")
+        if op not in _FILTER_OPS:
+            continue
+        series = _coerce_numeric(df[col]) if op != "contains" else df[col].astype(str)
+        try:
+            if op == "gt":
+                df = df.loc[series > float(val)]
+            elif op == "gte":
+                df = df.loc[series >= float(val)]
+            elif op == "lt":
+                df = df.loc[series < float(val)]
+            elif op == "lte":
+                df = df.loc[series <= float(val)]
+            elif op == "eq":
+                df = df.loc[series == val]
+            elif op == "ne":
+                df = df.loc[series != val]
+            elif op == "contains":
+                df = df.loc[series.str.contains(str(val), case=False, na=False)]
+            meta["steps_applied"].append(f"filter:{col}{op}{val}")
+        except (TypeError, ValueError) as e:
+            logger.warning(f"Filter skipped ({col} {op} {val}): {e}")
 
-    if is_ranking_question(q):
-        series = _coerce_numeric(df, value_col)
-        df = df.copy()
-        df["_sort_val"] = series
-        df = df.dropna(subset=["_sort_val"])
-        if df.empty:
-            return [], {"type": "ranking", "error": "no_numeric_values"}
-        ascending = bool(_SUPERLATIVE_MIN.search(q)) and not _SUPERLATIVE_MAX.search(q)
-        df = df.sort_values("_sort_val", ascending=ascending)
-        df = df.drop(columns=["_sort_val"])
-        limit = 1
-        if re.search(r"\btop\s+(\d+)\b", q, re.I):
-            limit = int(re.search(r"\btop\s+(\d+)\b", q, re.I).group(1))
-        meta = {"type": "ranking", "column": value_col, "ascending": ascending, "limit": limit}
-        return df.head(limit).to_dict("records"), meta
+    # 3) Sort
+    sort_cfg = spec.get("sort")
+    sort_applied = False
+    if isinstance(sort_cfg, dict):
+        col = sort_cfg.get("column") or resolve_column(sort_cfg.get("column"), columns)
+        if col and col in df.columns:
+            asc = (sort_cfg.get("direction") or "desc").lower() == "asc"
+            df = df.copy()
+            df["_sort_val"] = _coerce_numeric(df[col])
+            df = df.dropna(subset=["_sort_val"]).sort_values(
+                "_sort_val", ascending=asc
+            ).drop(columns=["_sort_val"])
+            sort_applied = True
+            meta["steps_applied"].append(f"sort:{col}:{sort_cfg.get('direction')}")
 
-    limit = extract_limit_from_question(q)
-    if limit:
-        return df.head(limit).to_dict("records"), {"type": "limit", "limit": limit}
+    # 4) Rank (requires prior sort when specified in spec)
+    rank = spec.get("rank")
+    if rank is not None:
+        if isinstance(sort_cfg, dict) and not sort_applied:
+            return [], {
+                **meta,
+                "type": "needs_new_sql",
+                "reason": "sort column missing for rank",
+            }
+        try:
+            r = int(rank)
+            idx = (len(df) - 1) if r == -1 else (r - 1)
+            if 0 <= idx < len(df):
+                df = df.iloc[[idx]]
+                meta["steps_applied"].append(f"rank:{r}")
+            else:
+                return [], {**meta, "error": "rank_out_of_range"}
+        except (TypeError, ValueError):
+            pass
 
+    # 5) Limit / head
+    limit = spec.get("limit")
+    if limit is not None:
+        try:
+            df = df.head(int(limit))
+            meta["steps_applied"].append(f"limit:{limit}")
+        except (TypeError, ValueError):
+            pass
+    elif spec.get("operation") == "head" and limit is None:
+        df = df.head(10)
+        meta["steps_applied"].append("head:10")
+
+    meta["rows_after"] = len(df)
     return df.to_dict("records"), meta
+
+
+def _apply_group_top_per(
+    df: pd.DataFrame, cfg: dict, columns: list[str]
+) -> tuple[pd.DataFrame, dict]:
+    gb = cfg.get("group_by") or resolve_column(cfg.get("group_by"), columns)
+    vc = cfg.get("value_column") or resolve_column(cfg.get("value_column"), columns)
+    if not gb or not vc or gb not in df.columns or vc not in df.columns:
+        return df, {
+            "skipped": True,
+            "reason": f"group_top_per columns missing: group={gb} value={vc}",
+        }
+    ascending = (cfg.get("direction") or "desc").lower() == "asc"
+    take = max(1, int(cfg.get("take_per_group") or 1))
+    work = df.copy()
+    work["_sort_val"] = _coerce_numeric(work[vc])
+    work = work.dropna(subset=["_sort_val"])
+    if work.empty:
+        return work, {"skipped": True, "reason": "no numeric values for group_top_per"}
+    work = work.sort_values("_sort_val", ascending=ascending)
+    out = work.groupby(gb, as_index=False, sort=False).head(take)
+    out = out.drop(columns=["_sort_val"], errors="ignore")
+    return out, {"group_top_per": gb, "value_column": vc, "take": take}
+
+
+def _coerce_numeric(series: pd.Series) -> pd.Series:
+    return pd.to_numeric(
+        series.astype(str).str.replace(",", "", regex=False),
+        errors="coerce",
+    )

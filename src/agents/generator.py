@@ -2,13 +2,11 @@
 SQL Generator Agent: Translates logical plans into SQL queries.
 """
 
-from langchain_openai import ChatOpenAI
-from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate, FewShotChatMessagePromptTemplate
 from loguru import logger
 from ..graph.graph_state import AgentState
-from ..config import settings
 from ..prompt import GENERATOR_PROMPT
+from ..utils.llm_factory import anthropic_llm
 
 
 class SQLGeneratorAgent:
@@ -17,17 +15,7 @@ class SQLGeneratorAgent:
     """
     
     def __init__(self):
-
-        # self.llm = ChatOpenAI(
-        #     model=settings.openai_model_fast,
-        #     api_key=settings.openai_api_key
-        # )
-        
-        self.llm = ChatAnthropic(
-            model=settings.anthropic_model_fast,
-            api_key=settings.anthropic_api_key,
-            temperature=0.0
-        )
+        self.llm = anthropic_llm(temperature=0.0)
 
         self.system_prompt = GENERATOR_PROMPT
         

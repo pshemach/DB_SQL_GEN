@@ -7,11 +7,12 @@ import re
 from datetime import datetime
 from loguru import logger
 from langsmith import traceable
-from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 
 from ..config import settings
+from ..utils.llm_factory import openai_llm
 from .base import BaseGuardrail, GuardrailDecision, GuardrailResult
+from .social_messages import is_social_message
 
 DOMAIN_CLASSIFIER_PROMPT = """
 You are a domain classifier for a sales analytics system.
@@ -33,8 +34,12 @@ Sales analytics topics (IN-SCOPE):
 
 Non-sales topics (OUT-OF-SCOPE):
 - General knowledge unrelated to sales
-- Off-topic jokes/entertainment
-- Personal questions
+- Off-topic jokes/entertainment unrelated to this product
+- Personal questions unrelated to work
+
+Always IN-SCOPE (assistant will handle without SQL):
+- Greetings (hi, hello, thanks)
+- Questions about what this assistant can do
 
 Important: RESPOND ONLY WITH VALID JSON, NO OTHER TEXT.
 
@@ -55,20 +60,30 @@ class ContextAwareClassifier(BaseGuardrail):
         super().__init__(enabled=True, priority=10)
         
         # Use settings defaults if not provided
-        model = llm_model or settings.anthropic_model_fast
-        key = api_key or settings.anthropic_api_key
-        
-        self.llm = ChatAnthropic(
-            model=model,
-            api_key=key
-        )
+        if llm_model or api_key:
+            from langchain_openai import ChatOpenAI
+            self.llm = ChatOpenAI(
+                model=llm_model or settings.openai_model_fast,
+                api_key=api_key or settings.openai_api_key,
+            )
+        else:
+            self.llm = openai_llm()
         self.prompt = ChatPromptTemplate.from_template(DOMAIN_CLASSIFIER_PROMPT)
         self.chain = self.prompt | self.llm
     
     @traceable(name="context_classification", run_type="tool", tags=["guardrails", "domain-classification"])
     async def evaluate(self, question: str, context: dict) -> GuardrailDecision:
         start = datetime.now()
-        
+
+        if is_social_message(question):
+            return GuardrailDecision(
+                result=GuardrailResult.PASS,
+                reason="Greeting or chitchat",
+                confidence=1.0,
+                guardrail_name="ContextAwareClassifier",
+                processing_time_ms=(datetime.now() - start).total_seconds() * 1000,
+            )
+
         # Build conversation context
         conversation_history = context.get("conversation_history", [])
         conversation_summary = self._summarize_conversation(conversation_history)

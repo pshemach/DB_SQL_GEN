@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     # Data paths
     business_doc_yaml_path: str = Field("data/business_definitions.yaml", env="BUSINESS_DOC_YAML_PATH")
     
+    # Allowed node api
+    chatbot_auth_url: str = Field(..., env="CHATBOT_AUTH_URL")
+    chatbot_api_key: str = Field(..., env="CHATBOT_API_KEY")
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

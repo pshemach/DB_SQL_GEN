@@ -8,8 +8,6 @@ import json
 import re
 from typing import Any
 
-from langchain_anthropic import ChatAnthropic
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 
@@ -19,7 +17,8 @@ from ..tools import business_knowledge_store, business_knowledge_retriever
 from ..tools.result_cache import result_cache
 from ..utils.json_utils import extract_json
 from ..utils.metrics import set_router_action
-from ..utils.cached_result_ops import extract_numeric_threshold, is_ranking_question
+from ..utils.llm_factory import openai_llm
+from ..guardrails.social_messages import is_social_message
 
 
 TURN_ROUTER_PROMPT = """You are the conversation orchestrator for a Text-to-SQL sales analytics assistant.
@@ -51,33 +50,25 @@ Return ONLY valid JSON:
   "gap_reason": null,
   "missing_pieces": [],
   "follow_up_type": "new_query | filter | transform | refinement | clarification",
-  "enriched_question": "<rewritten question for SQL if applicable>"
+  "enriched_question": "<rewritten question for SQL if applicable, never write sql, keep business definition meaning>"
 }}
 
 Rules:
 1. If user is answering a pending clarification, action is run_sql with enriched_question merging the answer.
 2. action=clarify ONLY when a KPI/metric/business term is genuinely undefined (gap_type=knowledge_gap). Never clarify for missing parameters.
 3. NEVER ask the user for: time period, date range, rep code, customer, product, route, or other filters — these are handled by the system (rep scope is injected; use sensible SQL defaults for dates if unspecified, e.g. current month).
-4. If the question is clear enough to query (e.g. "net sales", "sales this month"), action MUST be run_sql even if dates/filters are not spelled out.
-5. If same session has previous result and user wants filter/sort/limit only, action is transform_previous.
-6. If user refers to the prior table/list ("second best of that", "third in that list", "from that ranking") and last result is cached, action MUST be transform_previous (do not run_sql).
+4. If the question is clear enough to query and needs new data from the database, action is run_sql.
+5. If has_cached_result=yes and the follow-up can be answered by filtering, sorting, ranking, or selecting from the LAST RESULT rows only, action is transform_previous (not run_sql). Set follow_up_type accordingly.
+6. If has_cached_result=yes but the follow-up needs different metrics, tables, or time scope than the cached rows, action is run_sql.
 7. If off-topic (weather, jokes, unrelated), action is chitchat.
 8. If question is empty or nonsense, action is deny.
-9. Default for analytics/data questions: run_sql.
+9. Do not rely on specific phrases; decide from semantics of the current question vs last result context.
 """
 
 
 class TurnRouterAgent:
     def __init__(self):
-        # self.llm = ChatAnthropic(
-        #     model=settings.anthropic_model_fast,
-        #     api_key=settings.anthropic_api_key,
-        # )
-        
-        self.llm = ChatOpenAI(
-            model=settings.openai_model_fast,
-            api_key=settings.openai_api_key
-        )
+        self.llm = openai_llm()
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", TURN_ROUTER_PROMPT),
             ("human", "{question}"),
@@ -87,6 +78,14 @@ class TurnRouterAgent:
     def route(self, state: AgentState) -> dict[str, Any]:
         question = state["question"]
         session_id = state.get("session_id")
+
+        if is_social_message(question):
+            metrics = set_router_action(state.get("metrics"), "chitchat")
+            return {
+                "turn_action": "chitchat",
+                "router_confidence": 1.0,
+                "metrics": metrics,
+            }
 
         # Handle clarification resume without LLM
         if state.get("clarification_answer") or state.get("enriched_question"):
@@ -149,7 +148,6 @@ class TurnRouterAgent:
         action = _normalize_action(result.get("action", "run_sql"))
         action = _apply_feature_flags(action, result)
         action, result = _apply_clarify_policy(action, result, question)
-        action = _apply_cache_follow_up_policy(action, result, cached, question)
 
         out: dict[str, Any] = {
             "turn_action": action,
@@ -251,36 +249,6 @@ _PARAMETER_CLARIFY_MARKERS = (
     "specify:",
     "could you please specify",
 )
-
-
-def _apply_cache_follow_up_policy(
-    action: str, result: dict, cached: Any, question: str
-) -> str:
-    """
-    When the session already has a result set, prefer reusing it for follow-up
-    types the router labels as non-new, or when the question is clearly a
-    filter/ranking on numeric data (no phrase lists tied to one chat).
-    """
-    if not cached or not settings.enable_transform_previous:
-        return action
-    follow_up = (result.get("follow_up_type") or "new_query").strip().lower()
-    confidence = float(result.get("confidence") or 0.0)
-
-    if follow_up in ("filter", "transform", "refinement", "lookup", "clarification"):
-        if action == "run_sql":
-            logger.info(
-                f"Turn router: follow_up_type={follow_up} with cache → transform_previous"
-            )
-            return "transform_previous"
-
-    if action == "run_sql" and follow_up == "new_query" and confidence < 0.85:
-        if extract_numeric_threshold(question) or is_ranking_question(question):
-            logger.info(
-                "Turn router: numeric filter/ranking with cache → transform_previous"
-            )
-            return "transform_previous"
-
-    return action
 
 
 def _apply_clarify_policy(action: str, result: dict, question: str) -> tuple[str, dict]:
