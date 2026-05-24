@@ -12,6 +12,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from ..config import settings
 from .base import BaseGuardrail, GuardrailDecision, GuardrailResult
+from .social_messages import is_social_message
 
 DOMAIN_CLASSIFIER_PROMPT = """
 You are a domain classifier for a sales analytics system.
@@ -68,7 +69,16 @@ class ContextAwareClassifier(BaseGuardrail):
     @traceable(name="context_classification", run_type="tool", tags=["guardrails", "domain-classification"])
     async def evaluate(self, question: str, context: dict) -> GuardrailDecision:
         start = datetime.now()
-        
+                                
+        if is_social_message(question):
+            return GuardrailDecision(
+                result=GuardrailResult.PASS,
+                reason="Greeting or chitchat",
+                confidence=1.0,
+                guardrail_name="ContextAwareClassifier",
+                processing_time_ms=(datetime.now() - start).total_seconds() * 1000,
+            )
+            
         # Build conversation context
         conversation_history = context.get("conversation_history", [])
         conversation_summary = self._summarize_conversation(conversation_history)

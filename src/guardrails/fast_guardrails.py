@@ -8,13 +8,13 @@ from loguru import logger
 from langsmith import traceable
 
 from .base import BaseGuardrail, GuardrailDecision, GuardrailResult
-
+from .social_messages import is_social_message
 
 class InputValidationGuardrail(BaseGuardrail):
     """Fast: Check format, length, encoding."""
     
     MAX_LENGTH = 2000
-    MIN_LENGTH = 3
+    MIN_LENGTH = 2
     
     def __init__(self):
         super().__init__(enabled=True, priority=100)
@@ -22,6 +22,17 @@ class InputValidationGuardrail(BaseGuardrail):
     @traceable(name="input_validation", run_type="tool", tags=["guardrails", "validation"])
     async def evaluate(self, question: str, context: dict) -> GuardrailDecision:
         start = datetime.now()
+        
+        question = (question or "").strip()
+        
+        # Greetings / small talk (handled by agent chitchat, not analytics)
+        if is_social_message(question):
+            return GuardrailDecision(
+                result=GuardrailResult.PASS,
+                reason="Social message (greeting/chitchat)",
+                guardrail_name="InputValidation",
+                processing_time_ms=(datetime.now() - start).total_seconds() * 1000,
+            )
         
         # Length check
         if not question or len(question.strip()) < self.MIN_LENGTH:
