@@ -7,11 +7,12 @@ from loguru import logger
 from typing import Optional
 
 from src.graph import run_agent_async
+from src.utils.serialization import json_safe_value, serialize_query_result
 from src.core.database import db_manager
 from src.tools.business_knowledge_store import business_knowledge_store
 from src.tools.chat_memory import chat_memory
 from src.guardrails.pipeline import guardrail_pipeline
-
+from src.guardrails.social_messages import is_social_message
 
 # =============================
 # PAGE CONFIG
@@ -216,7 +217,7 @@ def format_agent_response(result: dict) -> str:
         return result.get("question_to_user", "Please provide more details.")
 
     if result.get("error"):
-        return f"Error: {result.get('error')}"
+        return f"{result.get('error')}"
 
     if result.get("query_result"):
         return "Query executed successfully."

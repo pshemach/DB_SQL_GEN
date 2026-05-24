@@ -216,15 +216,14 @@ class CriticAgent:
             logger.warning(f"Could not format result: {e}")
             return str(result)[:500]  # Truncate to 500 chars
 
+agent = CriticAgent()
 
 # Node functions for LangGraph
 def executor_node(state: AgentState) -> dict:
     """LangGraph node wrapper for execution."""
-    agent = CriticAgent()
     return agent.execute_and_validate(state)
 
 
 def reflector_node(state: AgentState) -> dict:
     """LangGraph node wrapper for reflection/correction."""
-    agent = CriticAgent()
     return agent.reflect_and_fix(state)

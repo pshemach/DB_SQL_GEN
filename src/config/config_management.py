@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     
     # Caching Configuration (Disk Cache)
     enable_semantic_cache: bool = Field(default=True, env="ENABLE_SEMANTIC_CACHE")
-    cache_similarity_threshold: float = Field(default=0.99, env="CACHE_SIMILARITY_THRESHOLD")
+    cache_similarity_threshold: float = Field(default=0.90, env="CACHE_SIMILARITY_THRESHOLD")
     
     # Agent Configuration
     max_iterations: int = Field(default=1, env="MAX_ITERATIONS")
