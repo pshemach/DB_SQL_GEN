@@ -88,7 +88,7 @@ def authz_guardrails_node(state: AgentState) -> dict:
     question = (state.get("question") or "").strip()
     metrics = state.get("metrics") or init_metrics()
 
-    if len(question) < 3:
+    if len(question) < 2:
         return _deny("Question too short.", metrics, t0, "validation")
     if len(question) > 2000:
         return _deny("Question exceeds maximum length.", metrics, t0, "validation")

@@ -9,10 +9,9 @@ class ChatBotAuthClient:
     def __init__(self):
         self.base_url = getattr(
             settings,
-            "chatbot_auth_url",
-            "http://144.76.225.16:26521/ChatBot/AuthenticateUser"
+            "chatbot_auth_url"
         )
-        self.api_key = getattr(settings, "chatbot_api_key", "123")
+        self.api_key = getattr(settings, "chatbot_api_key")
 
     async def authenticate_user(self, phone_no: str) -> dict:
         payload = {
