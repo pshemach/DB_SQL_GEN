@@ -54,8 +54,23 @@ class Settings(BaseSettings):
     langchain_project: str      = Field(default="sales-text-to-sql", env="LANGCHAIN_PROJECT")
     langchain_endpoint: str     = Field(default="https://api.smith.langchain.com", env="LANGCHAIN_ENDPOINT")
     
+    # Production graph feature flags
+    enable_production_graph: bool = Field(default=True, env="ENABLE_PRODUCTION_GRAPH")
+    enable_clarify: bool = Field(default=True, env="ENABLE_CLARIFY")
+    enable_transform_previous: bool = Field(default=True, env="ENABLE_TRANSFORM_PREVIOUS")
+    enable_pre_exec_critic: bool = Field(default=False, env="ENABLE_PRE_EXEC_CRITIC")
+    enable_result_verifier: bool = Field(default=True, env="ENABLE_RESULT_VERIFIER")
+    graph_recursion_limit: int = Field(default=50, env="GRAPH_RECURSION_LIMIT")
+    graph_timeout_seconds: int = Field(default=120, env="GRAPH_TIMEOUT_SECONDS")
+    sql_max_rows: int = Field(default=1000, env="SQL_MAX_ROWS")
+    currency_symbol: str = Field(default="Rs", env="CURRENCY_SYMBOL")
+    
     # Data paths
     business_doc_yaml_path: str = Field("data/business_definitions.yaml", env="BUSINESS_DOC_YAML_PATH")
+    
+    # Allowed node api
+    chatbot_auth_url: str = Field(..., env="CHATBOT_AUTH_URL")
+    chatbot_api_key: str = Field(..., env="CHATBOT_API_KEY")
     
     class Config:
         env_file = ".env"

@@ -129,21 +129,51 @@ class AgentState(TypedDict):
     access_denied_reason: Optional[str]
     
     
+# # --- INNER SUB-GRAPH STATE ---
+# class SQLSubState(TypedDict):
+#     # Inputs passed from Parent
+#     question: str
+#     business_definitions: Optional[str]
+    
+#     # Working properties (Isolated from conversation history)
+#     plan: Optional[str]
+#     plan_steps: Optional[List[str]]
+#     relevant_tables: Optional[List[str]]
+#     schema_context: Optional[str]
+#     sql_query: Optional[str]
+#     error: Optional[str]
+#     iterations: int
+#     should_retry: bool
+    
+#     # Outputs to pass back to Parent
+#     subgraph_output: Optional[dict]
+
 # --- INNER SUB-GRAPH STATE ---
-class SQLSubState(TypedDict):
+class SQLSubState(TypedDict, total=False):
     # Inputs passed from Parent
     question: str
     business_definitions: Optional[str]
-    
-    # Working properties (Isolated from conversation history)
+    allowed_rep_codes: Optional[List[str]]
+    security_filter_sql: Optional[str]
+    few_shot_examples: Optional[List[Dict[str, Any]]]
+
+    # Working properties (isolated from conversation history)
     plan: Optional[str]
     plan_steps: Optional[List[str]]
     relevant_tables: Optional[List[str]]
+    relevant_columns: Optional[Dict[str, List[str]]]
     schema_context: Optional[str]
+    schema_metadata: Optional[Dict[str, Any]]
     sql_query: Optional[str]
+    sql_explanation: Optional[str]
+    query_result: Optional[Any]
+    result_preview: Optional[Any]
+    execution_time_ms: Optional[float]
     error: Optional[str]
+    error_type: Optional[str]
     iterations: int
     should_retry: bool
-    
+    pre_exec_approved: Optional[bool]
+
     # Outputs to pass back to Parent
     subgraph_output: Optional[dict]

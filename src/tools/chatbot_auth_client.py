@@ -9,7 +9,7 @@ class ChatBotAuthClient:
             settings,
             "chatbot_auth_url"
         )
-        self.api_key = getattr(settings, "chatbot_api_key", "123")
+        self.api_key = getattr(settings, "chatbot_api_key")
 
     async def authenticate_user(self, phone_no: str) -> dict:
         headers = {
