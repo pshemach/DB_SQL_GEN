@@ -15,7 +15,7 @@ class InputValidationGuardrail(BaseGuardrail):
     """Fast: Check format, length, encoding."""
     
     MAX_LENGTH = 2000
-    MIN_LENGTH = 3
+    MIN_LENGTH = 2
     
     def __init__(self):
         super().__init__(enabled=True, priority=100)
