@@ -8,7 +8,8 @@ import hashlib
 import json
 from diskcache import Cache
 from loguru import logger
-from langchain_huggingface import HuggingFaceEmbeddings
+# from langchain_huggingface import HuggingFaceEmbeddings
+from .embeddings import get_embeddings
 import numpy as np
 from ..config import settings
 
@@ -30,9 +31,10 @@ class SemanticCache:
         self.cache = Cache("./cache/semantic_cache")
         
         # Initialize embedding model with HuggingFace (local)
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=settings.embedding_model
-        )
+        # self.embeddings = HuggingFaceEmbeddings(
+        #     model_name=settings.embedding_model
+        # )
+        self.embeddings = get_embeddings()
         
         logger.info(f"Semantic cache initialized (threshold: {self.threshold})")
         

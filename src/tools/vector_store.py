@@ -4,7 +4,8 @@ Vector store for dynamic few-shot example retrieval.
 
 from typing import List, Dict
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+# from langchain_huggingface import HuggingFaceEmbeddings
+from .embeddings import get_embeddings
 from langchain_core.documents import Document
 from loguru import logger
 from ..config import settings
@@ -22,9 +23,10 @@ class FewShotRetriever:
             return
         
         # Initialize embeddings with HuggingFace model (local)
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=settings.embedding_model
-        )
+        # self.embeddings = HuggingFaceEmbeddings(
+        #     model_name=settings.embedding_model
+        # )
+        self.embeddings = get_embeddings()
         
         # Initialize vector store
         persist_directory = settings.vector_store_path
