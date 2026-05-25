@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     # Allowed node api
     chatbot_auth_url: str = Field(..., env="CHATBOT_AUTH_URL")
     chatbot_api_key: str = Field(..., env="CHATBOT_API_KEY")
+    chatbot_base_url: str = Field(..., env="CHATBOT_BASE_URL")
     
     class Config:
         env_file = ".env"
