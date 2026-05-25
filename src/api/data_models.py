@@ -59,14 +59,18 @@ class QueryRequest(BaseModel):
     question: str = Field(..., description="Natural language question")
     session_id: Optional[str] = Field(default=None, description="Conversation/session ID")
     
-    allowed_rep_codes: Optional[List[str]] = Field(
-        default=None,
-        description="RepCodes this user is allowed to access"
-    )
+    # allowed_rep_codes: Optional[List[str]] = Field(
+    #     default=None,
+    #     description="RepCodes this user is allowed to access"
+    # )
 
-    user_role: Optional[str] = Field(
-        default=None,
-        description="rep | asm | rsm | customer"
+    # user_role: Optional[str] = Field(
+    #     default=None,
+    #     description="rep | asm | rsm | customer"
+    # )
+    phone_no: Optional[str] = Field(
+        default="0718543880",
+        description="RepCodes this user is allowed to access"
     )
 
     use_cache: bool = Field(default=True, description="Whether to use semantic cache")
