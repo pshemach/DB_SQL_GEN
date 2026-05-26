@@ -69,7 +69,7 @@ class QueryRequest(BaseModel):
     #     description="rep | asm | rsm | customer"
     # )
     phone_no: Optional[str] = Field(
-        default="0718543880",
+        default="94718543880",
         description="RepCodes this user is allowed to access"
     )
 
