@@ -37,12 +37,13 @@ Data hints:
 {data_hints}
 
 Your task — return ONLY valid JSON:
-1. **summary**: 2–4 sentences that directly answer the user's question in plain business language.
+1. **summary**: 1–4 sentences that answer the user's question in plain business language.
    - For a single aggregate row (e.g. one net_sales value), state the metric name and exact value from sample rows.
    - For multiple rows, highlight the top insight (highest/lowest, total, or trend).
-   - Mention the time scope if visible in the question or SQL (e.g. "current month").
    - Format monetary amounts with **Rs** prefix (e.g. Rs 12,345.67) — not for percentages or counts.
    - Use thousands separators for large numbers in the summary text.
+   - don't mention calculation methods or how derive the answer
+   - don't summation values due to all row not given
 2. **table_title**: Short business title for the table.
 3. **visualizations**: 0–3 charts using only provided column names.
 
