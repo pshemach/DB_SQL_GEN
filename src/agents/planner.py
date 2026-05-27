@@ -2,7 +2,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 from ..graph.graph_state import AgentState
 from ..prompt import PLANNER_PROMPT
-from ..utils.llm_factory import anthropic_llm
+from ..utils.llm_factory import anthropic_llm, groq_llm
 from ..tools import business_knowledge_retriever as doc_retriever
 
 
@@ -10,7 +10,7 @@ class PlannerAgent:
     """Decomposes natural language questions into structured logical plans."""
     
     def __init__(self):
-        self.llm = anthropic_llm()
+        self.llm = groq_llm(temperature=0)
         
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", PLANNER_PROMPT),

@@ -19,7 +19,7 @@ from ..utils.json_utils import extract_json
 from ..utils.metrics import set_router_action
 from ..utils.llm_factory import openai_llm
 from ..guardrails.social_messages import is_social_message
-
+from ..utils.llm_factory import groq_llm
 
 TURN_ROUTER_PROMPT = """You are the conversation orchestrator for a Text-to-SQL sales analytics assistant.
 
@@ -68,7 +68,9 @@ Rules:
 
 class TurnRouterAgent:
     def __init__(self):
-        self.llm = openai_llm()
+        
+        self.llm = groq_llm(temperature=0)
+        
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", TURN_ROUTER_PROMPT),
             ("human", "{question}"),

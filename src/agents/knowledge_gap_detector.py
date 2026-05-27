@@ -8,18 +8,12 @@ from ..prompt import KNOWLEDGE_GAP_DETECTOR_PROMPT
 from ..utils.json_utils import extract_json
 from ..tools import business_knowledge_store, business_knowledge_retriever
 from ..graph.graph_state import AgentState
+from ..utils.llm_factory import groq_llm
 
 
 class KnowledgeGapDetectorAgent:
     def __init__(self):
-        self.llm = ChatOpenAI(
-            model=settings.openai_model_fast,
-            api_key=settings.openai_api_key
-        )  
-        # self.llm = ChatAnthropic(
-        #     model_name=settings.anthropic_model_fast,
-        #     api_key=settings.anthropic_api_key
-        # )
+        self.llm = groq_llm(temperature=0)
         
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", KNOWLEDGE_GAP_DETECTOR_PROMPT),

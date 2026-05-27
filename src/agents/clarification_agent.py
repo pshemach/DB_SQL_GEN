@@ -8,19 +8,12 @@ from ..config import settings
 from ..prompt import CLARIFICATION_AGENT_PROMPT
 from ..utils.json_utils import extract_json
 from ..tools import chat_memory
+from ..utils.llm_factory import groq_llm
+
 
 class ClarificationAgent:
     def __init__(self):
-        self.llm = ChatOpenAI(
-            model=settings.openai_model_fast,
-            api_key=settings.openai_api_key,
-            temperature=0
-        )
-        
-        # self.llm = ChatAnthropic(
-        #     model=settings.anthropic_model_fast,
-        #     api_key=settings.anthropic_api_key
-        # )
+        self.llm = groq_llm(temperature=0)
 
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", CLARIFICATION_AGENT_PROMPT),

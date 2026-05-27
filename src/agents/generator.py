@@ -7,7 +7,8 @@ from loguru import logger
 from ..graph.graph_state import AgentState
 from ..prompt import GENERATOR_PROMPT
 from ..utils.llm_factory import anthropic_llm
-
+from ..config import settings
+from ..utils.llm_factory import groq_llm
 
 class SQLGeneratorAgent:
     """
@@ -15,7 +16,8 @@ class SQLGeneratorAgent:
     """
     
     def __init__(self):
-        self.llm = anthropic_llm(temperature=0.0)
+        # self.llm = anthropic_llm(temperature=0.0)
+        self.llm = groq_llm(temperature=0)
 
         self.system_prompt = GENERATOR_PROMPT
         
