@@ -189,6 +189,16 @@ def hitl_clarify_node(state: AgentState) -> dict:
         clarifier_out = agent.clarify(state)
         question_to_user = clarifier_out.get("question_to_user") or "Could you provide more details?"
 
+    # SAVE clarification question to memory BEFORE interrupt
+    session_id = state.get("session_id")
+    if session_id:
+        chat_memory.add_message(
+            session_id=session_id,
+            role="assistant",
+            content=question_to_user,
+            message_type="clarification_question"
+        )
+        
     user_response = interrupt(
         {
             "type": "clarification",
