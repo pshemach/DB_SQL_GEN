@@ -9,6 +9,7 @@ from loguru import logger
 from ..graph.graph_state import AgentState
 from ..config import settings
 from ..prompt import GENERATOR_PROMPT
+from ..utils.llm_factory import groq_llm
 
 
 class SQLGeneratorAgent:
@@ -23,11 +24,12 @@ class SQLGeneratorAgent:
         #     api_key=settings.openai_api_key
         # )
         
-        self.llm = ChatAnthropic(
-            model=settings.anthropic_model_fast,
-            api_key=settings.anthropic_api_key,
-            temperature=0.0
-        )
+        # self.llm = ChatAnthropic(
+        #     model=settings.anthropic_model_fast,
+        #     api_key=settings.anthropic_api_key,
+        #     temperature=0.0
+        # )
+        self.llm = groq_llm()
 
         self.system_prompt = GENERATOR_PROMPT
         

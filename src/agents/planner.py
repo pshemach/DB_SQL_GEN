@@ -6,7 +6,7 @@ from ..graph.graph_state import AgentState
 from ..config import settings
 from ..prompt import PLANNER_PROMPT
 from ..tools import business_knowledge_retriever as doc_retriever
-
+from ..utils.llm_factory import groq_llm
 
 class PlannerAgent:
     """Decomposes natural language questions into structured logical plans."""
@@ -17,10 +17,11 @@ class PlannerAgent:
         #     api_key=settings.openai_api_key
         # )
         
-        self.llm = ChatAnthropic(
-            model=settings.anthropic_model_fast,
-            api_key=settings.anthropic_api_key
-        )
+        # self.llm = ChatAnthropic(
+        #     model=settings.anthropic_model_fast,
+        #     api_key=settings.anthropic_api_key
+        # )
+        self.llm = groq_llm()
         
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", PLANNER_PROMPT),

@@ -8,6 +8,7 @@ import json
 
 from ..config import settings
 from ..utils.json_utils import extract_json
+from ..utils.llm_factory import groq_llm
 
 RESULT_FORMATTER_PROMPT = """
 You are a BI result formatter.
@@ -65,11 +66,12 @@ JSON format:
 """
 class ResultFormatterAgent:
     def __init__(self):
-        self.llm = ChatOpenAI(
-            model=settings.openai_model_fast,
-            api_key=settings.openai_api_key,
-            temperature=0
-        )
+        # self.llm = ChatOpenAI(
+        #     model=settings.openai_model_fast,
+        #     api_key=settings.openai_api_key,
+        #     temperature=0
+        # )
+        self.llm = groq_llm()
 
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", RESULT_FORMATTER_PROMPT),

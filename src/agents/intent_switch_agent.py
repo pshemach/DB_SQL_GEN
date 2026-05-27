@@ -3,7 +3,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from ..config import settings
 from ..graph.graph_state import AgentState
-
+from ..utils.llm_factory import groq_llm
 
 INTENT_SWITCH_PROMPT = """
 You are a conversation controller.
@@ -40,10 +40,11 @@ class IntentSwitchAgent:
         #     temperature=0
         # )
         
-        self.llm = ChatAnthropic(
-            model=settings.anthropic_model_fast,
-            api_key=settings.anthropic_api_key
-        )
+        # self.llm = ChatAnthropic(
+        #     model=settings.anthropic_model_fast,
+        #     api_key=settings.anthropic_api_key
+        # )
+        self.llm = groq_llm()
 
 
         self.prompt = ChatPromptTemplate.from_messages([

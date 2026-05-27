@@ -9,6 +9,7 @@ from ..utils.json_utils import extract_json
 from ..tools.business_knowledge_store import business_knowledge_store
 from ..tools.chat_memory import chat_memory
 from ..graph.graph_state import AgentState
+from ..utils.llm_factory import groq_llm
 
 KNOWLEDGE_CAPTURE_PROMPT = """
 You are a business knowledge capture agent.
@@ -40,16 +41,17 @@ Rules:
 
 class KnowledgeCaptureAgent:
     def __init__(self):
-        self.llm = ChatOpenAI(
-            model=settings.openai_model_fast,
-            api_key=settings.openai_api_key,
-            temperature=0
-        )
+        # self.llm = ChatOpenAI(
+        #     model=settings.openai_model_fast,
+        #     api_key=settings.openai_api_key,
+        #     temperature=0
+        # )
         
         # self.llm = ChatAnthropic(
         #     model=settings.anthropic_model_fast,
         #     api_key=settings.anthropic_api_key
         # )
+        self.llm = groq_llm()
 
 
         self.prompt = ChatPromptTemplate.from_messages([

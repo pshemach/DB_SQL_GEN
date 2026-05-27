@@ -5,13 +5,14 @@ from src.tools.result_cache import result_cache
 from src.config import settings
 import json
 import re
-
+from ..utils.llm_factory import groq_llm
 
 class FollowUpDetector:
     """Detect if query is follow-up and determine if cached result can be reused."""
 
     def __init__(self):
-        self.llm = ChatAnthropic(model=settings.anthropic_model_fast)
+        # self.llm = ChatAnthropic(model=settings.anthropic_model_fast)
+        self.llm = groq_llm()
 
     def detect(self, state: dict) -> dict:
         """

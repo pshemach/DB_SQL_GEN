@@ -19,48 +19,9 @@ from ..utils.json_utils import extract_json
 from ..utils.metrics import set_router_action
 from ..utils.llm_factory import openai_llm
 from ..guardrails.social_messages import is_social_message
+from ..utils.llm_factory import groq_llm
 
 
-# TURN_ROUTER_PROMPT = """You are the conversation orchestrator for a Text-to-SQL sales analytics assistant.
-
-# Decide the single best action for this turn.
-
-# Memory context:
-# {memory_context}
-
-# Retrieved business knowledge:
-# {retrieved_knowledge}
-
-# Previous question (if follow-up): {previous_question}
-# Last result available in session (rows cached): {has_cached_result}
-# Last result context:
-# {last_result_context}
-
-# Current question: {question}
-
-# Return ONLY valid JSON:
-# {{
-#   "action": "run_sql | clarify | transform_previous | deny | chitchat",
-#   "confidence": 0.0,
-#   "clarification_question": null,
-#   "gap_type": "knowledge_gap | none",
-#   "gap_reason": null,
-#   "missing_pieces": [],
-#   "follow_up_type": "new_query | filter | transform | refinement | clarification",
-#   "enriched_question": "<rewritten question for SQL Generation pipeline if applicable, never write sql, keep business definition meaning>"
-# }}
-
-# Rules:
-# 1. If user is answering a pending clarification, action is run_sql with enriched_question merging the answer.
-# 2. action=clarify ONLY when a KPI/metric/business term is genuinely undefined (gap_type=knowledge_gap). Never clarify for missing parameters.
-# 3. NEVER ask the user for: time period, date range, rep code, customer, product, route, or other filters — these are handled by the system (rep scope is injected; use sensible SQL defaults for dates if unspecified, e.g. current month).
-# 4. If the question is clear enough to query and needs new data from the database, action is run_sql.
-# 5. If has_cached_result=yes and the follow-up can be answered by filtering, sorting, ranking, or selecting from the LAST RESULT rows only, action is transform_previous (not run_sql). Set follow_up_type accordingly.
-# 6. If has_cached_result=yes but the follow-up needs different metrics, tables, or time scope than the cached rows, action is run_sql.
-# 7. If off-topic (weather, jokes, unrelated), action is chitchat.
-# 8. If question is empty or nonsense, action is deny.
-# 9. Do not rely on specific phrases; decide from semantics of the current question vs last result context.
-# """
 TURN_ROUTER_PROMPT = """You are the conversation orchestrator for a Text-to-SQL sales analytics assistant.
 
 Analyze the current question and decide the best routing action.
@@ -112,7 +73,8 @@ Return ONLY valid JSON (no markdown, no extra text):
 
 class TurnRouterAgent:
     def __init__(self):
-        self.llm = openai_llm()
+        # self.llm = openai_llm()
+        self.llm = groq_llm()
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", TURN_ROUTER_PROMPT),
             ("human", "{question}"),

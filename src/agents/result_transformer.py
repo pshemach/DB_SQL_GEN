@@ -6,13 +6,15 @@ from src.config import settings
 import json
 import re
 import pandas as pd
+from ..utils.llm_factory import groq_llm
 
 
 class ResultTransformer:
     """Apply filters, sorts, and limits to cached results in-memory."""
 
     def __init__(self):
-        self.llm = ChatAnthropic(model=settings.anthropic_model_fast)
+        # self.llm = ChatAnthropic(model=settings.anthropic_model_fast)
+        self.llm = groq_llm()
 
     def transform(self, state: dict) -> dict:
         """

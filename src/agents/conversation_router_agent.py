@@ -3,6 +3,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from ..config import settings
 from ..graph.graph_state import AgentState
+from ..utils.llm_factory import groq_llm
 
 CONVERSATION_ROUTER_PROMPT = """
 You are a conversation router.
@@ -35,16 +36,18 @@ new_question
 
 class ConversationRouterAgent:
     def __init__(self):
-        self.llm = ChatOpenAI(
-            model=settings.openai_model_fast,
-            api_key=settings.openai_api_key,
-            temperature=0
-        )
+        # self.llm = ChatOpenAI(
+        #     model=settings.openai_model_fast,
+        #     api_key=settings.openai_api_key,
+        #     temperature=0
+        # )
         
         # self.llm = ChatAnthropic(
         #     model=settings.anthropic_model_fast,
         #     api_key=settings.anthropic_api_key
         # )
+        
+        self.llm = groq_llm()
 
 
         self.prompt = ChatPromptTemplate.from_messages([
