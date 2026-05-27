@@ -29,6 +29,13 @@ def clarification_resolver_node(state: dict) -> dict:
     session_id = state["session_id"]
 
     chat_memory.resolve_latest_clarification(session_id, user_answer)
+    
+    chat_memory.add_message(
+        session_id=session_id,
+        role="user",
+        content=user_answer,
+        message_type="clarification_answer"
+    )
 
     # Knowledge gap answer
     if previous_state.get("gap_type") == "knowledge_gap":

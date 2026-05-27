@@ -1,4 +1,6 @@
 from typing import Any
+from sqlalchemy import text
+from ..core.database import db_manager
 
 
 def get_value(data: dict, *keys, default=None):
@@ -21,52 +23,40 @@ def normalize_list(value: Any) -> list:
     return []
 
 
-def extract_allowed_rep_codes(auth_data: dict) -> list[str]:
+def extract_allowed_rep_codes_from_phone_auth(auth_data: dict) -> list[str]:
     """
-    Extract allowed RepCodes for SQL filter:
-    FIND_IN_SET(shn.Code, @AllowedNodes) > 0
-
-    For Rep response:
-      use allowedNodes[].Code
-
-    For Customer response:
-      use rep.Code or rep.NodeCode
+    Phone AuthenticateUser response usually returns allowedNodes.
+    We use allowedNodes[].Code for FIND_IN_SET(shn.Code, @AllowedNodes).
     """
 
     if not auth_data:
         return []
 
     success = get_value(auth_data, "success", "Success", default=True)
+
     if success is False:
         return []
 
-    user_type = get_value(auth_data, "userType", "UserType", default="")
-
     allowed_codes = []
 
-    # Rep response: allowedNodes contains accessible hierarchy nodes
-    allowed_nodes = get_value(auth_data, "allowedNodes", "AllowedNodes", default=[])
+    allowed_nodes = get_value(
+        auth_data,
+        "allowedNodes",
+        "AllowedNodes",
+        default=[]
+    )
 
     for node in normalize_list(allowed_nodes):
         if isinstance(node, dict):
             code = get_value(node, "Code", "code", "NodeCode", "nodeCode")
             if code:
                 allowed_codes.append(str(code).strip())
+
         elif isinstance(node, str):
             allowed_codes.append(node.strip())
 
-    # Some APIs may return direct allowed rep code arrays
-    for key in ["allowedRepCodes", "AllowedRepCodes", "repCodes", "RepCodes"]:
-        for code in normalize_list(auth_data.get(key)):
-            if isinstance(code, str):
-                allowed_codes.append(code.strip())
-            elif isinstance(code, dict):
-                value = get_value(code, "Code", "code", "RepCode", "repCode")
-                if value:
-                    allowed_codes.append(str(value).strip())
-
-    # Customer response: assigned rep object
     rep = get_value(auth_data, "rep", "Rep", default=None)
+
     if isinstance(rep, dict):
         rep_code = get_value(
             rep,
@@ -77,14 +67,61 @@ def extract_allowed_rep_codes(auth_data: dict) -> list[str]:
             "RepCode",
             "repCode"
         )
+
         if rep_code:
             allowed_codes.append(str(rep_code).strip())
 
-    # Remove duplicates
     return sorted(set(x for x in allowed_codes if x))
 
 
-def extract_user_role(auth_data: dict) -> str:
+def extract_allowed_node_ids_from_system_login(user_context: dict) -> list[str]:
+    value = (
+        user_context.get("AllowedNodeIds")
+        or user_context.get("allowedNodeIds")
+        or []
+    )
+
+    if isinstance(value, str):
+        return [x.strip() for x in value.split(",") if x.strip()]
+
+    if isinstance(value, list):
+        return [str(x).strip() for x in value if str(x).strip()]
+
+    return []
+
+
+def convert_node_ids_to_codes(node_ids: list[str]) -> list[str]:
+    """
+    Converts SalesHierarchyNode Ids to Code values.
+    Equivalent SQL:
+    SELECT Code FROM sales_hierarchy_nodes WHERE Id IN (...)
+    """
+
+    if not node_ids:
+        return []
+
+    clean_ids = [int(x) for x in node_ids if str(x).strip().isdigit()]
+
+    if not clean_ids:
+        return []
+
+    placeholders = ", ".join([f":id_{i}" for i in range(len(clean_ids))])
+    params = {f"id_{i}": node_id for i, node_id in enumerate(clean_ids)}
+
+    sql = text(f"""
+        SELECT Code
+        FROM sales_hierarchy_nodes
+        WHERE Id IN ({placeholders})
+          AND Code IS NOT NULL
+    """)
+
+    with db_manager.engine.connect() as connection:
+        rows = connection.execute(sql, params).fetchall()
+
+    return sorted(set(row[0] for row in rows if row[0]))
+
+
+def extract_user_role_from_phone_auth(auth_data: dict) -> str:
     user_type = get_value(auth_data, "userType", "UserType", default=None)
 
     if user_type:
@@ -99,9 +136,41 @@ def extract_user_role(auth_data: dict) -> str:
     return "unknown"
 
 
-def extract_user_context(auth_data: dict) -> dict:
-    return {
-        "user_type": extract_user_role(auth_data),
-        "allowed_rep_codes": extract_allowed_rep_codes(auth_data),
-        "raw_auth": auth_data
-    }
+def extract_user_role_from_system_login(user_context: dict) -> str:
+    return (
+        user_context.get("Role")
+        or user_context.get("role")
+        or user_context.get("UserRole")
+        or user_context.get("userRole")
+        or "system_user"
+    )
+
+
+def extract_display_name_from_phone_auth(auth_data: dict) -> str:
+    rep = get_value(auth_data, "rep", "Rep", default=None)
+
+    if isinstance(rep, dict):
+        return (
+            get_value(rep, "Name", "name", "UserName", "userName")
+            or "Rep User"
+        )
+
+    customer = get_value(auth_data, "customer", "Customer", default=None)
+
+    if isinstance(customer, dict):
+        return (
+            get_value(customer, "Name", "name", "DisplayName", "displayName")
+            or "Customer User"
+        )
+
+    return "User"
+
+
+def extract_display_name_from_system_login(user_context: dict) -> str:
+    return (
+        user_context.get("UserName")
+        or user_context.get("userName")
+        or user_context.get("Name")
+        or user_context.get("name")
+        or "System User"
+    )

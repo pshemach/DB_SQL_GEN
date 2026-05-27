@@ -39,6 +39,7 @@ from ..agents.result_formatter_agent import result_formatter_node
 from ..utils.serialization import sanitize_state
 from ..agents.result_transformer import transform_result_node
 from .sql_subgraph import get_sql_subgraph
+from .sql_pipeline_nodes import _parent_to_sub, _sub_to_parent
 
 setup_langsmith()
 
@@ -49,17 +50,11 @@ def _formatter_node(state: AgentState) -> dict:
 
 def sql_pipeline_node(state: AgentState) -> dict:
     """Invoke compiled SQL subgraph with parent/sub state mapping."""
-    from .sql_pipeline_nodes import _parent_to_sub, _sub_to_parent
     subgraph = get_sql_subgraph()
-    print(subgraph)
     sub_in = _parent_to_sub(state)
-    print(sub_in)
     sub_out = subgraph.invoke(sub_in)
-    print(sub_out)
     merged = _sub_to_parent(sub_out)
-    print(merged)
     out = sanitize_state(merged) if merged else {}
-    print(out)
     return out
 
 def build_production_graph() -> StateGraph:
