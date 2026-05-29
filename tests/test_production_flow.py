@@ -6,7 +6,7 @@ import pytest
 
 from src.utils.error_taxonomy import classify_db_error, is_retryable
 from src.agents.graph.sql_pipeline_nodes import static_validator_node, FORBIDDEN_SQL
-from src.graph.ingress_nodes import authz_guardrails_node, DANGEROUS_PATTERNS
+from src.agents.graph.nodes import authz_guardrails_node, DANGEROUS_PATTERNS
 
 
 class TestErrorTaxonomy:
