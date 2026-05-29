@@ -155,75 +155,100 @@ def safe_response_node(state: AgentState) -> dict:
     }
 
 
-def hitl_clarify_node(state: AgentState) -> dict:
-    """
-    Human-in-the-loop clarification via LangGraph interrupt.
-    On resume, merges user answer and optionally captures business knowledge.
-    """
-    from langgraph.types import interrupt
+# def hitl_clarify_node(state: AgentState) -> dict:
+#     """
+#     Human-in-the-loop clarification via LangGraph interrupt.
+#     On resume, merges user answer and optionally captures business knowledge.
+#     """
+    # from langgraph.types import interrupt
 
-    from ..agents.clarification_agent import ClarificationAgent
+    # from ..agents.clarification_agent import ClarificationAgent
 
-    # Resume path: clarification_answer supplied via Command(resume=...) or state
-    resume_answer = state.get("clarification_answer")
-    if resume_answer and not state.get("_hitl_resume_processed"):
-        if state.get("gap_type") == "knowledge_gap":
-            return knowledge_capture_agent.capture(
-                {**state, "pending_original_question": state.get("pending_original_question") or state.get("question")}
-            )
-        original = state.get("pending_original_question") or state.get("original_question") or state.get("question")
-        combined = f"Original Question:\n{original}\n\nClarification Answer:\n{resume_answer}".strip()
-        return {
-            "question": combined,
-            "clarification_answer": resume_answer,
-            "waiting_for_user": False,
-            "needs_clarification": False,
-            "question_to_user": None,
-            "enriched_question": combined,
-        }
+    # # Resume path: clarification_answer supplied via Command(resume=...) or state
+    # resume_answer = state.get("clarification_answer")
+    # if resume_answer and not state.get("_hitl_resume_processed"):
+    #     if state.get("gap_type") == "knowledge_gap":
+    #         return knowledge_capture_agent.capture(
+    #             {**state, "pending_original_question": state.get("pending_original_question") or state.get("question")}
+    #         )
+    #     original = state.get("pending_original_question") or state.get("original_question") or state.get("question")
+    #     combined = f"Original Question:\n{original}\n\nClarification Answer:\n{resume_answer}".strip()
+    #     return {
+    #         "question": combined,
+    #         "clarification_answer": resume_answer,
+    #         "waiting_for_user": False,
+    #         "needs_clarification": False,
+    #         "question_to_user": None,
+    #         "enriched_question": combined,
+    #     }
 
-    question_to_user = state.get("question_to_user")
-    clarifier_out = {}
-    if not question_to_user:
-        agent = ClarificationAgent()
-        clarifier_out = agent.clarify(state)
-        question_to_user = clarifier_out.get("question_to_user") or "Could you provide more details?"
+    # question_to_user = state.get("question_to_user")
+    # clarifier_out = {}
+    # if not question_to_user:
+    #     agent = ClarificationAgent()
+    #     clarifier_out = agent.clarify(state)
+    #     question_to_user = clarifier_out.get("question_to_user") or "Could you provide more details?"
 
-    # SAVE clarification question to memory BEFORE interrupt
-    session_id = state.get("session_id")
-    if session_id:
-        chat_memory.add_message(
-            session_id=session_id,
-            role="assistant",
-            content=question_to_user,
-            message_type="clarification_question"
-        )
+    # # SAVE clarification question to memory BEFORE interrupt
+    # session_id = state.get("session_id")
+    # if session_id:
+    #     chat_memory.add_message(
+    #         session_id=session_id,
+    #         role="assistant",
+    #         content=question_to_user,
+    #         message_type="clarification_question"
+    #     )
         
-    user_response = interrupt(
-        {
-            "type": "clarification",
-            "question_to_user": question_to_user,
-            "gap_type": state.get("gap_type"),
-            "pending_original_question": state.get("pending_original_question") or state.get("question"),
-        }
+    # user_response = interrupt(
+    #     {
+    #         "type": "clarification",
+    #         "question_to_user": question_to_user,
+    #         "gap_type": state.get("gap_type"),
+    #         "pending_original_question": state.get("pending_original_question") or state.get("question"),
+    #     }
+    # )
+
+    # resume_state = {
+    #     **state,
+    #     **clarifier_out,
+    #     "clarification_answer": user_response if isinstance(user_response, str) else str(user_response),
+    #     "waiting_for_user": False,
+    # }
+
+    # if state.get("gap_type") == "knowledge_gap":
+    #     return knowledge_capture_agent.capture(resume_state)
+
+    # original = resume_state.get("pending_original_question") or resume_state.get("question")
+    # combined = f"Original Question:\n{original}\n\nClarification Answer:\n{resume_state['clarification_answer']}".strip()
+    # return {
+    #     **resume_state,
+    #     "question": combined,
+    #     "enriched_question": combined,
+    #     "needs_clarification": False,
+    #     "question_to_user": None,
+    # }
+
+def hitl_clarify_node(state: AgentState) -> dict:
+    question_to_user = (
+        state.get("clarification_question")
+        or state.get("question_to_user")
+        or "Could you provide more details?"
     )
 
-    resume_state = {
-        **state,
-        **clarifier_out,
-        "clarification_answer": user_response if isinstance(user_response, str) else str(user_response),
-        "waiting_for_user": False,
-    }
-
-    if state.get("gap_type") == "knowledge_gap":
-        return knowledge_capture_agent.capture(resume_state)
-
-    original = resume_state.get("pending_original_question") or resume_state.get("question")
-    combined = f"Original Question:\n{original}\n\nClarification Answer:\n{resume_state['clarification_answer']}".strip()
     return {
-        **resume_state,
-        "question": combined,
-        "enriched_question": combined,
-        "needs_clarification": False,
-        "question_to_user": None,
+        "turn_action": "clarify",
+        "final_answer": question_to_user,
+        "result_summary": question_to_user,
+        "question_to_user": question_to_user,
+        "pending_original_question": state.get("question"),
+        "waiting_for_user": True,
+        "needs_clarification": True,
+        "query_result": None,
+        "result_preview": None,
+        "sql_query": None,
+        "sql_explanation": None,
+        "plan": None,
+        "plan_steps": None,
+        "relevant_tables": None,
+        "error": None,
     }

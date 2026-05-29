@@ -1,3 +1,24 @@
+import os
+import warnings
+import logging
+
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+logging.getLogger("torch").setLevel(logging.ERROR)
+
+try:
+    from transformers.utils import logging as transformers_logging
+    transformers_logging.set_verbosity_error()
+    transformers_logging.disable_progress_bar()
+except Exception:
+    pass
+
 import asyncio
 import uuid
 import streamlit as st

@@ -24,6 +24,7 @@ from .ingress_nodes import (
     memory_loader_node,
     safe_response_node,
     semantic_cache_lookup_node,
+    hitl_clarify_node
 )
 from .nodes import cache_result_node, save_memory_node
 from .production_conditional import (
@@ -70,6 +71,9 @@ def route_after_turn_router(state: AgentState) -> Literal["transform_result", "s
             return "transform_result"
         logger.warning("transform_previous requested but no session cache found - falling back to sql_pipeline")
         return "sql_pipeline"
+    
+    if action == 'clarify':
+        return "hitl_clarify"
         
     if action in ("deny", "chitchat", "cancel"):
         return "safe_response"
@@ -95,6 +99,9 @@ def build_production_graph() -> StateGraph:
     workflow.add_node("turn_router", turn_router_node)
     workflow.add_node("transform_result", transform_result_node)
     workflow.add_node("safe_response", safe_response_node)
+    
+    # Clarification for user
+    workflow.add_node("hitl_clarify", hitl_clarify_node)
 
     # SQL Subgraph
     workflow.add_node("sql_pipeline", sql_pipeline_node)
@@ -125,6 +132,7 @@ def build_production_graph() -> StateGraph:
         "turn_router",
         route_after_turn_router,
         {
+            "hitl_clarify":"hitl_clarify",
             "transform_result": "transform_result",
             "sql_pipeline": "sql_pipeline",
             "safe_response": "safe_response",
@@ -143,6 +151,8 @@ def build_production_graph() -> StateGraph:
     workflow.add_edge("formatter", "cache_result")
     workflow.add_edge("cache_result", "save_memory")
     workflow.add_edge("save_memory", END)
+    
+    workflow.add_edge("hitl_clarify", "save_memory")
 
     logger.info("Production graph compiled successfully")
     return workflow
@@ -154,7 +164,9 @@ _checkpointer = MemorySaver()
 
 def compile_production_graph():
     workflow = build_production_graph()
-    return workflow.compile(checkpointer=_checkpointer)
+    return workflow.compile(
+        # checkpointer=_checkpointer
+        )
 
 
 # Global compiled graph instance
@@ -175,13 +187,7 @@ def run_agent(question: str, **kwargs) -> dict:
 
     try:
         config = build_invoke_config(session_id)
-        if kwargs.get("clarification_answer") and settings.enable_production_graph:
-            print(kwargs.get("clarification_answer"))
-            from langgraph.types import Command
-            final_state = graph.invoke(Command(resume=kwargs["clarification_answer"]), config)
-        else:
-            final_state = graph.invoke(initial_state, config)
-            print(final_state)
+        final_state = graph.invoke(initial_state, config)
         return _finalize_state(final_state)
     except Exception as e:
         logger.error(f"Production graph error: {e}")

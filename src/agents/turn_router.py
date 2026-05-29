@@ -89,6 +89,7 @@ class TurnRouterAgent:
         self.extractor_chain = self.extraction_prompt | self.llm
 
     def route(self, state: AgentState) -> dict[str, Any]:
+        logger.info("Route ochastrator runs...")
         question = state["question"]
         session_id = state.get("session_id")
         metrics = state.get("metrics")
@@ -110,69 +111,78 @@ class TurnRouterAgent:
 
         action = result.get("action", "run_sql")
         
-        # ======================================================
-        # INTERRUPT & CAPTURE LOGIC (IN-LINE RESUME FLOW)
-        # ======================================================
-        if action == "clarify":
-            question_to_user = result.get("clarification_question") or "Could you define that KPI?"
+        # # ======================================================
+        # # INTERRUPT & CAPTURE LOGIC (IN-LINE RESUME FLOW)
+        # # ======================================================
+        # if action == "clarify":
+        #     question_to_user = result.get("clarification_question") or "Could you define that KPI?"
             
-            # Save clarification prompt to memory history
-            chat_memory.add_message(
-                session_id=session_id,
-                role="assistant",
-                content=question_to_user,
-                message_type="clarification_question"
-            )
+        #     # Save clarification prompt to memory history
+        #     chat_memory.add_message(
+        #         session_id=session_id,
+        #         role="assistant",
+        #         content=question_to_user,
+        #         message_type="clarification_question"
+        #     )
+        #     logger.info("Clarification for user...")
+        #     # Suspend LangGraph execution and wait for user's text input
+        #     user_response = interrupt({
+        #         "type": "clarification_pause",
+        #         "question_to_user": question_to_user,
+        #         "gap_type": "knowledge_gap",
+        #         "pending_original_question": question
+        #     })
             
-            # Suspend LangGraph execution and wait for user's text input
-            user_response = interrupt({
-                "type": "clarification_pause",
-                "question_to_user": question_to_user,
-                "gap_type": "knowledge_gap",
-                "pending_original_question": question
-            })
+        #     # --- EXECUTION RESUMES HERE WHEN USER ANSWERS ---
+        #     logger.info("Resuming orchestrator node; capturing user answer...")
             
-            # --- EXECUTION RESUMES HERE WHEN USER ANSWERS ---
-            logger.info("Resuming orchestrator node; capturing user answer...")
-            
-            try:
-                # Capture and structure the user's business formula
-                extract_resp = self.extractor_chain.invoke({
-                    "original_question": question,
-                    "user_answer": user_response
-                })
-                extracted_rule = extract_json(extract_resp.content)
-                definition_text = extracted_rule.get("definition", "")
-            except Exception as e:
-                logger.error(f"Failed to structure captured knowledge: {e}")
-                definition_text = str(user_response)
-                extracted_rule = {"definition": definition_text}
+        #     try:
+        #         # Capture and structure the user's business formula
+        #         extract_resp = self.extractor_chain.invoke({
+        #             "original_question": question,
+        #             "user_answer": user_response
+        #         })
+        #         extracted_rule = extract_json(extract_resp.content)
+        #         definition_text = extracted_rule.get("definition", "")
+        #     except Exception as e:
+        #         logger.error(f"Failed to structure captured knowledge: {e}")
+        #         definition_text = str(user_response)
+        #         extracted_rule = {"definition": definition_text}
 
-            # Update session logs with resolved gaps
-            chat_memory.resolve_latest_clarification(session_id, user_response)
-            chat_memory.resolve_latest_knowledge_gap(session_id)
+        #     # Update session logs with resolved gaps
+        #     chat_memory.resolve_latest_clarification(session_id, user_response)
+        #     chat_memory.resolve_latest_knowledge_gap(session_id)
 
-            # Package combined question and set dynamic business context
-            combined_question = f"Original Question: {question}\nBusiness Definition: {definition_text}"
+        #     # Package combined question and set dynamic business context
+        #     combined_question = f"Original Question: {question}\nBusiness Definition: {definition_text}"
             
-            return {
-                "turn_action": "run_sql",
-                "question": combined_question,
-                "enriched_question": combined_question,
-                "business_definitions": definition_text,
-                "waiting_for_user": False,
-                "needs_clarification": False,
-                "captured_business_rule": extracted_rule,
-                "metrics": set_router_action(metrics, "run_sql")
-            }
+        #     return {
+        #         "turn_action": "run_sql",
+        #         "question": combined_question,
+        #         "enriched_question": combined_question,
+        #         "business_definitions": definition_text,
+        #         "waiting_for_user": False,
+        #         "needs_clarification": False,
+        #         "captured_business_rule": extracted_rule,
+        #         "metrics": set_router_action(metrics, "run_sql")
+        #     }
+        
+        logger.info(f"Action: {action}")
 
         # 4. Standard action paths
         out = {
             "turn_action": action,
             "router_confidence": float(result.get("confidence", 1.0)),
             "enriched_question": result.get("enriched_question") or question,
+            "question_to_user": result.get("clarification_question"),
+
             "gap_type": result.get("gap_type"),
             "gap_reason": result.get("gap_reason"),
+
+            "needs_clarification": action == "clarify",
+            "waiting_for_user": action == "clarify",
+            "pending_original_question": question if action == "clarify" else None,
+
             "metrics": set_router_action(metrics, action)
         }
         
