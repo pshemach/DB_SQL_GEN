@@ -11,9 +11,7 @@ from loguru import logger
 from langgraph.types import interrupt
 
 from ...config import settings
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from ..graph.graph_state import AgentState
+from ..graph.graph_state import AgentState
 from ..tools import business_knowledge_store, business_knowledge_retriever
 from ..tools.chat_memory import chat_memory
 from ...utils.json_utils import extract_json
