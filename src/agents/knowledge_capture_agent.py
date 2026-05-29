@@ -8,7 +8,7 @@ from ..config import settings
 from ..utils.json_utils import extract_json
 from ..tools.business_knowledge_store import business_knowledge_store
 from ..tools.chat_memory import chat_memory
-from ..graph.graph_state import AgentState
+from .graph.graph_state import AgentState
 from ..utils.llm_factory import groq_llm
 
 KNOWLEDGE_CAPTURE_PROMPT = """

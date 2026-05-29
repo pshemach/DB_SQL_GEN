@@ -7,9 +7,9 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 from ..core import db_manager
-from ..graph.graph_state import AgentState
+from .graph.graph_state import AgentState
 from ..config import settings
-from ..prompt import REFLECTION_PROMPT
+from .prompt import REFLECTION_PROMPT
 from ..utils.error_taxonomy import classify_db_error, is_retryable
 from ..utils.serialization import sanitize_state, serialize_query_result
 from ..utils.llm_factory import groq_llm

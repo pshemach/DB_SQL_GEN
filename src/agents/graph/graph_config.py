@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..config import settings
+from ...config import settings
 
 
 def build_invoke_config(session_id: str | None = None) -> dict:

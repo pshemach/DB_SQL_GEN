@@ -11,7 +11,7 @@ import os
 from langsmith import traceable
 
 from .graph_state import AgentState
-from ..agents import (
+from .. import (
     planner_node,
     schema_linker_node,
     generator_node,
@@ -23,8 +23,8 @@ from ..agents import (
     result_formatter_node,
     knowledge_capture_node
 )
-from ..agents.follow_up_detector import follow_up_detector_node
-from ..agents.result_transformer import transform_result_node
+from ..follow_up_detector import follow_up_detector_node
+from ..result_transformer import transform_result_node
 
 from .conditional_methods import (
     add_start_time,
@@ -40,9 +40,9 @@ from .nodes import (
     save_memory_node,
     cache_result_node
 )
-from ..config import settings
-from ..tools.chat_memory import chat_memory
-from ..utils.langsmith_utils import setup_langsmith
+from ...config import settings
+from ...tools.chat_memory import chat_memory
+from ...utils.langsmith_utils import setup_langsmith
 
 setup_langsmith()
 

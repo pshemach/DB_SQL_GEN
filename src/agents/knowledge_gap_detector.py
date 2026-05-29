@@ -4,10 +4,10 @@ from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 
 from ..config import settings
-from ..prompt import KNOWLEDGE_GAP_DETECTOR_PROMPT
+from .prompt import KNOWLEDGE_GAP_DETECTOR_PROMPT
 from ..utils.json_utils import extract_json
 from ..tools import business_knowledge_store, business_knowledge_retriever
-from ..graph.graph_state import AgentState
+from .graph.graph_state import AgentState
 from ..utils.llm_factory import groq_llm
 
 

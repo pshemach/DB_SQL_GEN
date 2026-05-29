@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from typing import Literal
-
+import time
 from loguru import logger
 
-from ..config import settings
-from ..tools.result_cache import result_cache
+from ...config import settings
+from ...tools.result_cache import result_cache
 from .graph_state import AgentState
 
+def add_start_time(state: AgentState) -> dict:
+    """Add timestamp at start of workflow."""
+    return {"start_time": time.time()}
 
 def route_after_cache(state: AgentState) -> Literal["formatter", "authz"]:
     if state.get("cache_hit"):
@@ -60,3 +63,28 @@ def route_after_transform(state: AgentState) -> Literal["formatter", "sql_pipeli
     if state.get("query_result") is None and state.get("current_phase") == "error":
         return "sql_pipeline"
     return "formatter"
+
+def route_after_turn_router(state: AgentState) -> Literal["transform_result", "sql_pipeline", "safe_response", "formatter", "hitl_clarify"]:
+    """
+    Simplified production routing.
+    Clarification interrupts are handled internally inside turn_router, so we never route to hitl_clarify.
+    """
+    action = state.get("turn_action", "run_sql")
+
+    if action == "transform_previous" and settings.enable_transform_previous:
+        sid = state.get("session_id")
+        if sid and result_cache.get_cached_result(sid):
+            return "transform_result"
+        logger.warning("transform_previous requested but no session cache found - falling back to sql_pipeline")
+        return "sql_pipeline"
+    
+    if action == 'clarify':
+        return "hitl_clarify"
+        
+    if action in ("deny", "chitchat", "cancel"):
+        return "safe_response"
+        
+    if action == "cache_hit":
+        return "formatter"
+        
+    return "sql_pipeline"

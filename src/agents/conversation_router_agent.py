@@ -2,7 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from ..config import settings
-from ..graph.graph_state import AgentState
+from .graph.graph_state import AgentState
 from ..utils.llm_factory import groq_llm
 
 CONVERSATION_ROUTER_PROMPT = """

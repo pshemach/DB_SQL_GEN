@@ -1,17 +1,18 @@
-"""Deterministic ingress nodes (no LLM)."""
-
 from __future__ import annotations
 
 import re
 import time
 from loguru import logger
 
-from ..config import settings
-from ..tools import semantic_cache
-from ..tools.chat_memory import chat_memory
-from ..utils.metrics import init_metrics, record_node_timing
+from ...config import settings
+from ...tools import semantic_cache
+from ...tools.chat_memory import chat_memory
+from ...utils.metrics import init_metrics, record_node_timing
 from .graph_state import AgentState
-from ..agents import knowledge_capture_agent
+from ...utils.serialization import serialize_query_result
+from ...tools.result_cache import result_cache
+from ..result_formatter_agent import result_formatter_node
+from ...utils.serialization import sanitize_state
 
 
 DANGEROUS_PATTERNS = [
@@ -20,6 +21,108 @@ DANGEROUS_PATTERNS = [
     r"(?i)(--\s*$|;\s*DROP)",
 ]
 
+def save_memory_node(state: AgentState) -> dict:
+    """
+    Save conversation memory (only user questions and assistant answers).
+    
+    Technical artifacts (SQL, plan) are NOT saved as messages but stored in last_state
+    so they don't pollute the memory context used by the LLM for reasoning.
+    """
+    session_id = state.get("session_id")
+
+    if not session_id:
+        return {}
+
+    # Determine what assistant message to save, in priority order
+    assistant_content = None
+    message_type = None
+    
+    if state.get("waiting_for_user"):
+        # Save the clarification question the assistant asked
+        assistant_content = state.get("question_to_user")
+        message_type = "clarification_question"
+    
+    elif state.get("error"):
+        # Save errors
+        assistant_content = state.get("error")
+        message_type = "error"
+    
+    elif state.get("result_summary"):
+        # Save result summary when query succeeds
+        assistant_content = state.get("result_summary")
+        message_type = "answer"
+    
+    elif state.get("final_answer"):
+        # Save final answers
+        assistant_content = state.get("final_answer")
+        message_type = "answer"
+    
+    # Save the assistant message if we have one
+    if assistant_content:
+        chat_memory.add_message(
+            session_id=session_id,
+            role="assistant",
+            content=assistant_content,
+            message_type=message_type
+        )
+    
+    # DO NOT save SQL queries, plans as messages - they are internal artifacts
+    # They are preserved in last_state for reference, but not in conversation memory
+
+    # Always save the full state for retrieval if needed
+    chat_memory.set_last_state(session_id, state)
+
+    return {
+        "messages": chat_memory.get_session(session_id).get("messages", []),
+        "memory_context": chat_memory.build_memory_context(session_id)
+    }
+    
+
+
+def cache_result_node(state: AgentState) -> dict:
+    """
+    Stores successful query results in semantic cache for future use.
+    Also caches the last result set per session for follow-up lookups (no re-SQL).
+    """
+    if state.get("error") is not None:
+        return {}
+
+    question_key = state.get("enriched_question") or state.get("question") or ""
+
+    if state.get("sql_query") and not state.get("reused_previous_result"):
+        result_to_cache = {
+            "sql_query": state["sql_query"],
+            "query_result": state.get("query_result"),
+            "result_preview": state.get("result_preview"),
+            "plan": state.get("plan"),
+            "relevant_tables": state.get("relevant_tables"),
+        }
+        semantic_cache.set(question_key, result_to_cache)
+
+    # Session result cache: only after a fresh SQL run (not transform / semantic hit)
+    if state.get("reused_previous_result") or state.get("turn_action") in (
+        "transform_previous",
+        "cache_hit",
+    ):
+        return {}
+
+    session_id = state.get("session_id")
+    rows = serialize_query_result(state.get("query_result"))
+    if session_id and isinstance(rows, list) and rows:
+        tables = state.get("relevant_tables") or []
+        if isinstance(tables, str):
+            tables = [tables]
+        schema = {str(k): type(v).__name__ for k, v in rows[0].items()}
+        result_cache.cache_result(
+            session_id=session_id,
+            question=question_key,
+            sql=state.get("sql_query") or "",
+            data=rows,
+            tables=list(tables),
+            schema=schema,
+        )
+
+    return {}
 
 def memory_loader_node(state: dict) -> dict:
     """Load session memory and prior turn state."""
@@ -67,7 +170,7 @@ def semantic_cache_lookup_node(state: AgentState) -> dict:
 
     logger.info("Semantic cache HIT — skipping SQL subgraph")
     metrics["cache_hit"] = True
-    from ..utils.serialization import sanitize_state
+    from ...utils.serialization import sanitize_state
 
     return sanitize_state({
         "cache_hit": True,
@@ -154,80 +257,6 @@ def safe_response_node(state: AgentState) -> dict:
         "error": None if state.get("turn_action") == "chitchat" else state.get("error"),
     }
 
-
-# def hitl_clarify_node(state: AgentState) -> dict:
-#     """
-#     Human-in-the-loop clarification via LangGraph interrupt.
-#     On resume, merges user answer and optionally captures business knowledge.
-#     """
-    # from langgraph.types import interrupt
-
-    # from ..agents.clarification_agent import ClarificationAgent
-
-    # # Resume path: clarification_answer supplied via Command(resume=...) or state
-    # resume_answer = state.get("clarification_answer")
-    # if resume_answer and not state.get("_hitl_resume_processed"):
-    #     if state.get("gap_type") == "knowledge_gap":
-    #         return knowledge_capture_agent.capture(
-    #             {**state, "pending_original_question": state.get("pending_original_question") or state.get("question")}
-    #         )
-    #     original = state.get("pending_original_question") or state.get("original_question") or state.get("question")
-    #     combined = f"Original Question:\n{original}\n\nClarification Answer:\n{resume_answer}".strip()
-    #     return {
-    #         "question": combined,
-    #         "clarification_answer": resume_answer,
-    #         "waiting_for_user": False,
-    #         "needs_clarification": False,
-    #         "question_to_user": None,
-    #         "enriched_question": combined,
-    #     }
-
-    # question_to_user = state.get("question_to_user")
-    # clarifier_out = {}
-    # if not question_to_user:
-    #     agent = ClarificationAgent()
-    #     clarifier_out = agent.clarify(state)
-    #     question_to_user = clarifier_out.get("question_to_user") or "Could you provide more details?"
-
-    # # SAVE clarification question to memory BEFORE interrupt
-    # session_id = state.get("session_id")
-    # if session_id:
-    #     chat_memory.add_message(
-    #         session_id=session_id,
-    #         role="assistant",
-    #         content=question_to_user,
-    #         message_type="clarification_question"
-    #     )
-        
-    # user_response = interrupt(
-    #     {
-    #         "type": "clarification",
-    #         "question_to_user": question_to_user,
-    #         "gap_type": state.get("gap_type"),
-    #         "pending_original_question": state.get("pending_original_question") or state.get("question"),
-    #     }
-    # )
-
-    # resume_state = {
-    #     **state,
-    #     **clarifier_out,
-    #     "clarification_answer": user_response if isinstance(user_response, str) else str(user_response),
-    #     "waiting_for_user": False,
-    # }
-
-    # if state.get("gap_type") == "knowledge_gap":
-    #     return knowledge_capture_agent.capture(resume_state)
-
-    # original = resume_state.get("pending_original_question") or resume_state.get("question")
-    # combined = f"Original Question:\n{original}\n\nClarification Answer:\n{resume_state['clarification_answer']}".strip()
-    # return {
-    #     **resume_state,
-    #     "question": combined,
-    #     "enriched_question": combined,
-    #     "needs_clarification": False,
-    #     "question_to_user": None,
-    # }
-
 def hitl_clarify_node(state: AgentState) -> dict:
     question_to_user = (
         state.get("clarification_question")
@@ -252,3 +281,7 @@ def hitl_clarify_node(state: AgentState) -> dict:
         "relevant_tables": None,
         "error": None,
     }
+    
+def formatter_node(state: AgentState) -> dict:
+    """Format results and sanitize for checkpointer (plotly/numpy/date)."""
+    return sanitize_state(result_formatter_node(state))

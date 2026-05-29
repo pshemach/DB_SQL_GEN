@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from langsmith import traceable
 
-from ..graph import run_agent_async
+from ..agents.graph import run_agent_async
 from ..tools import seed_examples, semantic_cache, few_shot_retriever
 from ..tools.chat_memory import chat_memory
 from ..core import db_manager

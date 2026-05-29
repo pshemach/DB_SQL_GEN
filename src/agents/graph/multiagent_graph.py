@@ -2,7 +2,7 @@
 LangGraph workflow entry — delegates to production graph when enabled.
 """
 
-from ..config import settings
+from ...config import settings
 
 if settings.enable_production_graph:
     from .production_graph import (

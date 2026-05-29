@@ -14,38 +14,34 @@ from langgraph.graph import END, StateGraph
 from loguru import logger
 from langsmith import traceable
 
-from ..config import settings
-from ..utils.langsmith_utils import setup_langsmith
-from ..utils.metrics import finalize_metrics, init_metrics
+from ...config import settings
+from ...utils.langsmith_utils import setup_langsmith
+from ...utils.metrics import finalize_metrics, init_metrics
 from .graph_config import build_invoke_config
 from .graph_state import AgentState
-from .ingress_nodes import (
+from .nodes import (
     authz_guardrails_node,
     memory_loader_node,
     safe_response_node,
     semantic_cache_lookup_node,
-    hitl_clarify_node
+    hitl_clarify_node,
+    cache_result_node, 
+    save_memory_node,
+    formatter_node
 )
-from .nodes import cache_result_node, save_memory_node
 from .production_conditional import (
     route_after_authz,
     route_after_cache,
     route_after_transform,
+    add_start_time,
+    route_after_turn_router
 )
-from .conditional_methods import add_start_time
-from ..agents.turn_router import turn_router_node
-from ..agents.result_formatter_agent import result_formatter_node
-from ..utils.serialization import sanitize_state
-from ..agents.result_transformer import transform_result_node
+from ..turn_router import turn_router_node
+from ...utils.serialization import sanitize_state
+from ..result_transformer import transform_result_node
 from .sql_subgraph import get_sql_subgraph
-from ..tools.result_cache import result_cache
 
 setup_langsmith()
-
-
-def _formatter_node(state: AgentState) -> dict:
-    """Format results and sanitize for checkpointer (plotly/numpy/date)."""
-    return sanitize_state(result_formatter_node(state))
 
 
 def sql_pipeline_node(state: AgentState) -> dict:
@@ -56,32 +52,6 @@ def sql_pipeline_node(state: AgentState) -> dict:
     sub_out = subgraph.invoke(sub_in)
     merged = _sub_to_parent(sub_out)
     return sanitize_state(merged) if merged else {}
-
-
-def route_after_turn_router(state: AgentState) -> Literal["transform_result", "sql_pipeline", "safe_response", "formatter"]:
-    """
-    Simplified production routing.
-    Clarification interrupts are handled internally inside turn_router, so we never route to hitl_clarify.
-    """
-    action = state.get("turn_action", "run_sql")
-
-    if action == "transform_previous" and settings.enable_transform_previous:
-        sid = state.get("session_id")
-        if sid and result_cache.get_cached_result(sid):
-            return "transform_result"
-        logger.warning("transform_previous requested but no session cache found - falling back to sql_pipeline")
-        return "sql_pipeline"
-    
-    if action == 'clarify':
-        return "hitl_clarify"
-        
-    if action in ("deny", "chitchat", "cancel"):
-        return "safe_response"
-        
-    if action == "cache_hit":
-        return "formatter"
-        
-    return "sql_pipeline"
 
 
 def build_production_graph() -> StateGraph:
@@ -107,7 +77,7 @@ def build_production_graph() -> StateGraph:
     workflow.add_node("sql_pipeline", sql_pipeline_node)
 
     # Egress
-    workflow.add_node("formatter", _formatter_node)
+    workflow.add_node("formatter", formatter_node)
     workflow.add_node("cache_result", cache_result_node)
     workflow.add_node("save_memory", save_memory_node)
 
@@ -180,7 +150,7 @@ graph = compile_production_graph()
 )
 def run_agent(question: str, **kwargs) -> dict:
     """Synchronous entry point for production graph."""
-    from ..tools.chat_memory import chat_memory
+    from ...tools.chat_memory import chat_memory
 
     session_id = chat_memory.get_or_create_session(kwargs.get("session_id"))
     initial_state = _build_initial_state(question, session_id, kwargs)

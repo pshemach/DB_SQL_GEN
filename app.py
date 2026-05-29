@@ -28,7 +28,7 @@ from loguru import logger
 from typing import Optional
 from sqlalchemy import text
 
-from src.graph import run_agent_async
+from src.agents.graph import run_agent_async
 from src.utils.serialization import json_safe_value, serialize_query_result
 from src.core.database import db_manager
 from src.tools.business_knowledge_store import business_knowledge_store
