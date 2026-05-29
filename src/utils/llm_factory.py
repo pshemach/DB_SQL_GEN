@@ -30,9 +30,10 @@ def openai_llm(*, temperature: float | None = 0.0) -> ChatOpenAI:
         kwargs["temperature"] = temperature
     return ChatOpenAI(**kwargs)
 
-def groq_llm(*, temperature: float | None = 0.0) -> ChatGroq:
+def groq_llm(*, temperature: float | None = 0.0, model: str | None = None) -> ChatGroq:
+    model_name = model or settings.groq_model_reasoning
     kwargs: dict = {
-        "model": settings.groq_model_reasoning,
+        "model": model_name,
         "api_key": settings.groq_api_key
     }
     if temperature is not None:

@@ -1,9 +1,9 @@
 """
 Unified turn router — replaces sequential conversation_router, gap_detector, and follow_up_detector.
+Performs stateless turn classification and history-based context enrichment.
 """
 
 from __future__ import annotations
-
 import json
 from typing import Any
 from langchain_core.prompts import ChatPromptTemplate
@@ -11,7 +11,9 @@ from loguru import logger
 from langgraph.types import interrupt
 
 from ...config import settings
-from ..graph.graph_state import AgentState
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..graph.graph_state import AgentState
 from ..tools import business_knowledge_store, business_knowledge_retriever
 from ..tools.chat_memory import chat_memory
 from ...utils.json_utils import extract_json
@@ -24,7 +26,7 @@ from ...guardrails.social_messages import is_social_message
 # ==========================================
 
 ORCHESTRATOR_SYSTEM_PROMPT = """You are the dialogue manager for a Text-to-SQL Sales BI Assistant.
-Your task is to analyze the user's query and decide the next best action.
+Your task is to analyze the user's current query in the context of the conversation history, and decide the next best action.
 
 CONVERSATION CONTEXT:
 <memory_context>
@@ -35,34 +37,35 @@ CONVERSATION CONTEXT:
 {retrieved_knowledge}
 </retrieved_business_definitions>
 
-Evaluate if the question contains any unknown business term or undefined metric.
-If a business definition is missing, set action to "clarify" and ask a clear question explaining the gap.
+DIAGNOSTIC & CLASSIFICATION RULES:
+1. Stateless Context Enrichment (Pronoun / Antecedent Resolution):
+   - If the user's query is a follow-up that refers to a person, rep, node, date range, or context from previous turns (e.g. "Show me his planned routes too", "Show their targets", "Filter to John's assignments"), you MUST resolve all pronouns ("his", "them", "their", "it") and abbreviations based on the conversation logs in `<memory_context>`.
+   - Rewrite the query into a fully self-contained, concrete question. Return this in the `enriched_question` parameter in JSON, and set `action` to `run_sql`.
+   - Example: User asks "Show me his route assignments too" after looking at "John Smith (REP_108)". You output `enriched_question` = "Show planned route assignments for representative John Smith (Rep Code: REP_108)" and `action` = "run_sql".
+
+2. Clarification Answer Capture:
+   - If the last assistant message in `<memory_context>` was a clarification question (e.g. asking how a metric is calculated or which representative is referred to) and the user's current query is answering it:
+     - Merge the user's answer into the original request in history to build a complete, solid question.
+     - Return this consolidated question in `enriched_question` and set `action` to `run_sql`.
+
+3. In-Memory Transformation vs. Live DB SQL:
+   - **`transform_previous`**: Set action to this ONLY if the query is a simple post-processing action on the previous query result (e.g., sorting, filtering, summing, or explaining columns) AND all columns needed are already in the cached schema.
+   - **`run_sql`**: Set action to this if the query requires new metrics, columns, tables, or database joins not available in the previous query results.
+
+4. Chitchat & Social Banter:
+   - If the user query is a greeting, thank you, or general social conversation, set `action` to `chitchat`.
+
+5. Security Denials:
+   - If the query asks to alter database structure (DROP, DELETE, TRUNCATE) or is out of scope, set `action` to `deny`.
 
 Return ONLY a valid JSON object:
 {{
-  "action": "run_sql | clarify | transform_previous | deny | chitchat | cancel",
-  "confidence": 0.0,
-  "clarification_question": "Explain defined business KPI rules only if action is clarify",
+  "action": "run_sql | clarify | transform_previous | deny | chitchat",
+  "confidence": 0.95,
+  "clarification_question": "Explain defined business KPI rules only if action is clarify, else null",
   "gap_type": "knowledge_gap | none",
   "gap_reason": "Explanation of the knowledge gap if any",
-  "enriched_question": "Rewritten question incorporating system scope (no SQL)"
-}}
-"""
-
-KNOWLEDGE_EXTRACT_PROMPT = """You are a business knowledge extraction agent.
-A user has provided a definition for an unknown metric. Extract the clean business formula.
-
-Original User Question:
-{original_question}
-
-User Answer / Definition:
-{user_answer}
-
-Return ONLY valid JSON:
-{{
-  "name": "snake_case_metric_name",
-  "keywords": ["synonyms"],
-  "definition": "A clear description of the calculation logic and filters"
+  "enriched_question": "Consolidated, pronoun-resolved, fully self-contained question"
 }}
 """
 
@@ -72,105 +75,61 @@ Return ONLY valid JSON:
 
 class TurnRouterAgent:
     def __init__(self):
-        # Using the standard model instance
         self.llm = groq_llm(temperature=0)
-        
         self.orchestration_prompt = ChatPromptTemplate.from_messages([
             ("system", ORCHESTRATOR_SYSTEM_PROMPT),
             ("human", "{question}"),
         ])
-        
-        self.extraction_prompt = ChatPromptTemplate.from_messages([
-            ("system", KNOWLEDGE_EXTRACT_PROMPT),
-            ("human", "{user_answer}"),
-        ])
-        
         self.orchestrator_chain = self.orchestration_prompt | self.llm
-        self.extractor_chain = self.extraction_prompt | self.llm
 
     def route(self, state: AgentState) -> dict[str, Any]:
-        logger.info("Route ochastrator runs...")
+        logger.info("Route orchestrator running...")
         question = state["question"]
         session_id = state.get("session_id")
         metrics = state.get("metrics")
 
-        # 2. Retrieve existing domain knowledge from store
+        # 1. Retrieve existing domain knowledge from store
         retrieved_knowledge = self._retrieve_knowledge(question)
+        
+        # 2. Extract memory context (default to loaded memory_context from state)
+        memory_context = state.get("memory_context") or ""
         
         # 3. Invoke Dialogue Orchestration LLM
         try:
             resp = self.orchestrator_chain.invoke({
                 "question": question,
-                "memory_context": state.get("memory_context") or "",
+                "memory_context": memory_context,
                 "retrieved_knowledge": retrieved_knowledge
             })
-            result = extract_json(resp.content)
+            text = resp.content if hasattr(resp, "content") else str(resp)
+            result = extract_json(text)
         except Exception as e:
             logger.error(f"Orchestration routing failed: {e}")
             result = {"action": "run_sql", "confidence": 0.5}
 
         action = result.get("action", "run_sql")
-        
-        # # ======================================================
-        # # INTERRUPT & CAPTURE LOGIC (IN-LINE RESUME FLOW)
-        # # ======================================================
-        # if action == "clarify":
-        #     question_to_user = result.get("clarification_question") or "Could you define that KPI?"
-            
-        #     # Save clarification prompt to memory history
-        #     chat_memory.add_message(
-        #         session_id=session_id,
-        #         role="assistant",
-        #         content=question_to_user,
-        #         message_type="clarification_question"
-        #     )
-        #     logger.info("Clarification for user...")
-        #     # Suspend LangGraph execution and wait for user's text input
-        #     user_response = interrupt({
-        #         "type": "clarification_pause",
-        #         "question_to_user": question_to_user,
-        #         "gap_type": "knowledge_gap",
-        #         "pending_original_question": question
-        #     })
-            
-        #     # --- EXECUTION RESUMES HERE WHEN USER ANSWERS ---
-        #     logger.info("Resuming orchestrator node; capturing user answer...")
-            
-        #     try:
-        #         # Capture and structure the user's business formula
-        #         extract_resp = self.extractor_chain.invoke({
-        #             "original_question": question,
-        #             "user_answer": user_response
-        #         })
-        #         extracted_rule = extract_json(extract_resp.content)
-        #         definition_text = extracted_rule.get("definition", "")
-        #     except Exception as e:
-        #         logger.error(f"Failed to structure captured knowledge: {e}")
-        #         definition_text = str(user_response)
-        #         extracted_rule = {"definition": definition_text}
+        logger.info(f"Dialogue Orchestrator classified action: {action}")
 
-        #     # Update session logs with resolved gaps
-        #     chat_memory.resolve_latest_clarification(session_id, user_response)
-        #     chat_memory.resolve_latest_knowledge_gap(session_id)
+        # Clear stale state results when moving to a fresh SQL pipeline run or clarification
+        cleaned_state_updates = {}
+        if action in ["run_sql", "clarify"]:
+            cleaned_state_updates = {
+                "query_result": None,
+                "result_preview": None,
+                "visualizations": [],
+                "sql_query": None,
+                "sql_explanation": None,
+                "plan": None,
+                "plan_steps": None,
+                "table_title": None,
+                "relevant_tables": None,
+                "error": None,
+                "final_answer": None,
+                "result_summary": None,
+            }
 
-        #     # Package combined question and set dynamic business context
-        #     combined_question = f"Original Question: {question}\nBusiness Definition: {definition_text}"
-            
-        #     return {
-        #         "turn_action": "run_sql",
-        #         "question": combined_question,
-        #         "enriched_question": combined_question,
-        #         "business_definitions": definition_text,
-        #         "waiting_for_user": False,
-        #         "needs_clarification": False,
-        #         "captured_business_rule": extracted_rule,
-        #         "metrics": set_router_action(metrics, "run_sql")
-        #     }
-        
-        logger.info(f"Action: {action}")
-
-        # 4. Standard action paths
         out = {
+            **cleaned_state_updates,
             "turn_action": action,
             "router_confidence": float(result.get("confidence", 1.0)),
             "enriched_question": result.get("enriched_question") or question,
@@ -186,6 +145,10 @@ class TurnRouterAgent:
             "metrics": set_router_action(metrics, action)
         }
         
+        # If enriched_question was compiled, overwrite standard question context for SQL generator
+        if result.get("enriched_question"):
+            out["question"] = result["enriched_question"]
+
         return out
 
     def _retrieve_knowledge(self, question: str) -> str:

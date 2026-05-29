@@ -11,7 +11,7 @@ from ...config import settings
 from ..tools.chat_memory import chat_memory
 from ...utils.metrics import finalize_metrics, init_metrics
 from ...utils.serialization import sanitize_state
-from .graph_config import build_invoke_config
+from ...utils.graph_config import build_invoke_config
 from .multiagent_graph import graph
 
 

@@ -17,7 +17,7 @@ from langsmith import traceable
 from ...config import settings
 from ...utils.langsmith_utils import setup_langsmith
 from ...utils.metrics import finalize_metrics, init_metrics
-from .graph_config import build_invoke_config
+from ...utils.graph_config import build_invoke_config
 from .graph_state import AgentState
 from .nodes import (
     authz_guardrails_node,
@@ -36,9 +36,7 @@ from .production_conditional import (
     add_start_time,
     route_after_turn_router
 )
-from ..agent.turn_router import turn_router_node
 from ...utils.serialization import sanitize_state
-from ..agent.result_transformer import transform_result_node
 from .sql_subgraph import get_sql_subgraph
 
 setup_langsmith()
@@ -56,6 +54,9 @@ def sql_pipeline_node(state: AgentState) -> dict:
 
 def build_production_graph() -> StateGraph:
     logger.info("Building production Text-to-SQL graph with Unified Turn Orchestration...")
+    
+    from ..agent.turn_router import turn_router_node
+    from ..agent.result_transformer import transform_result_node
 
     workflow = StateGraph(AgentState)
 
