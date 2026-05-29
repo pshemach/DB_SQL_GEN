@@ -6,8 +6,8 @@ from loguru import logger
 from langsmith import traceable
 
 from ..agents.graph import run_agent_async
-from ..tools import seed_examples, semantic_cache, few_shot_retriever
-from ..tools.chat_memory import chat_memory
+from ..agents.tools import seed_examples, semantic_cache, few_shot_retriever
+from ..agents.tools.chat_memory import chat_memory
 from ..core import db_manager
 from ..config import settings
 from ..guardrails.pipeline import guardrail_pipeline
@@ -18,8 +18,8 @@ from .data_models import (
     ExampleRequest,
     HealthResponse
 )
-from ..tools.chatbot_auth_client import chatbot_auth_client
-from ..tools.access_context import (
+from ..agents.tools.chatbot_auth_client import chatbot_auth_client
+from ..agents.tools.access_context import (
     extract_allowed_rep_codes_from_phone_auth,
     extract_user_role_from_phone_auth
     )

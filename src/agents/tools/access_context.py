@@ -1,6 +1,6 @@
 from typing import Any
 from sqlalchemy import text
-from ..core.database import db_manager
+from ...core.database import db_manager
 
 
 def get_value(data: dict, *keys, default=None):

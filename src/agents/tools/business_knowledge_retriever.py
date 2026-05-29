@@ -5,7 +5,7 @@ from .embeddings import get_embeddings
 from langchain_chroma import Chroma
 import os
 from typing import List, Dict
-from ..config import settings
+from ...config import settings
 
 class BusinessKnowledgeRetriever:
     """

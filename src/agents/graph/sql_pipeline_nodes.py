@@ -15,7 +15,7 @@ from loguru import logger
 
 from ..retriever import SchemaLinkerAgent
 from ...config import settings
-from ...tools import few_shot_retriever
+from ..tools import few_shot_retriever
 from ...utils.error_taxonomy import classify_db_error, is_retryable
 from ...utils.metrics import bump_sql_retries, record_node_timing
 from .graph_state import AgentState, SQLSubState

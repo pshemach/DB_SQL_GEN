@@ -7,7 +7,7 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from .embeddings import get_embeddings
 from loguru import logger
-from ..config import settings
+from ...config import settings
 import os
 
 class FewShotRetriever:

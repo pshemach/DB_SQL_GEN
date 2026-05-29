@@ -7,7 +7,7 @@ import time
 from loguru import logger
 
 from ...config import settings
-from ...tools.result_cache import result_cache
+from ..tools.result_cache import result_cache
 from .graph_state import AgentState
 
 def add_start_time(state: AgentState) -> dict:

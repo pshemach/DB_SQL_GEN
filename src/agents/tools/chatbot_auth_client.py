@@ -1,7 +1,7 @@
 import json
 import httpx
 from loguru import logger
-from ..config import settings
+from ...config import settings
 
 
 class ChatBotAuthClient:

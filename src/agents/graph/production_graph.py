@@ -150,7 +150,7 @@ graph = compile_production_graph()
 )
 def run_agent(question: str, **kwargs) -> dict:
     """Synchronous entry point for production graph."""
-    from ...tools.chat_memory import chat_memory
+    from ..tools.chat_memory import chat_memory
 
     session_id = chat_memory.get_or_create_session(kwargs.get("session_id"))
     initial_state = _build_initial_state(question, session_id, kwargs)

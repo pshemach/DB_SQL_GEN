@@ -41,7 +41,7 @@ from .nodes import (
     cache_result_node
 )
 from ...config import settings
-from ...tools.chat_memory import chat_memory
+from ..tools.chat_memory import chat_memory
 from ...utils.langsmith_utils import setup_langsmith
 
 setup_langsmith()

@@ -5,7 +5,7 @@ from __future__ import annotations
 from loguru import logger
 
 from src.agents.cache_follow_up_agent import cache_follow_up_agent
-from src.tools.result_cache import result_cache
+from src.agents.tools.result_cache import result_cache
 from src.utils.cached_result_ops import execute_transform_spec
 
 

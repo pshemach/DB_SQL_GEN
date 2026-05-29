@@ -2,7 +2,7 @@
 from langchain_anthropic import ChatAnthropic
 from langchain_openai import ChatOpenAI
 from loguru import logger
-from src.tools.result_cache import result_cache
+from src.agents.tools.result_cache import result_cache
 from src.config import settings
 from ..utils.llm_factory import groq_llm
 import json

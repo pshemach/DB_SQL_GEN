@@ -5,7 +5,7 @@ from functools import lru_cache
 from langchain_openai import OpenAIEmbeddings
 from loguru import logger
 
-from ..config import settings
+from ...config import settings
 
 
 @lru_cache(maxsize=1)

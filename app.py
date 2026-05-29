@@ -31,13 +31,13 @@ from sqlalchemy import text
 from src.agents.graph import run_agent_async
 from src.utils.serialization import json_safe_value, serialize_query_result
 from src.core.database import db_manager
-from src.tools.business_knowledge_store import business_knowledge_store
-from src.tools.chat_memory import chat_memory
+from src.agents.tools.business_knowledge_store import business_knowledge_store
+from src.agents.tools.chat_memory import chat_memory
 from src.guardrails.pipeline import guardrail_pipeline
 from src.guardrails.social_messages import is_social_message
 
-from src.tools.chatbot_auth_client import chatbot_auth_client
-from src.tools.access_context import (
+from src.agents.tools.chatbot_auth_client import chatbot_auth_client
+from src.agents.tools.access_context import (
     extract_allowed_rep_codes_from_phone_auth,
     extract_allowed_node_ids_from_system_login,
     convert_node_ids_to_codes,

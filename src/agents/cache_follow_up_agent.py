@@ -10,7 +10,7 @@ from typing import Any
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 
-from ..tools.result_cache import CachedQueryResult
+from .tools.result_cache import CachedQueryResult
 from ..utils.json_utils import extract_json
 from ..utils.llm_factory import openai_llm, groq_llm
 from ..utils.transform_spec_postprocess import normalize_and_validate_spec
