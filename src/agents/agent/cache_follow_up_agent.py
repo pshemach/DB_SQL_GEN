@@ -10,10 +10,10 @@ from typing import Any
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 
-from .tools.result_cache import CachedQueryResult
-from ..utils.json_utils import extract_json
-from ..utils.llm_factory import openai_llm, groq_llm
-from ..utils.transform_spec_postprocess import normalize_and_validate_spec
+from ..tools.result_cache import CachedQueryResult
+from ...utils.json_utils import extract_json
+from ...utils.llm_factory import openai_llm, groq_llm
+from ...utils.transform_spec_postprocess import normalize_and_validate_spec
 
 CACHE_FOLLOW_UP_PROMPT = """You plan how to answer a follow-up using ONLY the previous query result rows.
 

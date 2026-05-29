@@ -23,8 +23,8 @@ from .. import (
     result_formatter_node,
     knowledge_capture_node
 )
-from ..follow_up_detector import follow_up_detector_node
-from ..result_transformer import transform_result_node
+from ..agent.follow_up_detector import follow_up_detector_node
+from ..agent.result_transformer import transform_result_node
 
 from .conditional_methods import (
     add_start_time,

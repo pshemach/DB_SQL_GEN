@@ -7,11 +7,11 @@ from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
-from ..core import  db_manager
-from .graph.graph_state import AgentState
-from ..config import settings
-from .prompt import TABLE_SELECTION_TABLE, COLUMN_SELECTION_TABLE
-from ..utils.llm_factory import groq_llm
+from ...core import  db_manager
+from ..graph.graph_state import AgentState
+from ...config import settings
+from ..prompt import TABLE_SELECTION_TABLE, COLUMN_SELECTION_TABLE
+from ...utils.llm_factory import groq_llm
 
 class SchemaLinkerAgent:
     """

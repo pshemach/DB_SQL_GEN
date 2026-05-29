@@ -7,7 +7,7 @@ from __future__ import annotations
 from langgraph.graph import END, START, StateGraph
 from loguru import logger
 
-from .. import (
+from src.agents.agent import (
     executor_node,
     generator_node,
     planner_node,

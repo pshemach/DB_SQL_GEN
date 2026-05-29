@@ -13,7 +13,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 
-from ..retriever import SchemaLinkerAgent
+from ..agent.retriever import SchemaLinkerAgent
 from ...config import settings
 from ..tools import few_shot_retriever
 from ...utils.error_taxonomy import classify_db_error, is_retryable

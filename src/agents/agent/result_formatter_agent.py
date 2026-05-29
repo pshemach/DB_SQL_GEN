@@ -6,9 +6,9 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 import json
 
-from ..config import settings
-from ..utils.json_utils import extract_json
-from ..utils.llm_factory import groq_llm
+from ...config import settings
+from ...utils.json_utils import extract_json
+from ...utils.llm_factory import groq_llm
 
 RESULT_FORMATTER_PROMPT = """
 You are a BI result formatter for a field sales analytics assistant.

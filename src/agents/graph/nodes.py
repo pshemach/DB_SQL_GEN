@@ -11,7 +11,7 @@ from ...utils.metrics import init_metrics, record_node_timing
 from .graph_state import AgentState
 from ...utils.serialization import serialize_query_result
 from ..tools.result_cache import result_cache
-from ..result_formatter_agent import result_formatter_node
+from ..agent.result_formatter_agent import result_formatter_node
 from ...utils.serialization import sanitize_state
 
 

@@ -4,11 +4,11 @@ SQL Generator Agent: Translates logical plans into SQL queries.
 
 from langchain_core.prompts import ChatPromptTemplate, FewShotChatMessagePromptTemplate
 from loguru import logger
-from .graph.graph_state import AgentState
-from .prompt import GENERATOR_PROMPT
-from ..utils.llm_factory import anthropic_llm
-from ..config import settings
-from ..utils.llm_factory import groq_llm
+from ..graph.graph_state import AgentState
+from ..prompt import GENERATOR_PROMPT
+from ...utils.llm_factory import anthropic_llm
+from ...config import settings
+from ...utils.llm_factory import groq_llm
 
 class SQLGeneratorAgent:
     """
