@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     chatbot_base_url: str = Field(..., env="CHATBOT_BASE_URL")
     chatbot_system_login_url: str = Field(..., env="CHATBOT_SYSTEM_LOGIN_URL")
     
+    # Qdrant vector db
+    qdrant_api_key: str = Field(..., env="QDRANT_API_KEY")
+    qdrant_url: str = Field(..., env="QDRANT_URL")
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
