@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 from sqlalchemy import text
 from ...core.database import db_manager
 
@@ -174,3 +174,15 @@ def extract_display_name_from_system_login(user_context: dict) -> str:
         or user_context.get("name")
         or "System User"
     )
+    
+def extract_user_id_from_phone_auth(auth_data: dict) -> Optional[Any]:
+    """
+    Extract user ID from phone authentication response.
+    """
+    return auth_data.get("UserId") or auth_data.get("user_id") or auth_data.get("id")
+
+def extract_user_id_from_system_login(user_context: dict) -> Optional[str]:
+    """
+    Extract user ID from system login user context.
+    """
+    return user_context.get("UserId") or user_context.get("user_id") or user_context.get("id")

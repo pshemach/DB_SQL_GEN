@@ -45,6 +45,8 @@ from src.agents.tools.access_context import (
     extract_user_role_from_system_login,
     extract_display_name_from_phone_auth,
     extract_display_name_from_system_login,
+    extract_user_id_from_phone_auth,
+    extract_user_id_from_system_login
 )
 
 # =============================
@@ -52,7 +54,7 @@ from src.agents.tools.access_context import (
 # =============================
 
 st.set_page_config(
-    page_title="Text-to-SQL Agent",
+    page_title="EVision Agent",
     page_icon="💬",
     layout="wide"
 )
@@ -244,12 +246,13 @@ def login_with_phone(phone_no: str) -> dict:
             return auth_result
 
         auth_data = auth_result.get("data") or {}
-
+        user_id = extract_user_id_from_phone_auth(auth_data)
         allowed_rep_codes = extract_allowed_rep_codes_from_phone_auth(auth_data)
 
         return {
             "success": True,
             "login_method": "phone",
+            "user_id": user_id,
             "display_name": extract_display_name_from_phone_auth(auth_data),
             "user_role": extract_user_role_from_phone_auth(auth_data),
             "allowed_rep_codes": allowed_rep_codes,
@@ -267,14 +270,15 @@ def login_with_system(username: str, password: str) -> dict:
             return login_result
 
         user_context = login_result.get("user_context") or {}
-
+        
+        user_id = extract_user_id_from_system_login(user_context)
         allowed_node_ids = extract_allowed_node_ids_from_system_login(user_context)
-
         allowed_rep_codes = convert_node_ids_to_codes(allowed_node_ids)
 
         return {
             "success": True,
             "login_method": "system",
+            "user_id": user_id,
             "display_name": extract_display_name_from_system_login(user_context),
             "user_role": extract_user_role_from_system_login(user_context),
             "allowed_node_ids": allowed_node_ids,
@@ -740,6 +744,9 @@ def render_agent_output_inline(result: dict, key_prefix: str):
 
 if "user" not in st.session_state:
     st.session_state.user = None
+    
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
 
 if "user_role" not in st.session_state:
     st.session_state.user_role = None
@@ -793,15 +800,16 @@ with st.sidebar:
                             st.error("Access denied. No allowed rep codes found.")
                             st.stop()
 
-                        st.session_state.user = login_context["display_name"]
-                        st.session_state.user_role = login_context["user_role"]
-                        st.session_state.allowed_rep_codes = allowed_rep_codes
-                        st.session_state.allowed_node_ids = None
-                        st.session_state.login_method = "phone"
-                        st.session_state.auth_data = login_context.get("auth_data")
-
-                        st.success("Login successful.")
-                        st.rerun()
+                        # Phone login success:
+                        if login_context.get("success"):
+                            st.session_state.user = login_context["display_name"]
+                            st.session_state.user_id = login_context["user_id"]  # ✅ ADD THIS
+                            st.session_state.user_role = login_context["user_role"]
+                            st.session_state.allowed_rep_codes = login_context.get("allowed_rep_codes") or []
+                            st.session_state.login_method = "phone"
+                            st.session_state.auth_data = login_context.get("auth_data")
+                            st.success("Login successful.")
+                            st.rerun()
 
                     except Exception as e:
                         logger.error(f"Phone login failed: {e}")
@@ -840,15 +848,17 @@ with st.sidebar:
                             st.error("Access denied. No allowed rep codes found.")
                             st.stop()
 
-                        st.session_state.user = login_context["display_name"]
-                        st.session_state.user_role = login_context["user_role"]
-                        st.session_state.allowed_rep_codes = allowed_rep_codes
-                        st.session_state.allowed_node_ids = login_context.get("allowed_node_ids")
-                        st.session_state.login_method = "system"
-                        st.session_state.auth_data = login_context.get("auth_data")
-
-                        st.success("Login successful.")
-                        st.rerun()
+                        # System login success:
+                        if login_context.get("success"):
+                            st.session_state.user = login_context["display_name"]
+                            st.session_state.user_id = login_context["user_id"]  # ✅ ADD THIS
+                            st.session_state.user_role = login_context["user_role"]
+                            st.session_state.allowed_rep_codes = login_context.get("allowed_rep_codes") or []
+                            st.session_state.allowed_node_ids = login_context.get("allowed_node_ids")
+                            st.session_state.login_method = "system"
+                            st.session_state.auth_data = login_context.get("auth_data")
+                            st.success("Login successful.")
+                            st.rerun()
 
                     except Exception as e:
                         logger.error(f"System login failed: {e}")
@@ -867,8 +877,10 @@ with st.sidebar:
         #     with st.expander("Allowed Node IDs", expanded=False):
         #         st.write(", ".join(st.session_state.allowed_node_ids))
 
+        # Update logout (around line 875):
         if st.button("Logout", use_container_width=True):
             st.session_state.user = None
+            st.session_state.user_id = None  # ✅ ADD THIS
             st.session_state.user_role = None
             st.session_state.allowed_rep_codes = None
             st.session_state.allowed_node_ids = None
