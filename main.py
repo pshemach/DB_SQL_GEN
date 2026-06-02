@@ -35,19 +35,19 @@
 # print(final_state['sql_query'])
 
 
-from src.agents import knowledge_gap_detector_node
-from src.core import AgentState
-from src.tools import chat_memory
+# from src.agents import knowledge_gap_detector_node
+# from src.core import AgentState
+# from src.tools import chat_memory
 
-session = chat_memory.get_session("8a035b1d-b557-431b-9be1-156594283720")
-print(session)
+# session = chat_memory.get_session("8a035b1d-b557-431b-9be1-156594283720")
+# print(session)
 
-gap_output = knowledge_gap_detector_node(
-    AgentState(
-        question="What is my sales target?",
-        session_id="8a035b1d-b557-431b-9be1-156594283720",
-        memory_context=""
-        )
-    )
+# gap_output = knowledge_gap_detector_node(
+#     AgentState(
+#         question="What is my sales target?",
+#         session_id="8a035b1d-b557-431b-9be1-156594283720",
+#         memory_context=""
+#         )
+#     )
 
-print(gap_output)
+# print(gap_output)
