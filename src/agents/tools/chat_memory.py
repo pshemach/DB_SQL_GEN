@@ -215,18 +215,28 @@ class MySQLSessionStore:
         except Exception as e:
             logger.error(f"Error updating session latest SQL: {e}")
     
-    def save_feedback(self, session_id: str, user_id: str, message_id: str, message_type: str, message_content: str, feedback_type: str, feedback_reason: Optional[str] = None):
-        """Save user feedback (like/dislike) for a response."""
+    def save_feedback(
+        self,
+        session_id: str,
+        user_id: str,
+        message_id: str,
+        message_type: str,
+        message_content: str,
+        feedback_type: str,
+        feedback_reason: Optional[str] = None
+    ) -> bool:
+        """Save user feedback without blocking UI due to nested DB locks."""
         try:
             insert_sql = f"""
             INSERT INTO {self.feedback_table}
             (session_id, user_id, message_id, message_type, message_content, feedback_type, feedback_reason, created_at)
-            VALUES (:session_id, :user_id, :message_id, :message_type, :message_content, :feedback_type, :feedback_reason, :created_at)
+            VALUES (:session_id, :user_id, :message_id, :message_type, :message_content, :feedback_type, :feedback_reason, NOW())
             ON DUPLICATE KEY UPDATE
                 feedback_type = VALUES(feedback_type),
-                feedback_reason = VALUES(feedback_reason)
+                feedback_reason = VALUES(feedback_reason),
+                created_at = NOW()
             """
-            
+
             with db_manager.engine.begin() as conn:
                 conn.execute(text(insert_sql), {
                     "session_id": session_id,
@@ -235,55 +245,56 @@ class MySQLSessionStore:
                     "message_type": message_type,
                     "message_content": message_content,
                     "feedback_type": feedback_type,
-                    "feedback_reason": feedback_reason,
-                    "created_at": datetime.utcnow().isoformat()
+                    "feedback_reason": feedback_reason
                 })
-                logger.info(f"✓ Feedback saved: {feedback_type} for message {message_id}")
-                
-                # Update session satisfaction stats
-                self._update_session_satisfaction_stats(session_id)
+
+            logger.info(f"✓ Feedback saved: {feedback_type} for message {message_id}")
+
+            # Run after feedback transaction is committed
+            self._update_session_satisfaction_stats(session_id)
+
+            return True
+
         except Exception as e:
             logger.error(f"Error saving feedback: {e}")
-    
-    def _update_session_satisfaction_stats(self, session_id: str):
-        """Update session satisfaction stats after feedback."""
+            return False
+        
+    def _update_session_satisfaction_stats(self, session_id: str) -> bool:
+        """Update session satisfaction stats using one short DB transaction."""
         try:
-            stats_sql = f"""
-            SELECT 
-                SUM(CASE WHEN feedback_type = 'like' THEN 1 ELSE 0 END) as likes,
-                SUM(CASE WHEN feedback_type = 'dislike' THEN 1 ELSE 0 END) as dislikes
-            FROM {self.feedback_table}
-            WHERE session_id = :session_id
-            """
-            
-            with db_manager.engine.connect() as conn:
-                result = conn.execute(text(stats_sql), {"session_id": session_id})
-                row = result.fetchone()
-                
-                likes = row[0] or 0
-                dislikes = row[1] or 0
-                total = likes + dislikes
-                satisfaction = (likes / total * 100) if total > 0 else 0
-                
-                update_sql = f"""
-                UPDATE {self.table_name}
-                SET 
-                    total_likes = :likes,
-                    total_dislikes = :dislikes,
-                    average_satisfaction = :satisfaction
+            update_sql = f"""
+            UPDATE {self.table_name} cs
+            LEFT JOIN (
+                SELECT
+                    session_id,
+                    SUM(CASE WHEN feedback_type = 'like' THEN 1 ELSE 0 END) AS likes,
+                    SUM(CASE WHEN feedback_type = 'dislike' THEN 1 ELSE 0 END) AS dislikes,
+                    COUNT(*) AS total_feedback
+                FROM {self.feedback_table}
                 WHERE session_id = :session_id
-                """
-                
-                with db_manager.engine.begin() as conn_write:  # ✅ Use with statement
-                    conn_write.execute(text(update_sql), {
-                        "session_id": session_id,
-                        "likes": likes,
-                        "dislikes": dislikes,
-                        "satisfaction": satisfaction
-                    })
-                logger.info(f"✓ Session stats updated: {likes} likes, {dislikes} dislikes")
+                GROUP BY session_id
+            ) fb ON fb.session_id = cs.session_id
+            SET
+                cs.total_likes = COALESCE(fb.likes, 0),
+                cs.total_dislikes = COALESCE(fb.dislikes, 0),
+                cs.average_satisfaction =
+                    CASE
+                        WHEN COALESCE(fb.total_feedback, 0) = 0 THEN 0
+                        ELSE ROUND(COALESCE(fb.likes, 0) / fb.total_feedback * 100, 2)
+                    END,
+                cs.updated_at = NOW()
+            WHERE cs.session_id = :session_id
+            """
+
+            with db_manager.engine.begin() as conn:
+                conn.execute(text(update_sql), {"session_id": session_id})
+
+            logger.info(f"✓ Session feedback stats updated for {session_id}")
+            return True
+
         except Exception as e:
             logger.error(f"Error updating satisfaction stats: {e}")
+            return False
             
     def _migrate_tables(self):
         """Add missing columns to existing tables."""
@@ -640,13 +651,26 @@ class ChatMemoryStore:
             logger.error(f"Invalid feedback type: {feedback_type}")
             return
         
-        self.mysql_store.save_feedback(session_id, user_id, message_id, message_type, message_content, feedback_type, feedback_reason)
-        
-        # Update session stats in memory
+        saved = self.mysql_store.save_feedback(
+            session_id,
+            user_id,
+            message_id,
+            message_type,
+            message_content,
+            feedback_type,
+            feedback_reason
+        )
+
+        if not saved:
+            return
+
+        # Optional: update in-memory values after DB save
         stats = self.mysql_store.get_feedback_stats(session_id)
-        self.sessions[session_id]["total_likes"] = stats["likes"]
-        self.sessions[session_id]["total_dislikes"] = stats["dislikes"]
-        self.sessions[session_id]["average_satisfaction"] = stats["satisfaction"]
+
+        if session_id in self.sessions:
+            self.sessions[session_id]["total_likes"] = stats["likes"]
+            self.sessions[session_id]["total_dislikes"] = stats["dislikes"]
+            self.sessions[session_id]["average_satisfaction"] = stats["satisfaction"]
 
     def get_feedback_stats(self, session_id: str) -> Dict[str, Any]:
         """Get feedback statistics for a session."""
