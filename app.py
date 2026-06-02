@@ -19,13 +19,15 @@ try:
 except Exception:
     pass
 
+from datetime import datetime
+from uuid import uuid4
 import asyncio
 import uuid
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 from loguru import logger
-from typing import Optional
+from typing import Optional, Dict, Any
 from sqlalchemy import text
 
 from src.agents.graph import run_agent_async
@@ -169,6 +171,10 @@ Exclusions:
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
+# Initialize chat memory flag
+if "chat_memory_initialized" not in st.session_state:
+    st.session_state.chat_memory_initialized = False
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -230,11 +236,12 @@ def run_async_agent(
         
         # === PROCEED TO AGENT ===
         return await run_agent_async(
-            question=question,
-            session_id=session_id,
-            user_role=user_role,
-            allowed_rep_codes=allowed_rep_codes
-        )
+                question=question,
+                session_id=session_id,
+                user_role=user_role,
+                allowed_rep_codes=allowed_rep_codes,
+                user_id=user_id
+            )
     
     return asyncio.run(execute_with_guardrails())
 
@@ -314,12 +321,28 @@ def get_node_codes_by_ids(node_ids: list[str]) -> list[str]:
 
     return [row[0] for row in rows if row[0]]
 
-def add_message(role: str, content: str, msg_type: str = "message"):
+def add_message(
+    role: str,
+    content: str,
+    msg_type: str = "message",
+    metadata: Optional[Dict[str, Any]] = None,
+    message_id: Optional[str] = None
+) -> str:
+    """
+    Add message to Streamlit UI only.
+    Backend graph owns DB/memory persistence.
+    """
+    message_id = message_id or str(uuid4())
+
     st.session_state.messages.append({
         "role": role,
         "content": content,
-        "type": msg_type
+        "type": msg_type,
+        "message_id": message_id,
+        "metadata": metadata or {}
     })
+
+    return message_id
 
 
 def format_agent_response(result: dict) -> str:
@@ -738,6 +761,52 @@ def render_agent_output_inline(result: dict, key_prefix: str):
                 key_prefix=f"{key_prefix}_graph"
             )
             
+def render_message_with_feedback(message: Dict, session_id: str, user_id: str):
+    message_id = message.get("message_id")
+    role = message.get("role")
+    content = message.get("content")
+    msg_type = message.get("type")
+
+    if role == "user":
+        st.chat_message("user").write(content)
+        return
+
+    with st.chat_message("assistant"):
+        if message_id and user_id and msg_type in ["answer", "clarification"]:
+            col_content, col_like, col_dislike = st.columns([0.7, 0.15, 0.15])
+
+            with col_content:
+                st.write(content)
+
+            with col_like:
+                if st.button("👍", key=f"like_{message_id}", help="Like"):
+                    chat_memory.save_feedback(
+                        session_id=session_id,
+                        user_id=user_id,
+                        message_id=message_id,
+                        message_type=msg_type,
+                        message_content=content[:500],
+                        feedback_type="like"
+                    )
+                    st.success("Feedback saved.")
+                    st.rerun()
+
+            with col_dislike:
+                if st.button("👎", key=f"dislike_{message_id}", help="Dislike"):
+                    chat_memory.save_feedback(
+                        session_id=session_id,
+                        user_id=user_id,
+                        message_id=message_id,
+                        message_type=msg_type,
+                        message_content=content[:500],
+                        feedback_type="dislike"
+                    )
+                    st.warning("Feedback saved.")
+                    st.rerun()
+        else:
+            st.write(content)
+                
+                
 # =============================
 # USER AUTHENTICATION
 # =============================
@@ -803,11 +872,20 @@ with st.sidebar:
                         # Phone login success:
                         if login_context.get("success"):
                             st.session_state.user = login_context["display_name"]
-                            st.session_state.user_id = login_context["user_id"]  # ✅ ADD THIS
+                            st.session_state.user_id = login_context["user_id"]
                             st.session_state.user_role = login_context["user_role"]
                             st.session_state.allowed_rep_codes = login_context.get("allowed_rep_codes") or []
                             st.session_state.login_method = "phone"
                             st.session_state.auth_data = login_context.get("auth_data")
+                            
+                            # Initialize chat_memory session
+                            chat_memory.get_or_create_session(
+                                session_id=st.session_state.session_id,
+                                user_id=st.session_state.user_id,
+                                user_role=st.session_state.user_role
+                            )
+                            st.session_state.chat_memory_initialized = True
+                            
                             st.success("Login successful.")
                             st.rerun()
 
@@ -851,12 +929,21 @@ with st.sidebar:
                         # System login success:
                         if login_context.get("success"):
                             st.session_state.user = login_context["display_name"]
-                            st.session_state.user_id = login_context["user_id"]  # ✅ ADD THIS
+                            st.session_state.user_id = login_context["user_id"]
                             st.session_state.user_role = login_context["user_role"]
                             st.session_state.allowed_rep_codes = login_context.get("allowed_rep_codes") or []
                             st.session_state.allowed_node_ids = login_context.get("allowed_node_ids")
                             st.session_state.login_method = "system"
                             st.session_state.auth_data = login_context.get("auth_data")
+                            
+                            # Initialize chat_memory session
+                            chat_memory.get_or_create_session(
+                                session_id=st.session_state.session_id,
+                                user_id=st.session_state.user_id,
+                                user_role=st.session_state.user_role
+                            )
+                            st.session_state.chat_memory_initialized = True
+                            
                             st.success("Login successful.")
                             st.rerun()
 
@@ -880,7 +967,7 @@ with st.sidebar:
         # Update logout (around line 875):
         if st.button("Logout", use_container_width=True):
             st.session_state.user = None
-            st.session_state.user_id = None  # ✅ ADD THIS
+            st.session_state.user_id = None
             st.session_state.user_role = None
             st.session_state.allowed_rep_codes = None
             st.session_state.allowed_node_ids = None
@@ -890,6 +977,7 @@ with st.sidebar:
             st.session_state.last_result = None
             st.session_state.query_count = 0
             st.session_state.session_id = str(uuid.uuid4())
+            st.session_state.chat_memory_initialized = False  # ✅ ADD THIS
             st.rerun()
 
 
@@ -912,11 +1000,30 @@ with st.sidebar:
 
     if st.button("🔄 New Chat", use_container_width=True):
         st.session_state.session_id = str(uuid.uuid4())
+        st.session_state.chat_memory_initialized = False
         st.session_state.messages = []
         st.session_state.last_result = None
         st.session_state.query_count = 0
         st.rerun()
 
+    st.markdown("---")
+    
+    # ✅ ADD THIS: Feedback Stats
+    st.subheader("📊 Session Feedback")
+    try:
+        stats = chat_memory.get_session_feedback_stats(st.session_state.session_id)
+        col_a, col_b, col_c = st.columns(3)
+        
+        with col_a:
+            st.metric("👍", stats.get("likes", 0))
+        with col_b:
+            st.metric("👎", stats.get("dislikes", 0))
+        with col_c:
+            satisfaction = stats.get("satisfaction", 0)
+            st.metric("😊", f"{satisfaction:.0f}%")
+    except Exception as e:
+        logger.warning(f"Error displaying feedback stats: {e}")
+    
     st.markdown("---")
 
     # =============================
@@ -976,8 +1083,11 @@ with st.sidebar:
 # =============================
 
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+    render_message_with_feedback(
+        message=msg,
+        session_id=st.session_state.session_id,
+        user_id=st.session_state.user_id
+    )
 
 
 # =============================
@@ -986,8 +1096,9 @@ for msg in st.session_state.messages:
 
 user_question = st.chat_input("Ask a sales/business question...")
 
+
 if user_question:
-    add_message("user", user_question)
+    add_message("user", user_question, "question")
 
     with st.chat_message("user"):
         st.markdown(user_question)
@@ -998,9 +1109,10 @@ if user_question:
                 result = run_async_agent(
                     question=user_question,
                     session_id=st.session_state.session_id,
-                    user_role=st.session_state.user_role,             
-                    allowed_rep_codes=st.session_state.allowed_rep_codes,  
-                    user_id=st.session_state.user )                   
+                    user_role=st.session_state.user_role,
+                    allowed_rep_codes=st.session_state.allowed_rep_codes,
+                    user_id=st.session_state.user_id
+                )
 
                 st.session_state.last_result = result
                 st.session_state.query_count += 1
@@ -1008,26 +1120,44 @@ if user_question:
                 assistant_text = format_agent_response(result)
                 st.markdown(assistant_text)
 
-                add_message(
-                    "assistant",
-                    assistant_text,
+                current_message_type = (
                     "clarification" if result.get("waiting_for_user") else "answer"
                 )
+
+                assistant_message_id = result.get("assistant_message_id")
+
+                if assistant_message_id:
+                    add_message(
+                        "assistant",
+                        assistant_text,
+                        current_message_type,
+                        message_id=assistant_message_id
+                    )
+                else:
+                    add_message(
+                        "assistant",
+                        assistant_text,
+                        current_message_type
+                    )
+                    logger.warning("assistant_message_id missing from backend result; feedback will not link to DB message.")
+
+                result["message_id"] = assistant_message_id
+
+                st.rerun()
 
             except Exception as e:
                 logger.error(f"Streamlit app error: {e}")
                 error_text = f"Unexpected error: {str(e)}"
                 st.error(error_text)
                 add_message("assistant", error_text, "error")
-
-
+                
 # =============================
 # RESULT DETAILS
 # =============================
 
 result = st.session_state.last_result
 
-if result:    
+if result:
     df = result_to_dataframe(result)
     
     # Check if there's any substantive output (table, SQL, or plan)
@@ -1042,7 +1172,7 @@ if result:
             "Graph",
             "SQL",
             "Plan"
-        ])        
+        ])       
         with tab_table:
             if result.get("waiting_for_user"):
                 st.info(result.get("question_to_user"))

@@ -33,6 +33,7 @@ def _build_initial_state(
     allowed_rep_codes: list[str] | None = None,
     user_role: str | None = None,
     clarification_answer: str | None = None,
+    user_id: str | None = None,
 ) -> dict:
     return {
         "session_id": session_id,
@@ -85,6 +86,12 @@ def _build_initial_state(
         "start_time": time.time(),
         "cache_hit": False,
         "final_answer": None,
+        "user_message_id": None,
+        "user_message_saved": False,
+        "assistant_message_id": None,
+        "assistant_message_saved": False,
+        "user_id": user_id,
+        "sql_execution_saved": False,
     }
 
 
@@ -119,11 +126,12 @@ async def run_agent_async(
     allowed_rep_codes: list[str] | None = None,
     user_role: str | None = None,
     clarification_answer: str | None = None,
+    user_id: str = None
 ) -> dict:
     session_id = chat_memory.get_or_create_session(session_id)
     config = build_invoke_config(session_id)
     initial_state = _build_initial_state(
-        question, session_id, allowed_rep_codes, user_role, clarification_answer
+        question, session_id, allowed_rep_codes, user_role, clarification_answer, user_id
     )
 
     try:

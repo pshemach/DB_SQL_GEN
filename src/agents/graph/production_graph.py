@@ -217,6 +217,12 @@ def _build_initial_state(question: str, session_id: str, kwargs: dict) -> AgentS
         "start_time": time.time(),
         "cache_hit": False,
         "final_answer": None,
+        "user_message_id": None,
+        "user_message_saved": False,
+        "assistant_message_id": None,
+        "assistant_message_saved": False,
+        "user_id": kwargs.get("user_id"),
+        "sql_execution_saved": False,
     }
 
 

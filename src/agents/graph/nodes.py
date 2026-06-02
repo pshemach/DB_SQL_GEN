@@ -21,60 +21,134 @@ DANGEROUS_PATTERNS = [
     r"(?i)(--\s*$|;\s*DROP)",
 ]
 
-def save_memory_node(state: AgentState) -> dict:
-    """
-    Save conversation memory (only user questions and assistant answers).
+# def save_memory_node(state: AgentState) -> dict:
+#     """
+#     Save conversation memory (only user questions and assistant answers).
     
-    Technical artifacts (SQL, plan) are NOT saved as messages but stored in last_state
-    so they don't pollute the memory context used by the LLM for reasoning.
-    """
+#     Technical artifacts (SQL, plan) are NOT saved as messages but stored in last_state
+#     so they don't pollute the memory context used by the LLM for reasoning.
+#     """
+#     session_id = state.get("session_id")
+
+#     if not session_id:
+#         return {}
+
+#     # Determine what assistant message to save, in priority order
+#     assistant_content = None
+#     message_type = None
+    
+#     if state.get("waiting_for_user"):
+#         # Save the clarification question the assistant asked
+#         assistant_content = state.get("question_to_user")
+#         message_type = "clarification_question"
+    
+#     elif state.get("error"):
+#         # Save errors
+#         assistant_content = state.get("error")
+#         message_type = "error"
+    
+#     elif state.get("result_summary"):
+#         # Save result summary when query succeeds
+#         assistant_content = state.get("result_summary")
+#         message_type = "answer"
+    
+#     elif state.get("final_answer"):
+#         # Save final answers
+#         assistant_content = state.get("final_answer")
+#         message_type = "answer"
+    
+#     # Save the assistant message if we have one
+#     if assistant_content:
+#         chat_memory.add_message(
+#             session_id=session_id,
+#             role="assistant",
+#             content=assistant_content,
+#             message_type=message_type
+#         )
+    
+#     # DO NOT save SQL queries, plans as messages - they are internal artifacts
+#     # They are preserved in last_state for reference, but not in conversation memory
+
+#     # Always save the full state for retrieval if needed
+#     chat_memory.set_last_state(session_id, state)
+
+#     return {
+#         "messages": chat_memory.get_session(session_id).get("messages", []),
+#         "memory_context": chat_memory.build_memory_context(session_id)
+#     }
+
+def save_memory_node(state: AgentState) -> dict:
     session_id = state.get("session_id")
 
     if not session_id:
         return {}
 
-    # Determine what assistant message to save, in priority order
     assistant_content = None
     message_type = None
-    
+
     if state.get("waiting_for_user"):
-        # Save the clarification question the assistant asked
         assistant_content = state.get("question_to_user")
-        message_type = "clarification_question"
-    
+        message_type = "clarification"
+
     elif state.get("error"):
-        # Save errors
         assistant_content = state.get("error")
         message_type = "error"
-    
+
     elif state.get("result_summary"):
-        # Save result summary when query succeeds
         assistant_content = state.get("result_summary")
         message_type = "answer"
-    
+
     elif state.get("final_answer"):
-        # Save final answers
         assistant_content = state.get("final_answer")
         message_type = "answer"
-    
-    # Save the assistant message if we have one
-    if assistant_content:
-        chat_memory.add_message(
+
+    assistant_message_id = state.get("assistant_message_id")
+
+    if assistant_content and not state.get("assistant_message_saved"):
+        assistant_message_id = chat_memory.add_message(
             session_id=session_id,
             role="assistant",
             content=assistant_content,
-            message_type=message_type
+            message_type=message_type,
         )
-    
-    # DO NOT save SQL queries, plans as messages - they are internal artifacts
-    # They are preserved in last_state for reference, but not in conversation memory
 
-    # Always save the full state for retrieval if needed
-    chat_memory.set_last_state(session_id, state)
+    # Save SQL execution once, after successful SQL run
+    sql_execution_saved = state.get("sql_execution_saved", False)
+
+    if (
+        state.get("sql_query")
+        and state.get("query_result") is not None
+        and not state.get("error")
+        and not sql_execution_saved
+        and state.get("turn_action") not in ("cache_hit", "transform_previous")
+    ):
+        execution_time_ms = state.get("execution_time_ms") or 0
+
+        chat_memory.save_sql_execution(
+            session_id=session_id,
+            user_id=state.get("user_id"),
+            sql=state.get("sql_query"),
+            result=state.get("query_result"),
+            execution_time_ms=execution_time_ms,
+        )
+
+        sql_execution_saved = True
+
+    state_to_save = {
+        **state,
+        "assistant_message_id": assistant_message_id,
+        "assistant_message_saved": bool(assistant_content),
+        "sql_execution_saved": sql_execution_saved,
+    }
+
+    chat_memory.set_last_state(session_id, state_to_save)
 
     return {
         "messages": chat_memory.get_session(session_id).get("messages", []),
-        "memory_context": chat_memory.build_memory_context(session_id)
+        "memory_context": chat_memory.build_memory_context(session_id),
+        "assistant_message_id": assistant_message_id,
+        "assistant_message_saved": bool(assistant_content),
+        "sql_execution_saved": sql_execution_saved,
     }
     
 
@@ -124,18 +198,49 @@ def cache_result_node(state: AgentState) -> dict:
 
     return {}
 
+# def memory_loader_node(state: dict) -> dict:
+#     """Load session memory and prior turn state."""
+#     t0 = time.time()
+#     session_id = state["session_id"]
+#     previous_state = chat_memory.get_last_state(session_id)
+
+#     chat_memory.add_message(
+#         session_id=session_id,
+#         role="user",
+#         content=state["question"],
+#         message_type="question",
+#     )
+
+#     metrics = record_node_timing(
+#         state.get("metrics") or init_metrics(),
+#         "memory_loader",
+#         (time.time() - t0) * 1000,
+#     )
+
+#     return {
+#         "previous_state": previous_state,
+#         "messages": chat_memory.get_session(session_id).get("messages", []),
+#         "memory_context": chat_memory.build_memory_context(session_id),
+#         "waiting_for_user": bool(previous_state and previous_state.get("waiting_for_user")),
+#         "metrics": metrics,
+#     }
+
 def memory_loader_node(state: dict) -> dict:
     """Load session memory and prior turn state."""
     t0 = time.time()
     session_id = state["session_id"]
     previous_state = chat_memory.get_last_state(session_id)
 
-    chat_memory.add_message(
-        session_id=session_id,
-        role="user",
-        content=state["question"],
-        message_type="question",
-    )
+    user_message_id = None
+
+    # Save user question only once per graph run
+    if not state.get("user_message_saved"):
+        user_message_id = chat_memory.add_message(
+            session_id=session_id,
+            role="user",
+            content=state["question"],
+            message_type="question",
+        )
 
     metrics = record_node_timing(
         state.get("metrics") or init_metrics(),
@@ -148,6 +253,8 @@ def memory_loader_node(state: dict) -> dict:
         "messages": chat_memory.get_session(session_id).get("messages", []),
         "memory_context": chat_memory.build_memory_context(session_id),
         "waiting_for_user": bool(previous_state and previous_state.get("waiting_for_user")),
+        "user_message_id": user_message_id,
+        "user_message_saved": True,
         "metrics": metrics,
     }
 
@@ -257,6 +364,31 @@ def safe_response_node(state: AgentState) -> dict:
         "error": None if state.get("turn_action") == "chitchat" else state.get("error"),
     }
 
+# def hitl_clarify_node(state: AgentState) -> dict:
+#     question_to_user = (
+#         state.get("clarification_question")
+#         or state.get("question_to_user")
+#         or "Could you provide more details?"
+#     )
+
+#     return {
+#         "turn_action": "clarify",
+#         "final_answer": question_to_user,
+#         "result_summary": question_to_user,
+#         "question_to_user": question_to_user,
+#         "pending_original_question": state.get("question"),
+#         "waiting_for_user": True,
+#         "needs_clarification": True,
+#         "query_result": None,
+#         "result_preview": None,
+#         "sql_query": None,
+#         "sql_explanation": None,
+#         "plan": None,
+#         "plan_steps": None,
+#         "relevant_tables": None,
+#         "error": None,
+#     }
+
 def hitl_clarify_node(state: AgentState) -> dict:
     question_to_user = (
         state.get("clarification_question")
@@ -272,6 +404,8 @@ def hitl_clarify_node(state: AgentState) -> dict:
         "pending_original_question": state.get("question"),
         "waiting_for_user": True,
         "needs_clarification": True,
+
+        # clear SQL artifacts
         "query_result": None,
         "result_preview": None,
         "sql_query": None,
@@ -279,6 +413,7 @@ def hitl_clarify_node(state: AgentState) -> dict:
         "plan": None,
         "plan_steps": None,
         "relevant_tables": None,
+        "table_title": None,
         "error": None,
     }
     

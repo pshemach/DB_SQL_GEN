@@ -18,7 +18,9 @@ class AgentState(TypedDict):
     session_id: Optional[str]
     question: str
     original_question: Optional[str]
-
+    
+    user_id: Optional[str]
+    
     # =============================
     # CONVERSATION MEMORY
     # =============================
@@ -90,6 +92,8 @@ class AgentState(TypedDict):
     sql_query: Optional[str]
     sql_explanation: Optional[str]
     few_shot_examples: Optional[List[Dict[str, Any]]]
+    
+    sql_execution_saved: Optional[bool]
 
     # =============================
     # EXECUTION
@@ -126,6 +130,15 @@ class AgentState(TypedDict):
     # FINAL OUTPUT
     # =============================
     final_answer: Optional[str]
+    
+    # =============================
+    # MESSAGE PERSISTENCE IDS
+    # =============================
+    user_message_id: Optional[str]
+    user_message_saved: Optional[bool]
+
+    assistant_message_id: Optional[str]
+    assistant_message_saved: Optional[bool]
 
     # =============================
     # METADATA
