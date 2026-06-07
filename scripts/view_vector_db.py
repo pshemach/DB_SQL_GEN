@@ -5,7 +5,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import pandas as pd
-from src.tools.business_knowledge_retriever import business_knowledge_retriever
+from src.agents.tools.business_knowledge_retriever import business_knowledge_retriever
 
 def main():
     vectorstore = business_knowledge_retriever.vectorstore

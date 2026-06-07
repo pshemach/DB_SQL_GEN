@@ -5,9 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from langsmith import traceable
 
-from ..graph import run_agent_async
-from ..tools import seed_examples, semantic_cache, few_shot_retriever
-from ..tools.chat_memory import chat_memory
+from ..agents.graph import run_agent_async
+from ..agents.tools import seed_examples, semantic_cache, few_shot_retriever
+from ..agents.tools.chat_memory import chat_memory
 from ..core import db_manager
 from ..config import settings
 from ..guardrails.pipeline import guardrail_pipeline
@@ -18,10 +18,11 @@ from .data_models import (
     ExampleRequest,
     HealthResponse
 )
-from ..tools.chatbot_auth_client import chatbot_auth_client
-from ..tools.access_context import (
+from ..agents.tools.chatbot_auth_client import chatbot_auth_client
+from ..agents.tools.access_context import (
     extract_allowed_rep_codes_from_phone_auth,
-    extract_user_role_from_phone_auth
+    extract_user_role_from_phone_auth,
+    extract_user_id_from_phone_auth
     )
 
 # =============================
@@ -123,6 +124,7 @@ async def query_database(request: QueryRequest):
         
         allowed_rep_codes = extract_allowed_rep_codes_from_phone_auth(auth_data)
         user_role = extract_user_role_from_phone_auth(auth_data)
+        user_id = extract_user_id_from_phone_auth(auth_data)
         
         # === GUARDRAILS CHECK ===
         # Run pre-graph validation pipeline
@@ -162,6 +164,8 @@ async def query_database(request: QueryRequest):
             user_role=user_role,
             allowed_rep_codes=allowed_rep_codes,
             clarification_answer=request.clarification_answer,
+            user_id=user_id
+            
         )
 
         return QueryResponse(

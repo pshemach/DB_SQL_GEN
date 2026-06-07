@@ -10,7 +10,7 @@ from langsmith import traceable
 from langchain_core.prompts import ChatPromptTemplate
 
 from ..config import settings
-from ..utils.llm_factory import openai_llm
+from ..utils.llm_factory import openai_llm, groq_llm
 from .base import BaseGuardrail, GuardrailDecision, GuardrailResult
 from .social_messages import is_social_message
 
@@ -31,15 +31,18 @@ Sales analytics topics (IN-SCOPE):
 - Sales team productivity, rep data
 - Business/revenue analytics
 - System/database questions about sales data
+- Reps, customers, products related data
 
 Non-sales topics (OUT-OF-SCOPE):
 - General knowledge unrelated to sales
 - Off-topic jokes/entertainment unrelated to this product
 - Personal questions unrelated to work
+- DML/DDL related questions mark as OUT_OF_SCOPE
 
 Always IN-SCOPE (assistant will handle without SQL):
 - Greetings (hi, hello, thanks)
 - Questions about what this assistant can do
+- Only allow data extraction related question
 
 Important: RESPOND ONLY WITH VALID JSON, NO OTHER TEXT.
 
@@ -58,16 +61,7 @@ class ContextAwareClassifier(BaseGuardrail):
     
     def __init__(self, llm_model: str = None, api_key: str = None):
         super().__init__(enabled=True, priority=10)
-        
-        # Use settings defaults if not provided
-        if llm_model or api_key:
-            from langchain_openai import ChatOpenAI
-            self.llm = ChatOpenAI(
-                model=llm_model or settings.openai_model_fast,
-                api_key=api_key or settings.openai_api_key,
-            )
-        else:
-            self.llm = openai_llm()
+        self.llm = groq_llm()
         self.prompt = ChatPromptTemplate.from_template(DOMAIN_CLASSIFIER_PROMPT)
         self.chain = self.prompt | self.llm
     

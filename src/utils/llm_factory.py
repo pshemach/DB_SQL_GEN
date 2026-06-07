@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from langchain_anthropic import ChatAnthropic
 from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
 
 from ..config import settings
 
@@ -28,3 +29,13 @@ def openai_llm(*, temperature: float | None = 0.0) -> ChatOpenAI:
     if temperature is not None:
         kwargs["temperature"] = temperature
     return ChatOpenAI(**kwargs)
+
+def groq_llm(*, temperature: float | None = 0.0, model: str | None = None) -> ChatGroq:
+    model_name = model or settings.groq_model_reasoning
+    kwargs: dict = {
+        "model": model_name,
+        "api_key": settings.groq_api_key
+    }
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    return ChatGroq(**kwargs)
