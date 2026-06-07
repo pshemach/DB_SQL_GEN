@@ -5,15 +5,9 @@ from loguru import logger
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 import json
-
-<<<<<<< HEAD:src/agents/result_formatter_agent.py
-from ..config import settings
-from ..utils.json_utils import extract_json
-=======
 from ...config import settings
 from ...utils.json_utils import extract_json
 from ...utils.llm_factory import groq_llm
->>>>>>> e84707b24648d7325a5f82b89b6579e3eb9b8d7d:src/agents/agent/result_formatter_agent.py
 
 RESULT_FORMATTER_PROMPT = """
 You are a BI result formatter for a field sales analytics assistant.
