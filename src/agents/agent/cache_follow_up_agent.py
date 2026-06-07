@@ -59,8 +59,8 @@ Rules:
 
 class CacheFollowUpAgent:
     def __init__(self):
-        # self.llm = openai_llm(temperature=0)
-        self.llm = groq_llm(temperature=0)
+        self.llm = openai_llm(temperature=0)
+        # self.llm = groq_llm(temperature=0)
         
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", CACHE_FOLLOW_UP_PROMPT),

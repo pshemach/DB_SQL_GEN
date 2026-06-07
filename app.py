@@ -861,23 +861,23 @@ with st.sidebar:
 
     st.markdown("---")
     
-    # ✅ ADD THIS: Feedback Stats
-    st.subheader("📊 Session Feedback")
-    try:
-        stats = chat_memory.get_session_feedback_stats(st.session_state.session_id)
-        col_a, col_b, col_c = st.columns(3)
+    # # ✅ ADD THIS: Feedback Stats
+    # st.subheader("📊 Session Feedback")
+    # try:
+    #     stats = chat_memory.get_session_feedback_stats(st.session_state.session_id)
+    #     col_a, col_b, col_c = st.columns(3)
         
-        with col_a:
-            st.metric("👍", stats.get("likes", 0))
-        with col_b:
-            st.metric("👎", stats.get("dislikes", 0))
-        with col_c:
-            satisfaction = stats.get("satisfaction", 0)
-            st.metric("😊", f"{satisfaction:.0f}%")
-    except Exception as e:
-        logger.warning(f"Error displaying feedback stats: {e}")
+    #     with col_a:
+    #         st.metric("👍", stats.get("likes", 0))
+    #     with col_b:
+    #         st.metric("👎", stats.get("dislikes", 0))
+    #     with col_c:
+    #         satisfaction = stats.get("satisfaction", 0)
+    #         st.metric("😊", f"{satisfaction:.0f}%")
+    # except Exception as e:
+    #     logger.warning(f"Error displaying feedback stats: {e}")
     
-    st.markdown("---")
+    # st.markdown("---")
 
     # =============================
     # KNOWLEDGE BASE SIDEBAR

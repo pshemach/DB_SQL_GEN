@@ -16,7 +16,7 @@ from ..tools import business_knowledge_store, business_knowledge_retriever
 from ..tools.chat_memory import chat_memory
 from ...utils.json_utils import extract_json
 from ...utils.metrics import set_router_action
-from ...utils.llm_factory import groq_llm
+from ...utils.llm_factory import groq_llm, openai_llm
 from ...guardrails.social_messages import is_social_message
 
 # ==========================================
@@ -73,7 +73,8 @@ Return ONLY a valid JSON object:
 
 class TurnRouterAgent:
     def __init__(self):
-        self.llm = groq_llm(temperature=0)
+        # self.llm = groq_llm(temperature=0)
+        self.llm = openai_llm()
         self.orchestration_prompt = ChatPromptTemplate.from_messages([
             ("system", ORCHESTRATOR_SYSTEM_PROMPT),
             ("human", "{question}"),

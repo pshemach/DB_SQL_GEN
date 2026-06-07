@@ -1,6 +1,6 @@
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
-from ...utils.llm_factory import groq_llm
+from ...utils.llm_factory import groq_llm, openai_llm
 from ..graph.graph_state import AgentState
 
 CHITCHAT_SYSTEM_PROMPT = """
@@ -28,7 +28,8 @@ Conversation context:
 
 class ChitChatAgent:
     def __init__(self):
-        self.llm = groq_llm()
+        # self.llm = groq_llm()
+        self.llm = openai_llm()
         self.chitchat_prompt = ChatPromptTemplate.from_messages([
             ("system", CHITCHAT_SYSTEM_PROMPT),
             ("user", "{question}")

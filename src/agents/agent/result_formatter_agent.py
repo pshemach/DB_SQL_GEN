@@ -7,7 +7,7 @@ from langchain_core.prompts import ChatPromptTemplate
 import json
 from ...config import settings
 from ...utils.json_utils import extract_json
-from ...utils.llm_factory import groq_llm
+from ...utils.llm_factory import groq_llm, openai_llm
 
 RESULT_FORMATTER_PROMPT = """
 You are a BI result formatter for a field sales analytics assistant.
@@ -70,7 +70,8 @@ JSON format:
 
 class ResultFormatterAgent:
     def __init__(self):
-        self.llm = groq_llm(temperature=0)
+        # self.llm = groq_llm(temperature=0)
+        self.llm = openai_llm()
 
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", RESULT_FORMATTER_PROMPT),

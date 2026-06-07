@@ -12,7 +12,7 @@ from ...config import settings
 from ..prompt import REFLECTION_PROMPT
 from ...utils.error_taxonomy import classify_db_error, is_retryable
 from ...utils.serialization import sanitize_state, serialize_query_result
-from ...utils.llm_factory import groq_llm
+from ...utils.llm_factory import groq_llm, openai_llm
 
 
 class CriticAgent:
@@ -23,7 +23,8 @@ class CriticAgent:
     
     def __init__(self):
 
-        self.llm = groq_llm(temperature=0)
+        # self.llm = groq_llm(temperature=0)
+        self.llm = openai_llm(temperature=0)
             
         self.reflection_prompt = ChatPromptTemplate.from_messages([
             ("system", REFLECTION_PROMPT),
