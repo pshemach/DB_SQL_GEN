@@ -1010,11 +1010,7 @@ if user_question:
 
 result = st.session_state.last_result
 
-<<<<<<< HEAD
-if result:    
-=======
 if result:
->>>>>>> e84707b24648d7325a5f82b89b6579e3eb9b8d7d
     df = result_to_dataframe(result)
     
     # Check if there's any substantive output (table, SQL, or plan)
@@ -1029,11 +1025,7 @@ if result:
             "Graph",
             "SQL",
             "Plan"
-<<<<<<< HEAD
-        ])        
-=======
         ])       
->>>>>>> e84707b24648d7325a5f82b89b6579e3eb9b8d7d
         with tab_table:
             if result.get("waiting_for_user"):
                 st.info(result.get("question_to_user"))
