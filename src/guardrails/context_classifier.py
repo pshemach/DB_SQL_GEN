@@ -31,15 +31,18 @@ Sales analytics topics (IN-SCOPE):
 - Sales team productivity, rep data
 - Business/revenue analytics
 - System/database questions about sales data
+- Reps, customers, products related data
 
 Non-sales topics (OUT-OF-SCOPE):
 - General knowledge unrelated to sales
 - Off-topic jokes/entertainment unrelated to this product
 - Personal questions unrelated to work
+- DML/DDL related questions mark as OUT_OF_SCOPE
 
 Always IN-SCOPE (assistant will handle without SQL):
 - Greetings (hi, hello, thanks)
 - Questions about what this assistant can do
+- Only allow data extraction related question
 
 Important: RESPOND ONLY WITH VALID JSON, NO OTHER TEXT.
 

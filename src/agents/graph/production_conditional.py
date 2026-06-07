@@ -81,10 +81,13 @@ def route_after_turn_router(state: AgentState) -> Literal["transform_result", "s
     if action == 'clarify':
         return "hitl_clarify"
         
-    if action in ("deny", "chitchat", "cancel"):
+    if action in ("deny", "cancel"):
         return "safe_response"
         
     if action == "cache_hit":
         return "formatter"
+    
+    if action == "chitchat":
+        return "chitchat"
         
     return "sql_pipeline"

@@ -28,28 +28,11 @@ import pandas as pd
 import plotly.express as px
 from loguru import logger
 from typing import Optional, Dict, Any
-from sqlalchemy import text
 
-from src.agents.graph import run_agent_async
-from src.utils.serialization import json_safe_value, serialize_query_result
-from src.core.database import db_manager
 from src.agents.tools.business_knowledge_store import business_knowledge_store
 from src.agents.tools.chat_memory import chat_memory
-from src.guardrails.pipeline import guardrail_pipeline
-from src.guardrails.social_messages import is_social_message
-
-from src.agents.tools.chatbot_auth_client import chatbot_auth_client
-from src.agents.tools.access_context import (
-    extract_allowed_rep_codes_from_phone_auth,
-    extract_allowed_node_ids_from_system_login,
-    convert_node_ids_to_codes,
-    extract_user_role_from_phone_auth,
-    extract_user_role_from_system_login,
-    extract_display_name_from_phone_auth,
-    extract_display_name_from_system_login,
-    extract_user_id_from_phone_auth,
-    extract_user_id_from_system_login
-)
+from ui.agent_runner import run_async_agent
+from ui.user_utils import login_with_phone, login_with_system
 
 # =============================
 # PAGE CONFIG
@@ -190,136 +173,6 @@ if "kb_editor_mode" not in st.session_state:
 if "selected_kpi" not in st.session_state:
     st.session_state.selected_kpi = None
 
-
-# =============================
-# HELPERS
-# =============================
-
-def run_async_agent(
-    question: str,
-    session_id: str,
-    user_role: Optional[str] = None,
-    allowed_rep_codes: Optional[list] = None,
-    user_id: Optional[str] = None
-):
-    """Execute query with user context for access control and logging."""
-    
-    async def execute_with_guardrails():
-        # === GUARDRAILS CHECK ===
-        guardrail_context = {
-            "conversation_history": [],
-            "previous_topics": [],
-            "user_role": user_role
-        }
-        
-        # Get conversation context from chat memory if session exists
-        if session_id:
-            session = chat_memory.get_session(session_id)
-            if session:
-                guardrail_context["conversation_history"] = session.get("messages", [])
-        
-        # Evaluate guardrails
-        guardrail_result = await guardrail_pipeline.evaluate(
-            question,
-            guardrail_context
-        )
-        
-        # If guardrails reject, return error
-        if not guardrail_result.get("passed", False):
-            logger.warning(f"Query rejected by guardrails: {guardrail_result.get('reason')}")
-            return {
-                "error": guardrail_result.get("reason", "Query rejected by safety checks"),
-                "error_type": "guardrail_rejection",
-                "waiting_for_user": False,
-                "session_id": session_id
-            }
-        
-        # === PROCEED TO AGENT ===
-        return await run_agent_async(
-                question=question,
-                session_id=session_id,
-                user_role=user_role,
-                allowed_rep_codes=allowed_rep_codes,
-                user_id=user_id
-            )
-    
-    return asyncio.run(execute_with_guardrails())
-
-def login_with_phone(phone_no: str) -> dict:
-    async def _login():
-        auth_result = await chatbot_auth_client.authenticate_phone(phone_no)
-
-        if not auth_result.get("success"):
-            return auth_result
-
-        auth_data = auth_result.get("data") or {}
-        user_id = extract_user_id_from_phone_auth(auth_data)
-        allowed_rep_codes = extract_allowed_rep_codes_from_phone_auth(auth_data)
-
-        return {
-            "success": True,
-            "login_method": "phone",
-            "user_id": user_id,
-            "display_name": extract_display_name_from_phone_auth(auth_data),
-            "user_role": extract_user_role_from_phone_auth(auth_data),
-            "allowed_rep_codes": allowed_rep_codes,
-            "auth_data": auth_data
-        }
-
-    return asyncio.run(_login())
-
-
-def login_with_system(username: str, password: str) -> dict:
-    async def _login():
-        login_result = await chatbot_auth_client.system_login(username, password)
-
-        if not login_result.get("success"):
-            return login_result
-
-        user_context = login_result.get("user_context") or {}
-        
-        user_id = extract_user_id_from_system_login(user_context)
-        allowed_node_ids = extract_allowed_node_ids_from_system_login(user_context)
-        allowed_rep_codes = convert_node_ids_to_codes(allowed_node_ids)
-
-        return {
-            "success": True,
-            "login_method": "system",
-            "user_id": user_id,
-            "display_name": extract_display_name_from_system_login(user_context),
-            "user_role": extract_user_role_from_system_login(user_context),
-            "allowed_node_ids": allowed_node_ids,
-            "allowed_rep_codes": allowed_rep_codes,
-            "auth_data": login_result.get("data"),
-            "user_context": user_context
-        }
-
-    return asyncio.run(_login())
-
-
-def get_node_codes_by_ids(node_ids: list[str]) -> list[str]:
-    if not node_ids:
-        return []
-
-    clean_ids = [int(x) for x in node_ids if str(x).strip().isdigit()]
-
-    if not clean_ids:
-        return []
-
-    placeholders = ", ".join([f":id_{i}" for i in range(len(clean_ids))])
-    params = {f"id_{i}": node_id for i, node_id in enumerate(clean_ids)}
-
-    sql = text(f"""
-        SELECT Code
-        FROM sales_hierarchy_nodes
-        WHERE Id IN ({placeholders})
-          AND Code IS NOT NULL
-    """)
-
-    with db_manager.engine.connect() as connection:
-        rows = connection.execute(sql, params).fetchall()
-
-    return [row[0] for row in rows if row[0]]
 
 def add_message(
     role: str,

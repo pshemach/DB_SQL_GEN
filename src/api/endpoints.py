@@ -21,7 +21,8 @@ from .data_models import (
 from ..agents.tools.chatbot_auth_client import chatbot_auth_client
 from ..agents.tools.access_context import (
     extract_allowed_rep_codes_from_phone_auth,
-    extract_user_role_from_phone_auth
+    extract_user_role_from_phone_auth,
+    extract_user_id_from_phone_auth
     )
 
 # =============================
@@ -123,6 +124,7 @@ async def query_database(request: QueryRequest):
         
         allowed_rep_codes = extract_allowed_rep_codes_from_phone_auth(auth_data)
         user_role = extract_user_role_from_phone_auth(auth_data)
+        user_id = extract_user_id_from_phone_auth(auth_data)
         
         # === GUARDRAILS CHECK ===
         # Run pre-graph validation pipeline
@@ -162,6 +164,8 @@ async def query_database(request: QueryRequest):
             user_role=user_role,
             allowed_rep_codes=allowed_rep_codes,
             clarification_answer=request.clarification_answer,
+            user_id=user_id
+            
         )
 
         return QueryResponse(

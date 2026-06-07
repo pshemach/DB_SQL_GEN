@@ -54,8 +54,8 @@ DIAGNOSTIC & CLASSIFICATION RULES:
    - If the user query is a greeting, thank you, or general social conversation, set `action` to `chitchat`.
 
 5. Security Denials:
-   - If the query asks to alter database structure (DROP, DELETE, TRUNCATE) or is out of scope, set `action` to `deny`.
-
+   - If the query asks to alter database structure (DROP, DELETE, TRUNCATE, DML/DDL) or is out of scope, set `action` to `deny`.
+   
 Return ONLY a valid JSON object:
 {{
   "action": "run_sql | clarify | transform_previous | deny | chitchat",

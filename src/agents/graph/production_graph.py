@@ -57,6 +57,7 @@ def build_production_graph() -> StateGraph:
     
     from ..agent.turn_router import turn_router_node
     from ..agent.result_transformer import transform_result_node
+    from ..agent.chitchat_agent import chitchat_node
 
     workflow = StateGraph(AgentState)
 
@@ -70,6 +71,7 @@ def build_production_graph() -> StateGraph:
     workflow.add_node("turn_router", turn_router_node)
     workflow.add_node("transform_result", transform_result_node)
     workflow.add_node("safe_response", safe_response_node)
+    workflow.add_node("chitchat", chitchat_node)
     
     # Clarification for user
     workflow.add_node("hitl_clarify", hitl_clarify_node)
@@ -108,6 +110,7 @@ def build_production_graph() -> StateGraph:
             "sql_pipeline": "sql_pipeline",
             "safe_response": "safe_response",
             "formatter": "formatter",
+            "chitchat": "chitchat",
         },
     )
 
@@ -124,6 +127,7 @@ def build_production_graph() -> StateGraph:
     workflow.add_edge("save_memory", END)
     
     workflow.add_edge("hitl_clarify", "save_memory")
+    workflow.add_edge("chitchat", "save_memory")
 
     logger.info("Production graph compiled successfully")
     return workflow

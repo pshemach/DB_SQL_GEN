@@ -21,62 +21,6 @@ DANGEROUS_PATTERNS = [
     r"(?i)(--\s*$|;\s*DROP)",
 ]
 
-# def save_memory_node(state: AgentState) -> dict:
-#     """
-#     Save conversation memory (only user questions and assistant answers).
-    
-#     Technical artifacts (SQL, plan) are NOT saved as messages but stored in last_state
-#     so they don't pollute the memory context used by the LLM for reasoning.
-#     """
-#     session_id = state.get("session_id")
-
-#     if not session_id:
-#         return {}
-
-#     # Determine what assistant message to save, in priority order
-#     assistant_content = None
-#     message_type = None
-    
-#     if state.get("waiting_for_user"):
-#         # Save the clarification question the assistant asked
-#         assistant_content = state.get("question_to_user")
-#         message_type = "clarification_question"
-    
-#     elif state.get("error"):
-#         # Save errors
-#         assistant_content = state.get("error")
-#         message_type = "error"
-    
-#     elif state.get("result_summary"):
-#         # Save result summary when query succeeds
-#         assistant_content = state.get("result_summary")
-#         message_type = "answer"
-    
-#     elif state.get("final_answer"):
-#         # Save final answers
-#         assistant_content = state.get("final_answer")
-#         message_type = "answer"
-    
-#     # Save the assistant message if we have one
-#     if assistant_content:
-#         chat_memory.add_message(
-#             session_id=session_id,
-#             role="assistant",
-#             content=assistant_content,
-#             message_type=message_type
-#         )
-    
-#     # DO NOT save SQL queries, plans as messages - they are internal artifacts
-#     # They are preserved in last_state for reference, but not in conversation memory
-
-#     # Always save the full state for retrieval if needed
-#     chat_memory.set_last_state(session_id, state)
-
-#     return {
-#         "messages": chat_memory.get_session(session_id).get("messages", []),
-#         "memory_context": chat_memory.build_memory_context(session_id)
-#     }
-
 def save_memory_node(state: AgentState) -> dict:
     session_id = state.get("session_id")
 
@@ -197,33 +141,6 @@ def cache_result_node(state: AgentState) -> dict:
         )
 
     return {}
-
-# def memory_loader_node(state: dict) -> dict:
-#     """Load session memory and prior turn state."""
-#     t0 = time.time()
-#     session_id = state["session_id"]
-#     previous_state = chat_memory.get_last_state(session_id)
-
-#     chat_memory.add_message(
-#         session_id=session_id,
-#         role="user",
-#         content=state["question"],
-#         message_type="question",
-#     )
-
-#     metrics = record_node_timing(
-#         state.get("metrics") or init_metrics(),
-#         "memory_loader",
-#         (time.time() - t0) * 1000,
-#     )
-
-#     return {
-#         "previous_state": previous_state,
-#         "messages": chat_memory.get_session(session_id).get("messages", []),
-#         "memory_context": chat_memory.build_memory_context(session_id),
-#         "waiting_for_user": bool(previous_state and previous_state.get("waiting_for_user")),
-#         "metrics": metrics,
-#     }
 
 def memory_loader_node(state: dict) -> dict:
     """Load session memory and prior turn state."""
@@ -363,31 +280,6 @@ def safe_response_node(state: AgentState) -> dict:
         "relevant_tables": None,
         "error": None if state.get("turn_action") == "chitchat" else state.get("error"),
     }
-
-# def hitl_clarify_node(state: AgentState) -> dict:
-#     question_to_user = (
-#         state.get("clarification_question")
-#         or state.get("question_to_user")
-#         or "Could you provide more details?"
-#     )
-
-#     return {
-#         "turn_action": "clarify",
-#         "final_answer": question_to_user,
-#         "result_summary": question_to_user,
-#         "question_to_user": question_to_user,
-#         "pending_original_question": state.get("question"),
-#         "waiting_for_user": True,
-#         "needs_clarification": True,
-#         "query_result": None,
-#         "result_preview": None,
-#         "sql_query": None,
-#         "sql_explanation": None,
-#         "plan": None,
-#         "plan_steps": None,
-#         "relevant_tables": None,
-#         "error": None,
-#     }
 
 def hitl_clarify_node(state: AgentState) -> dict:
     question_to_user = (
