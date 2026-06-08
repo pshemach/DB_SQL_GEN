@@ -16,13 +16,24 @@ from .data_models import (
     QueryRequest,
     QueryResponse,
     ExampleRequest,
-    HealthResponse
+    HealthResponse,
+    PhoneLoginRequest,
+    SystemLoginRequest,
+    FeedbackRequest,
+    KBDefinitionRequest,
 )
+from ..agents.tools.business_knowledge_store import business_knowledge_store
 from ..agents.tools.chatbot_auth_client import chatbot_auth_client
 from ..agents.tools.access_context import (
     extract_allowed_rep_codes_from_phone_auth,
     extract_user_role_from_phone_auth,
-    extract_user_id_from_phone_auth
+    extract_user_id_from_phone_auth,
+    extract_display_name_from_phone_auth,
+    extract_allowed_node_ids_from_system_login,
+    convert_node_ids_to_codes,
+    extract_user_role_from_system_login,
+    extract_display_name_from_system_login,
+    extract_user_id_from_system_login,
     )
 
 # =============================
@@ -91,6 +102,71 @@ async def health_check():
             few_shot_enabled=settings.enable_dynamic_few_shot
         )
 
+
+# =============================
+# LOGIN ENDPOINT
+# =============================
+
+@app.post("/auth/phone")
+async def login_phone(request: PhoneLoginRequest):
+    try:
+        auth_result = await chatbot_auth_client.authenticate_phone(request.phone_no)
+        
+        if not auth_result.get("success"):
+            return auth_result
+        
+        auth_data = auth_result.get("data") or {}
+        
+        user_id = extract_user_id_from_phone_auth(auth_data)
+        user_role = extract_user_role_from_phone_auth(auth_data)
+        allowed_rep_codes = extract_allowed_rep_codes_from_phone_auth(auth_data)
+        
+        return {
+            "success": True,
+            "login_method": "phone",
+            "user_id": user_id,
+            "display_name": extract_display_name_from_phone_auth(auth_data),
+            "user_role": user_role,
+            "allowed_rep_codes": allowed_rep_codes,
+            "auth_data": auth_data,
+        }
+        
+    except Exception as e:
+        logger.error(f"Phone login failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.post("/auth/system")
+async def login_system(request: SystemLoginRequest):
+    try:
+        login_result = await chatbot_auth_client.system_login(
+            request.username,
+            request.password
+        )
+        
+        if not login_result.get("success"):
+            return login_result
+        
+        user_context = login_result.get("user_context") or {}
+        
+        allowed_node_ids = extract_allowed_node_ids_from_system_login(user_context)
+        allowed_rep_codes = convert_node_ids_to_codes(allowed_node_ids)
+        
+        return {
+            "success": True,
+            "login_method": "system",
+            "user_id": extract_user_id_from_system_login(user_context),
+            "display_name": extract_display_name_from_system_login(user_context),
+            "user_role": extract_user_role_from_system_login(user_context),
+            "allowed_node_ids": allowed_node_ids,
+            "allowed_rep_codes": allowed_rep_codes,
+            "auth_data": login_result.get("data"),
+            "user_context": user_context,
+        }
+        
+    except Exception as e:
+        logger.error(f"System login failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # =============================
 # MAIN QUERY ENDPOINT

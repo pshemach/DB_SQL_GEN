@@ -3,21 +3,64 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
+class PhoneLoginRequest(BaseModel):
+    phone_no: str
+
+
+class SystemLoginRequest(BaseModel):
+    username: str
+    password: str
+    
 
 class QueryRequest(BaseModel):
-    question: str = Field(..., description="Natural language question")
-    session_id: Optional[str] = Field(default=None, description="Conversation/session ID")
-    phone_no: Optional[str] = Field(
-        default="0718543880",
-        description="RepCodes this user is allowed to access"
-    )
+    question: str
+    session_id: Optional[str] = None
 
-    use_cache: bool = Field(default=True, description="Whether to use semantic cache")
-    max_iterations: int = Field(default=2, description="Max correction attempts")
-    clarification_answer: Optional[str] = Field(
-        default=None,
-        description="User answer when resuming from a clarification interrupt (HITL)",
-    )
+    # frontend sends these after login
+    user_id: Optional[str] = None
+    user_role: Optional[str] = None
+    allowed_rep_codes: Optional[List[str]] = []
+
+    # optional fallback for old phone-based flow
+    phone_no: Optional[str] = None
+
+    clarification_answer: Optional[str] = None
+    
+class FeedbackRequest(BaseModel):
+    session_id: str
+    user_id: str
+    message_id: str
+    message_type: str
+    message_content: str
+    feedback_type: str
+    feedback_reason: Optional[str] = None
+
+
+class FeedbackStatsResponse(BaseModel):
+    likes: int = 0
+    dislikes: int = 0
+    satisfaction: float = 0
+
+
+class KBDefinitionRequest(BaseModel):
+    key: str
+    keywords: List[str]
+    definition: str
+    
+# class QueryRequest(BaseModel):
+#     question: str = Field(..., description="Natural language question")
+#     session_id: Optional[str] = Field(default=None, description="Conversation/session ID")
+#     phone_no: Optional[str] = Field(
+#         default="0718543880",
+#         description="RepCodes this user is allowed to access"
+#     )
+
+#     use_cache: bool = Field(default=True, description="Whether to use semantic cache")
+#     max_iterations: int = Field(default=2, description="Max correction attempts")
+#     clarification_answer: Optional[str] = Field(
+#         default=None,
+#         description="User answer when resuming from a clarification interrupt (HITL)",
+#     )
 
 
 class QueryResponse(BaseModel):
