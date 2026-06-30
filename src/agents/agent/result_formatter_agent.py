@@ -1,62 +1,59 @@
+import json
 import base64
 import pandas as pd
 import plotly.express as px
 from loguru import logger
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-import json
 
 from ...config import settings
 from ...utils.json_utils import extract_json
-from ...utils.llm_factory import groq_llm
+from ...utils.llm_factory import openai_llm, groq_llm
 
 RESULT_FORMATTER_PROMPT = """
-You are a BI result formatter for a field sales analytics assistant.
+You are a BI result formatter and chart planner for a field sales analytics assistant.
 
 User Question:
 {question}
 
-SQL:
-{sql_query}
+Dataset Profile:
+{dataset_profile}
 
-Row count: {row_count}
+Computed Facts from the FULL dataset:
+{computed_facts}
 
-Columns:
-{columns}
+Chartable Columns:
+{chartable_columns}
 
-Sample Rows (use ONLY these values in the summary — do not invent numbers):
-{sample_rows}
+User Requested Chart Type:
+{requested_chart_type}
 
-Numeric Columns:
-{numeric_columns}
+Your task:
+Return ONLY valid JSON.
 
-Category Columns:
-{category_columns}
+Rules:
+- Use ONLY computed facts. Do not calculate totals, max, min, averages, rankings, or percentages yourself.
+- Choose 1–3 meaningful charts when charts add value.
+- If only one chart is meaningful, return only one.
+- If no chart is meaningful, return an empty visualizations list.
+- If the user requested a chart type, prefer it only if it fits the data.
+- If the requested chart type is not suitable, choose a better chart.
+- Do not invent column names.
+- Do not mention SQL unless the user asks.
+- Keep summary concise and business-friendly.
+- Use Rs prefix only for monetary fields already marked as currency.
+- Avoid duplicate charts that show the same x_column, y_column, and chart_type.
 
-Data hints:
-{data_hints}
+Chart selection guidance:
+- bar/horizontal_bar: category vs numeric metric, rep/customer/product ranking, top/bottom comparison.
+- line: date/month/week trend.
+- pie: share contribution with 2–8 categories only.
+- scatter: relationship between two numeric metrics.
+- no_chart: if chart would not add value.
 
-Your task — return ONLY valid JSON:
-1. **summary**: 1–4 sentences that answer the user's question in plain business language.
-   - For a single aggregate row (e.g. one net_sales value), state the metric name and exact value from sample rows.
-   - For multiple rows, highlight the top insight (highest/lowest, total, or trend).
-   - Format monetary amounts with **Rs** prefix (e.g. Rs 12,345.67) — not for percentages or counts.
-   - Use thousands separators for large numbers in the summary text.
-   - don't mention calculation methods or how derive the answer
-   - don't summation values due to all row not given
-2. **table_title**: Short business title for the table.
-3. **visualizations**: 0–3 charts using only provided column names.
-
-Chart rules:
-- Prefer bar / horizontal_bar for category vs metric.
-- Prefer line when x is a date/time column.
-- Prefer pie only for ≤8 categories showing share of one metric.
-- For a single aggregate value (one row, one metric), use bar with a simple row label on x and the metric on y, or return [] if not meaningful.
-
-JSON format:
+Return JSON format:
 {{
-  "summary": "...",
-  "table_title": "...",
+  "summary": "1-4 sentence business answer",
+  "table_title": "short business table title",
   "visualizations": [
     {{
       "title": "chart title",
@@ -72,6 +69,7 @@ JSON format:
 class ResultFormatterAgent:
     def __init__(self):
         self.llm = groq_llm(temperature=0)
+        # self.llm = openai_llm()
 
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", RESULT_FORMATTER_PROMPT),
@@ -106,37 +104,40 @@ class ResultFormatterAgent:
         category_columns = [col for col in df.columns if col not in numeric_columns]
 
         reused = bool(state.get("reused_previous_result"))
-        max_sample = 100 if reused else 25
-        sample_df = df.head(max_sample) if len(df) > max_sample else df
-        sample_rows = (
-            sample_df.where(pd.notna(sample_df), None).to_dict(orient="records")
-        )
-        data_hints = self._build_data_hints(df, numeric_columns, category_columns)
+        
+        dataset_profile = self._build_dataset_profile(
+            df=df,
+            numeric_columns=numeric_columns,
+            category_columns=category_columns,
+            )
+        
+        computed_facts = self._build_computed_facts(
+            df=df,
+            numeric_columns=numeric_columns,
+            category_columns=category_columns,
+            )
+        chartable_columns = self._build_chartable_columns(
+            df=df,
+            numeric_columns=numeric_columns,
+            category_columns=category_columns,
+            )
+        requested_chart_type = self._detect_requested_chart_type(
+            state.get("question", "")
+            )
+        
         fallback_summary = self._build_data_driven_summary(
             df, state.get("question", ""), numeric_columns
         )
         table_title = self._table_title(state, reused)
 
-        if reused or len(df) <= 15:
-            return {
-                "result_summary": fallback_summary,
-                "final_answer": fallback_summary,
-                "table_title": table_title,
-                "visualizations": self._visualizations_for_df(
-                    df, numeric_columns, category_columns
-                ),
-            }
-
         try:
             response = self.chain.invoke({
                 "question": state.get("question", ""),
-                "sql_query": state.get("sql_query", ""),
-                "row_count": len(df),
-                "columns": list(df.columns),
-                "sample_rows": sample_rows,
-                "numeric_columns": numeric_columns,
-                "category_columns": category_columns,
-                "data_hints": data_hints,
+                # "sql_query": state.get("sql_query", ""),
+                "dataset_profile": json.dumps(dataset_profile, default=str),
+                "computed_facts": json.dumps(computed_facts, default=str),
+                "chartable_columns": json.dumps(chartable_columns, default=str),
+                "requested_chart_type": requested_chart_type or "none",
             })
 
             result = extract_json(response.content)
@@ -195,7 +196,122 @@ class ResultFormatterAgent:
                 "table_title": table_title,
                 "visualizations": visualizations,
             }
+            
+    def _build_dataset_profile(self, df: pd.DataFrame, numeric_columns: list, category_columns: list) -> dict:
+        return {
+            "row_count": int(len(df)),
+            "columns": list(df.columns),
+            "numeric_columns": numeric_columns,
+            "category_columns": category_columns,
+            "currency_columns": [
+                col for col in numeric_columns
+                if self._is_currency_column(col)
+            ],
+        }
+        
+    def _build_computed_facts(self, df: pd.DataFrame, numeric_columns: list, category_columns: list) -> dict:
+        facts = {
+            "row_count": int(len(df)),
+            "metrics": {},
+            "top_rows": {},
+            "bottom_rows": {},
+        }
 
+        if df.empty or not numeric_columns:
+            return facts
+
+        label_col = self._choose_best_category_column(category_columns) if category_columns else None
+
+        for col in numeric_columns:
+            series = df[col].dropna()
+
+            if series.empty:
+                continue
+
+            metric_facts = {
+                "sum": self._format_number(series.sum(), col),
+                "min": self._format_number(series.min(), col),
+                "max": self._format_number(series.max(), col),
+                "avg": self._format_number(series.mean(), col),
+            }
+
+            max_idx = series.idxmax()
+            min_idx = series.idxmin()
+
+            if label_col:
+                metric_facts["max_label"] = str(df.loc[max_idx, label_col])
+                metric_facts["min_label"] = str(df.loc[min_idx, label_col])
+
+            facts["metrics"][col] = metric_facts
+
+            sorted_df = df.dropna(subset=[col]).sort_values(by=col, ascending=False)
+
+            keep_cols = []
+            if label_col:
+                keep_cols.append(label_col)
+            keep_cols.append(col)
+
+            facts["top_rows"][col] = (
+                sorted_df[keep_cols]
+                .head(5)
+                .where(pd.notna(sorted_df[keep_cols]), None)
+                .to_dict(orient="records")
+            )
+
+            facts["bottom_rows"][col] = (
+                sorted_df[keep_cols]
+                .tail(5)
+                .where(pd.notna(sorted_df[keep_cols]), None)
+                .to_dict(orient="records")
+            )
+
+        return facts
+    
+    def _detect_requested_chart_type(self, question: str) -> str | None:
+        q = (question or "").lower()
+
+        mapping = {
+            "horizontal bar": "horizontal_bar",
+            "bar chart": "bar",
+            "bar graph": "bar",
+            "line chart": "line",
+            "line graph": "line",
+            "trend chart": "line",
+            "pie chart": "pie",
+            "scatter": "scatter",
+            "scatter plot": "scatter",
+        }
+
+        for key, value in mapping.items():
+            if key in q:
+                return value
+
+        return None
+
+    def _build_chartable_columns(
+        self,
+        df: pd.DataFrame,
+        numeric_columns: list,
+        category_columns: list
+    ) -> dict:
+        date_like_columns = [
+            col for col in df.columns
+            if self._looks_like_date_column(col)
+        ]
+
+        return {
+            "numeric_columns": numeric_columns,
+            "category_columns": category_columns,
+            "date_like_columns": date_like_columns,
+            "currency_columns": [
+                col for col in numeric_columns
+                if self._is_currency_column(col)
+            ],
+            "row_count": int(len(df)),
+            "recommended_x_candidates": category_columns[:8] + date_like_columns[:5],
+            "recommended_y_candidates": self._sort_numeric_columns_by_business_priority(numeric_columns)[:8],
+        }
+        
     def _table_title(self, state: dict, reused: bool) -> str:
         q = (state.get("question") or "").strip()
         if reused and "Follow-up:" in q:
@@ -204,23 +320,6 @@ class ResultFormatterAgent:
         if reused:
             return "Follow-up results"
         return "Query results"
-
-    def _visualizations_for_df(
-        self, df: pd.DataFrame, numeric_columns: list, category_columns: list
-    ) -> list:
-        if df.empty or not numeric_columns:
-            return []
-        specs = self._fallback_visualization_specs(
-            df=df,
-            numeric_columns=numeric_columns,
-            category_columns=category_columns,
-        )
-        return self._build_visualizations(
-            df=df,
-            raw_visualizations=specs,
-            numeric_columns=numeric_columns,
-            category_columns=category_columns,
-        )
 
     _CURRENCY_COLUMN_TERMS = (
         "sales", "revenue", "amount", "value", "target", "in_sales",
@@ -258,35 +357,6 @@ class ResultFormatterAgent:
     @staticmethod
     def _humanize_column(name: str) -> str:
         return name.replace("_", " ").strip().title()
-
-    def _build_data_hints(
-        self, df: pd.DataFrame, numeric_columns: list, category_columns: list
-    ) -> str:
-        symbol = settings.currency_symbol or "Rs"
-        lines = [
-            f"Total rows: {len(df)}",
-            f"Currency for monetary columns: {symbol}",
-        ]
-        if len(df) == 1 and numeric_columns:
-            for col in numeric_columns:
-                val = df[col].iloc[0]
-                if pd.notna(val):
-                    lines.append(
-                        f"Single value — {self._humanize_column(col)}: "
-                        f"{self._format_number(val, col)}"
-                    )
-        elif numeric_columns and len(df) > 1:
-            col = self._choose_best_numeric_column(numeric_columns)
-            series = df[col].dropna()
-            if not series.empty:
-                lines.append(
-                    f"{self._humanize_column(col)} — min: {self._format_number(series.min(), col)}, "
-                    f"max: {self._format_number(series.max(), col)}, "
-                    f"sum: {self._format_number(series.sum(), col)}"
-                )
-        if category_columns and len(df) > 1:
-            lines.append(f"Categories available: {', '.join(category_columns[:5])}")
-        return "\n".join(lines)
 
     def _build_data_driven_summary(
         self, df: pd.DataFrame, question: str, numeric_columns: list
@@ -478,10 +548,19 @@ class ResultFormatterAgent:
                 logger.warning(f"Chart JSON generation failed: {e}")
 
             try:
-                png_bytes = fig.to_image(format="png")
+                png_bytes = fig.to_image(
+                    format="png",
+                    width=1200,
+                    height=700,
+                    scale=2
+                )
                 chart_image_base64 = base64.b64encode(png_bytes).decode("utf-8")
             except Exception as e:
-                logger.warning(f"PNG chart export failed: {e}")
+                logger.error(
+                    "PNG chart export failed. Install or fix Kaleido: pip install -U kaleido. "
+                    f"Original error: {e}"
+                )
+                chart_image_base64 = None
 
             output.append({
                 "title": title,
@@ -498,8 +577,8 @@ class ResultFormatterAgent:
         df: pd.DataFrame,
         numeric_columns: list,
         category_columns: list
-    ) -> dict:
-        if not numeric_columns:
+        ) -> dict:
+        if df.empty or not numeric_columns:
             return self._disabled_config()
 
         x_col = config.get("x_column")
@@ -512,26 +591,60 @@ class ResultFormatterAgent:
         if chart_type not in allowed_chart_types:
             chart_type = "bar"
 
-        # y axis must be numeric
+        # y must be numeric
         if y_col not in numeric_columns:
             y_col = self._choose_best_numeric_column(numeric_columns)
 
-        # x axis should not be same as y and should preferably be categorical/date
-        if x_col not in df.columns or x_col == y_col or x_col in numeric_columns:
-            if category_columns:
-                x_col = self._choose_best_category_column(category_columns)
-            else:
-                df["_row_label"] = [f"Row {i + 1}" for i in range(len(df))]
-                x_col = "_row_label"
+        # scatter needs two numeric axes
+        if chart_type == "scatter":
+            if x_col not in numeric_columns or x_col == y_col:
+                numeric_alt = [c for c in numeric_columns if c != y_col]
+                if numeric_alt:
+                    x_col = numeric_alt[0]
+                else:
+                    return self._disabled_config()
 
-        # color must be a valid category column and should not duplicate x/y
+        # line should use date-like/category x
+        elif chart_type == "line":
+            if x_col not in df.columns or x_col == y_col:
+                date_cols = [c for c in df.columns if self._looks_like_date_column(c)]
+                if date_cols:
+                    x_col = date_cols[0]
+                elif category_columns:
+                    x_col = self._choose_best_category_column(category_columns)
+                else:
+                    df["_row_label"] = [f"Row {i + 1}" for i in range(len(df))]
+                    x_col = "_row_label"
+
+        # pie should use category x and numeric y, and not too many categories
+        elif chart_type == "pie":
+            if not category_columns:
+                return self._disabled_config()
+
+            if x_col not in category_columns:
+                x_col = self._choose_best_category_column(category_columns)
+
+            unique_count = df[x_col].nunique(dropna=True)
+            if unique_count < 2 or unique_count > 8:
+                # pie is not meaningful; change to bar instead
+                chart_type = "horizontal_bar" if len(df) > 10 else "bar"
+
+        # bar/horizontal_bar
+        else:
+            if x_col not in df.columns or x_col == y_col or x_col in numeric_columns:
+                if category_columns:
+                    x_col = self._choose_best_category_column(category_columns)
+                else:
+                    df["_row_label"] = [f"Row {i + 1}" for i in range(len(df))]
+                    x_col = "_row_label"
+
         if color_col not in df.columns or color_col == x_col or color_col == y_col:
             color_col = None
 
         if color_col and color_col in numeric_columns:
             color_col = None
 
-        if df[y_col].dropna().empty:
+        if y_col not in df.columns or df[y_col].dropna().empty:
             return self._disabled_config()
 
         return {
@@ -548,8 +661,11 @@ class ResultFormatterAgent:
         numeric_columns: list,
         category_columns: list
     ) -> list:
-        if not numeric_columns:
+        if df.empty or not numeric_columns:
             return []
+
+        specs = []
+        priority_numeric_cols = self._sort_numeric_columns_by_business_priority(numeric_columns)
 
         if category_columns:
             x_col = self._choose_best_category_column(category_columns)
@@ -557,15 +673,25 @@ class ResultFormatterAgent:
             df["_row_label"] = [f"Row {i + 1}" for i in range(len(df))]
             x_col = "_row_label"
 
-        specs = []
-
-        priority_numeric_cols = self._sort_numeric_columns_by_business_priority(numeric_columns)
+        # Single value: only one simple chart if useful
+        if len(df) == 1:
+            y_col = priority_numeric_cols[0]
+            specs.append({
+                "title": f"{y_col}",
+                "chart_type": "bar",
+                "x_column": x_col,
+                "y_column": y_col,
+                "color_column": None
+            })
+            return specs
 
         for y_col in priority_numeric_cols[:3]:
-            chart_type = "horizontal_bar" if len(df) > 10 else "bar"
-
             if self._looks_like_date_column(x_col):
                 chart_type = "line"
+            elif len(df) > 10:
+                chart_type = "horizontal_bar"
+            else:
+                chart_type = "bar"
 
             specs.append({
                 "title": f"{y_col} by {x_col}",
@@ -573,9 +699,9 @@ class ResultFormatterAgent:
                 "x_column": x_col,
                 "y_column": y_col,
                 "color_column": None
-            })
+                })
 
-        return specs
+        return specs[:3]
 
     def _choose_best_category_column(self, category_columns: list) -> str:
         priority_terms = [
@@ -758,20 +884,46 @@ class ResultFormatterAgent:
                 title=title
             )
             fig.update_layout(xaxis_tickangle=-45)
+                
+        if chart_type in ["bar", "horizontal_bar"]:
+            fig.update_traces(
+                texttemplate="%{text:,.2f}",
+                textposition="outside",
+                cliponaxis=False
+            )
 
-        layout_kwargs = dict(
-            template="plotly_white",
-            height=500,
-            margin=dict(l=40, r=40, t=70, b=40),
-        )
         symbol = settings.currency_symbol or "Rs"
+
+        axis_update = {}
         if self._is_currency_column(y_col):
             prefix = f"{symbol} "
+
             if chart_type == "horizontal_bar":
-                layout_kwargs["xaxis"] = dict(tickprefix=prefix)
-            else:
-                layout_kwargs["yaxis"] = dict(tickprefix=prefix)
-        fig.update_layout(**layout_kwargs)
+                axis_update["xaxis"] = dict(tickprefix=prefix)
+            elif chart_type != "pie":
+                axis_update["yaxis"] = dict(tickprefix=prefix)
+
+        fig.update_layout(
+            template="plotly_white",
+            height=700,
+            width=1200,
+            title=dict(
+                text=title,
+                x=0.02,
+                xanchor="left",
+                font=dict(size=22)
+            ),
+            margin=dict(l=80, r=50, t=90, b=90),
+            font=dict(size=14),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            ),
+            **axis_update
+        )
 
         return fig
 
