@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+cache
+vector_store/
+vector_store/chroma.sqlite3
+database

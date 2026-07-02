@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  streamlit:
+    build: .
+    container_name: db-sql-gen-app
+    ports:
+      - "8558:8558"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./cache:/app/cache
+      - ./data:/app/data
+    restart: unless-stopped

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>SFA SmartAnalyst</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <link rel="stylesheet" href="style.css" />
+  </head>
+
+  <body>
+    <div class="layout">
+      <!-- SIDEBAR -->
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-logo">S</div>
+          <div>
+            <h2>SFA SmartAnalyst</h2>
+            <p>Sales Intelligence Assistant</p>
+          </div>
+        </div>
+
+        <!-- LOGIN -->
+        <section id="loginBox" class="panel">
+          <h3>Login</h3>
+
+          <div class="login-tabs">
+            <button
+              type="button"
+              id="phoneModeBtn"
+              class="active"
+              onclick="showLoginMode('phone')"
+            >
+              Phone
+            </button>
+            <button
+              type="button"
+              id="systemModeBtn"
+              onclick="showLoginMode('system')"
+            >
+              User Login
+            </button>
+          </div>
+
+          <div id="phoneLogin">
+            <label>Phone Number</label>
+            <input id="phoneNo" type="text" placeholder="0718543880" />
+            <button type="button" class="primary-btn" onclick="loginPhone()">
+              Login
+            </button>
+          </div>
+
+          <div id="systemLogin" class="hidden">
+            <label>Username</label>
+            <input id="username" type="text" placeholder="Username" />
+
+            <label>Password</label>
+            <input id="password" type="password" placeholder="Password" />
+
+            <button type="button" class="primary-btn" onclick="loginSystem()">
+              Login
+            </button>
+          </div>
+
+          <p id="loginMessage" class="error-text"></p>
+        </section>
+
+        <!-- USER -->
+        <section id="userBox" class="panel hidden">
+          <h3>User</h3>
+          <p class="user-name" id="userName"></p>
+          <p class="muted" id="userRole"></p>
+          <p class="muted" id="loginMethod"></p>
+
+          <button type="button" class="primary-btn" onclick="newChat()">
+            New Chat
+          </button>
+          <button type="button" class="secondary-btn" onclick="logout()">
+            Logout
+          </button>
+        </section>
+
+        <!-- FEEDBACK STATS -->
+        <section id="feedbackStatsBox" class="panel hidden">
+          <h3>Session Feedback</h3>
+
+          <div class="stats-grid">
+            <div>
+              <span>👍</span>
+              <strong id="likes">0</strong>
+            </div>
+            <div>
+              <span>👎</span>
+              <strong id="dislikes">0</strong>
+            </div>
+            <div>
+              <span>😊</span>
+              <strong id="satisfaction">0%</strong>
+            </div>
+          </div>
+        </section>
+
+        <!-- KB EDITOR - HIDDEN FOR REPS -->
+        <section id="kbBox" class="panel hidden">
+          <h3>Business Knowledge Base</h3>
+
+          <button type="button" class="secondary-btn" onclick="loadKb()">
+            Reload KB
+          </button>
+          <button type="button" class="primary-btn" onclick="showKbForm()">
+            Add / Edit KPI
+          </button>
+
+          <label>KPI Definitions</label>
+          <select id="kbSelect" onchange="loadSelectedKb()"></select>
+
+          <div id="kbView" class="kb-view"></div>
+
+          <div id="kbForm" class="hidden kb-form">
+            <label>KPI Key</label>
+            <input id="kbKey" type="text" placeholder="productive_calls" />
+
+            <label>Keywords</label>
+            <textarea
+              id="kbKeywords"
+              placeholder="One keyword per line"
+            ></textarea>
+
+            <label>Definition</label>
+            <textarea
+              id="kbDefinition"
+              placeholder="Write KPI definition"
+            ></textarea>
+
+            <button type="button" class="primary-btn" onclick="saveKb()">
+              Save
+            </button>
+            <button type="button" class="secondary-btn" onclick="cancelKb()">
+              Cancel
+            </button>
+            <button type="button" class="danger-btn" onclick="deleteKb()">
+              Delete
+            </button>
+          </div>
+        </section>
+      </aside>
+
+      <!-- MAIN -->
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1>Chat</h1>
+            <p id="sessionText"></p>
+          </div>
+        </header>
+
+        <section id="messages" class="messages"></section>
+
+        <section class="chat-input-row">
+          <input
+            id="questionInput"
+            type="text"
+            placeholder="Ask a sales/business question..."
+          />
+          <button type="button" onclick="sendQuestion()">Send</button>
+        </section>
+
+        <section id="resultBox" class="result-box hidden">
+          <div class="result-tabs">
+            <button
+              type="button"
+              id="tableTabBtn"
+              class="active"
+              onclick="showTab('table')"
+            >
+              Table
+            </button>
+            <button type="button" id="chartTabBtn" onclick="showTab('chart')">
+              Chart
+            </button>
+            <button type="button" id="sqlTabBtn" onclick="showTab('sql')">
+              SQL
+            </button>
+            <button type="button" id="planTabBtn" onclick="showTab('plan')">
+              Plan
+            </button>
+          </div>
+
+          <div id="tableTab" class="tab-content"></div>
+          <div id="chartTab" class="tab-content hidden"></div>
+          <pre id="sqlTab" class="tab-content hidden"></pre>
+          <pre id="planTab" class="tab-content hidden"></pre>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
