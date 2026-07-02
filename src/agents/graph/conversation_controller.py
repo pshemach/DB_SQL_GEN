@@ -127,7 +127,7 @@ async def run_agent_async(
     user_role: str | None = None,
     clarification_answer: str | None = None,
     user_id: str = None
-) -> dict:
+):
     session_id = chat_memory.get_or_create_session(session_id)
     config = build_invoke_config(session_id)
     initial_state = _build_initial_state(
@@ -135,16 +135,70 @@ async def run_agent_async(
     )
 
     try:
-        if clarification_answer and settings.enable_production_graph:
-            result = await graph.ainvoke(
-                Command(resume=clarification_answer),
-                config,
-            )
-        else:
-            result = await graph.ainvoke(initial_state, config)
+        input_payload = (
+            Command(resume=clarification_answer)
+            if clarification_answer and settings.enable_production_graph
+            else initial_state
+        )
 
-        return _finalize(result)
+        final_state = dict(initial_state)
+
+        async for event in graph.astream(
+            input_payload,
+            config,
+            stream_mode="updates",
+        ):
+            if not isinstance(event, dict):
+                continue
+
+            for node_name, node_state in event.items():
+                if not isinstance(node_state, dict):
+                    continue
+
+                final_state.update(node_state)
+
+                if node_state.get("error"):
+                    yield {
+                        "type": "error",
+                        "node": node_name,
+                        "error": node_state.get("error"),
+                        "should_retry": False,
+                    }
+
+                elif node_state.get("waiting_for_user") or node_state.get("question_to_user"):
+                    yield {
+                        "type": "clarification",
+                        "node": node_name,
+                        "question_to_user": node_state.get("question_to_user"),
+                        "pending_original_question": node_state.get("pending_original_question"),
+                        "gap_type": node_state.get("gap_type"),
+                    }
+
+                elif node_state.get("final_answer"):
+                    yield {
+                        "type": "answer",
+                        "node": node_name,
+                        "text": node_state.get("final_answer"),
+                    }
+
+                else:
+                    yield {
+                        "type": "status",
+                        "node": node_name,
+                        "message": f"{node_name} completed",
+                    }
+
+        finalized = _finalize(final_state)
+
+        yield {
+            "type": "final",
+            "result": finalized,
+        }
 
     except Exception as e:
         logger.error(f"Graph execution error: {e}")
-        return {**initial_state, "error": str(e), "should_retry": False}
+        yield {
+            "type": "error",
+            "error": str(e),
+            "should_retry": False,
+        }

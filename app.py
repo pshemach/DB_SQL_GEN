@@ -1,6 +1,7 @@
 import os
 import warnings
 import logging
+import time
 
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
@@ -31,7 +32,7 @@ from typing import Optional, Dict, Any
 
 from src.agents.tools.business_knowledge_store import business_knowledge_store
 from src.agents.tools.chat_memory import chat_memory
-from ui.agent_runner import run_async_agent
+from ui.agent_runner import stream_async_agent
 from ui.user_utils import login_with_phone, login_with_system
 
 # =============================
@@ -626,13 +627,21 @@ def render_message_with_feedback(message: Dict, session_id: str, user_id: str):
 
     with st.chat_message("assistant"):
         if message_id and user_id and msg_type in ["answer", "clarification"]:
-            col_content, col_like, col_dislike = st.columns([0.7, 0.15, 0.15])
+            col_content, col_like, col_dislike = st.columns([0.88, 0.06, 0.06])
+            
+            feedback_key = f"feedback_{message_id}"
+            selected_feedback = st.session_state.get(feedback_key)
 
             with col_content:
                 st.write(content)
 
             with col_like:
-                if st.button("👍", key=f"like_{message_id}", help="Like"):
+                if st.button(
+                    "👍",
+                    key=f"like_{message_id}",
+                    help="Like",
+                    type="primary" if selected_feedback == "like" else "secondary"
+                    ):
                     chat_memory.save_feedback(
                         session_id=session_id,
                         user_id=user_id,
@@ -641,11 +650,17 @@ def render_message_with_feedback(message: Dict, session_id: str, user_id: str):
                         message_content=content[:500],
                         feedback_type="like"
                     )
+                    st.session_state[feedback_key] = "like"
                     st.success("Feedback saved.")
                     st.rerun()
 
             with col_dislike:
-                if st.button("👎", key=f"dislike_{message_id}", help="Dislike"):
+                if st.button(
+                    "👎",
+                    key=f"dislike_{message_id}",
+                    help="Dislike",
+                    type="primary" if selected_feedback == "dislike" else "secondary"
+                    ):
                     chat_memory.save_feedback(
                         session_id=session_id,
                         user_id=user_id,
@@ -654,6 +669,7 @@ def render_message_with_feedback(message: Dict, session_id: str, user_id: str):
                         message_content=content[:500],
                         feedback_type="dislike"
                     )
+                    st.session_state[feedback_key] = "dislike"
                     st.warning("Feedback saved.")
                     st.rerun()
         else:
@@ -957,44 +973,85 @@ if user_question:
         st.markdown(user_question)
 
     with st.chat_message("assistant"):
+        response_placeholder = st.empty()
         with st.spinner("Thinking..."):
             try:
-                result = run_async_agent(
-                    question=user_question,
-                    session_id=st.session_state.session_id,
-                    user_role=st.session_state.user_role,
-                    allowed_rep_codes=st.session_state.allowed_rep_codes,
-                    user_id=st.session_state.user_id
-                )
+                final_result_holder = {"value": None}
+                streamed_text_holder = {"value": ""}
 
-                st.session_state.last_result = result
+                async def consume_stream():
+                    async for chunk in stream_async_agent(
+                        question=user_question,
+                        session_id=st.session_state.session_id,
+                        user_role=st.session_state.user_role,
+                        allowed_rep_codes=st.session_state.allowed_rep_codes,
+                        user_id=st.session_state.user_id,
+                    ):
+                        chunk_type = chunk.get("type")
+
+                        if chunk_type == "answer":
+                            streamed_text_holder["value"] = chunk.get("text", "") or ""
+                            response_placeholder.markdown(streamed_text_holder["value"])
+
+                        elif chunk_type == "clarification":
+                            streamed_text_holder["value"] = (
+                                chunk.get("question_to_user") or "Please provide more details."
+                            )
+                            response_placeholder.info(streamed_text_holder["value"])
+
+                        elif chunk_type == "status":
+                            response_placeholder.caption(chunk.get("message", "Working..."))
+
+                        elif chunk_type == "final":
+                            final_result_holder["value"] = chunk.get("result") or {}
+
+                asyncio.run(consume_stream())
+
+                final_result = final_result_holder["value"]
+
+                if final_result is None:
+                    final_result = {
+                        "error": "No response was generated.",
+                        "should_retry": False,
+                    }
+
+                st.session_state.last_result = final_result
                 st.session_state.query_count += 1
 
-                assistant_text = format_agent_response(result)
-                st.markdown(assistant_text)
+                assistant_text = format_agent_response(final_result)
+
+                if assistant_text:
+                    rendered_text = ""
+                    for char in assistant_text:
+                        rendered_text += char
+                        response_placeholder.markdown(rendered_text + "▌")
+                        time.sleep(0.01)
+                    response_placeholder.markdown(rendered_text)
+                else:
+                    response_placeholder.markdown("Done.")
 
                 current_message_type = (
-                    "clarification" if result.get("waiting_for_user") else "answer"
+                    "clarification" if final_result.get("waiting_for_user") else "answer"
                 )
 
-                assistant_message_id = result.get("assistant_message_id")
+                assistant_message_id = final_result.get("assistant_message_id")
 
                 if assistant_message_id:
                     add_message(
                         "assistant",
                         assistant_text,
                         current_message_type,
-                        message_id=assistant_message_id
+                        message_id=assistant_message_id,
                     )
                 else:
                     add_message(
                         "assistant",
                         assistant_text,
-                        current_message_type
+                        current_message_type,
                     )
                     logger.warning("assistant_message_id missing from backend result; feedback will not link to DB message.")
 
-                result["message_id"] = assistant_message_id
+                final_result["message_id"] = assistant_message_id
 
                 st.rerun()
 
@@ -1027,16 +1084,10 @@ if result:
             "Plan"
         ])       
         with tab_table:
-            if result.get("waiting_for_user"):
-                st.info(result.get("question_to_user"))
-
-            elif result.get("error"):
+            if result.get("error"):
                 st.error(result.get("error"))
 
             else:
-                # if result.get("result_summary"):
-                #     st.success(result["result_summary"])
-
                 table_title = result.get("table_title", "Extracted Table")
                 st.markdown(f"### {table_title}")
 
@@ -1199,27 +1250,7 @@ if result:
                             if chart_df.empty:
                                 st.warning(f"No labels available for selected X axis: {x_col}")
                                 st.dataframe(df, use_container_width=True)
-                            else:
-                                # -----------------------------
-                                # Top N
-                                # -----------------------------
-                                # max_n = min(100, len(chart_df))
-
-                                # top_n = st.slider(
-                                #     "Rows to show",
-                                #     min_value=1,
-                                #     max_value=max_n,
-                                #     value=min(20, max_n),
-                                #     step=1,
-                                #     key=f"graph_top_n_{graph_key}"
-                                # )
-
-                                # chart_df = (
-                                #     chart_df
-                                #     .sort_values(by=y_col, ascending=False)
-                                #     .head(top_n)
-                                # )
-                                
+                            else:                                
                                 row_count = len(chart_df)
 
                                 if row_count == 0:
