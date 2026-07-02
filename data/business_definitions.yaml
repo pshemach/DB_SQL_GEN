@@ -1,0 +1,389 @@
+definitions:
+  net_sales:
+    keywords:
+      - net sales
+      - achievement
+      - current achievement
+      - my achievement
+      - actual sales
+    definition: |
+      Net Sales, also called Achievement, is the actual sales value after deducting returns for the selected period.
+      Sales transactions increase the value, and return transactions reduce the value.
+      Use the selected rep/customer/product/route filters when provided.
+      Formula: Net Sales = Sales Amount - Return Amount.
+
+  target:
+    keywords:
+      - target
+      - my target
+      - sales target
+      - monthly target
+      - quota
+    definition: |
+      Target is the planned sales value assigned for the selected period.
+      For rep-level or secondary target, use target Type = 1.
+      For distributor-level or primary target, use target Type = 0.
+      Target records must overlap the requested period using StartDate and EndDate.
+
+  target_vs_achievement:
+    keywords:
+      - target vs achievement
+      - sales target vs achievement
+      - target vs achievement percentage
+    definition: |
+      Monthly Sales Target vs Current Achievement compares the selected rep's current month target against actual achievement.
+      Target is the sum of rep-level target values for the current month.
+      Current Achievement is net sales for the current month.
+      need percentage as achievement over target.
+
+  required_sales_to_achieve_target:
+    keywords:
+      - how much sales need
+      - sales needed to achieve target
+      - required sales
+      - balance to target
+    definition: |
+      Required Sales to Achieve Target is the remaining sales value needed to reach the monthly target.
+      It is calculated as Monthly Target minus Current Achievement.
+      Monthly Target should use rep-level target Type = 1 unless the user asks for distributor/primary target.
+      Current Achievement should use net sales.
+
+  current_run_rate:
+    keywords:
+      - current run rate
+      - my current run rate
+      - run rate
+    definition: |
+      Current Run Rate measures the average daily achievement so far in the current period.
+      It is calculated as Current Achievement divided by the number of elapsed days.
+      Current Achievement should be based on net sales.
+  required_run_rate:
+    keywords:
+      - required run rate
+      - needed run rate
+      - target run rate
+    definition: |
+      Required Run Rate is the average daily sales required for the remaining days to achieve the target.
+      It is calculated as (Monthly Target - Current Achievement) divided by remaining days in the month.
+      Monthly Target should use rep-level target Type = 1, For distributor-level, use target Type = 0.
+      Current Achievement should be based on net sales.
+      If remaining days are zero, avoid division by zero.
+
+  productive_calls:
+    keywords:
+      - productive call
+      - productive calls
+      - my productive call
+      - productive visit
+      - productive customer visit
+    definition: |
+      Productive Calls count the number of unique customers with successful sales for each day, then sum those daily counts across the selected period.
+      This must not be calculated as overall distinct customers for the full period.
+      Include only sales transactions where a sale occurred and amount is greater that 0.
+
+  planned_productive_calls:
+    keywords:
+      - planned productive call
+      - planned productive calls
+      - planned pc
+      - planned customer productive call
+    definition: |
+      Planned Productive Calls count productive sales made to customers who were scheduled in the planned route for that same date.
+      First identify customers assigned to the rep's planned route for each planned date.
+      Then identify sales transactions for the same rep, customer, and date.
+      Count unique planned customers with sales per day, then sum the daily counts across the selected period.
+      Include only sales transactions where a sale occurred and amount is greater that 0.
+
+  unplanned_productive_calls:
+    keywords:
+      - unplanned productive call
+      - unplanned productive calls
+      - unplanned pc
+      - unplanned customer productive call
+    definition: |
+      Unplanned Productive Calls count productive sales made to customers who were not scheduled in the planned route for that same date.
+      First identify all productive sales by rep, customer, and date.
+      Then exclude customers who were assigned in the planned route for that rep and date.
+      Count unique unplanned customers per day, then sum those daily counts across the selected period.
+      Include only sales transactions where a sale occurred and amount is greater that 0.
+
+  outlet_productivity:
+    keywords:
+      - outlet productivity
+      - productive outlet percentage
+      - outlet productive percentage
+      - outlet coverage
+      - productive outlet
+    definition: |
+      Outlet Productivity measures the percentage of assigned outlets that were visited or productive during the selected period.
+      Actual Visits are counted from sales transactions using distinct CustomerCode and InvoiceNo combinations.
+      Total Assigned Outlets are counted from planned route customer assignments for the rep during the same period.
+      Only active and approved assigned outlets should be included.
+      Formula: Outlet Productivity % = (Actual Visits / Total Assigned Outlets) * 100.
+      If Total Assigned Outlets is zero, return 0.
+
+  zero_sales_outlets:
+    keywords:
+      - zero sales outlets
+      - no sales outlets
+      - outlets without sales
+      - non buying outlets
+      - zero volume outlets
+    definition: |
+      Zero Sales Outlets are assigned active outlets that had no sales or zero net sales/volume during the selected period.
+      Start from planned route customer assignments for the rep.
+      Compare assigned outlets against sales activity for the same period.
+      Outlets with no matching sales, or net sales/volume equal to zero, should be returned.
+      Include only active outlets.
+
+  best_performing_outlets:
+    keywords:
+      - best performing outlets
+      - top customers
+      - best customers
+      - top outlets
+      - best outlets
+      - top 10 customers
+    definition: |
+      Best Performing Outlets are outlets ranked by highest Net Sales during the selected period.
+      Net Sales means sales minus returns.
+      Group results by outlet/customer.
+      If the user asks for top or best outlets and does not specify a limit, return top 10.
+
+  rep_wise_top_outlets:
+    keywords:
+      - rep wise top outlets
+      - rep wise best outlets
+      - rep wise top customers
+      - rep wise best performance outlet
+    definition: |
+      Rep-wise Top Outlets ranks outlets separately for each rep based on Net Sales.
+      Net Sales means sales minus returns.
+      For each rep, rank customers by Net Sales in descending order.
+      If no limit is specified, return top 10 outlets per rep.
+
+  best_selling_skus:
+    keywords:
+      - best selling sku
+      - best selling skus
+      - top sku
+      - top products
+      - best selling products
+      - highest selling sku
+    definition: |
+      Best-Selling SKUs are products ranked by highest Net Sales or quantity sold for the selected outlet, rep, or period.
+      If the user asks by value, rank by Net Sales.
+      If the user asks by quantity or volume, rank by quantity or sales volume.
+      Group results by product/SKU.
+
+  sku:
+    keywords:
+      - sku
+      - unique products
+      - products sold
+      - sku count
+    definition: |
+      SKU count means the number of unique products sold in the selected scope.
+      Count distinct ProductCode where a sale occurred.
+      Exclude returns unless the user specifically asks for return SKUs.
+
+  line_item_per_bill:
+    keywords:
+      - line item per bill
+      - line items per bill
+      - lipb
+      - average line item per bill
+      - avg item per bill
+    definition: |
+      Line Item Per Bill, also called LIPB, is the average number of unique products sold per invoice.
+      First count distinct ProductCode for each InvoiceNo.
+      Then average those invoice-level counts across the selected period.
+      This is an average per bill, not a total count of lines.
+      Include only sales invoices unless otherwise specified.
+
+  bills_per_day:
+    keywords:
+      - bills per day
+      - bill per day
+      - line item per day bill
+      - average bills per day
+      - bills per day kpi
+    definition: |
+      Bills Per Day is the average number of unique invoices generated per day for the selected rep or scope.
+      First count distinct InvoiceNo per day.
+      Then average the daily bill counts across the selected period.
+      This is an average daily bill count, not the total bill count.
+
+  bill_count:
+    keywords:
+      - bill count
+      - invoice count
+      - total bills
+      - number of bills
+    definition: |
+      Bill Count is the number of unique invoices generated during the selected period.
+      Count distinct InvoiceNo, not invoice line rows.
+      Include only sales invoices unless otherwise specified.
+
+  bill_per_lorry:
+    keywords:
+      - bill per lorry
+      - bpl
+      - current bpl
+    definition: |
+      Bill Per Lorry, also called BPL, measures average bills generated per elapsed day in the selected period.
+      It is calculated as distinct invoice count divided by elapsed days.
+      If no time period is specified, use current month.
+      Use the selected rep filter when provided.
+
+  kpi_per_bill_value_volume:
+    keywords:
+      - kpi per bill value
+      - kpi per bill volume
+      - per bill value volume
+      - bill value volume kpi
+    definition: |
+      KPI Per Bill Value / Volume compares sales achievement against target and volume.
+      Sales value should be based on sales achievement for the selected period.
+      Target should be the applicable target for the selected rep and period.
+      Volume should be the total sold quantity or product-adjusted volume, depending on available product volume data.
+      Use safe division to avoid division by zero.
+
+  sales_volume:
+    keywords:
+      - sales volume
+      - volume
+      - quantity volume
+      - litre
+      - liter
+      - kg
+    definition: |
+      Sales Volume measures the quantity sold, optionally adjusted by product unit volume.
+      If product volume is required, calculate sales volume as Qty multiplied by product Volume.
+      Sales increase volume and returns reduce volume.
+
+  average_sales_and_volume_top_outlets:
+    keywords:
+      - average sales in top outlets
+      - average volume in top outlets
+      - average sales and volume
+      - average sales top outlets
+    definition: |
+      Average Sales and Average Volume in Top Outlets calculate average sales value and average quantity/volume for top-performing outlets.
+      Group by outlet/customer.
+      Average Sales should use net sales logic unless the user asks for gross sales.
+      Average Volume should use quantity or product-adjusted volume depending on the requested metric.
+      Rank outlets by Average Sales unless otherwise specified.
+      If no limit is specified, return top 10.
+
+  potential_outlets:
+    keywords:
+      - potential outlets
+      - outlets to gain better sales
+      - sales opportunity outlets
+      - growth outlets
+      - low sales high potential outlets
+    definition: |
+      Potential Outlets are outlets that show opportunity for improved sales based on historical behavior.
+      Identify outlets with Net Sales below the average for the rep or selected scope.
+      The outlet should have enough engagement, such as at least 3 distinct invoices/visits.
+      The outlet should have product variety, such as at least 5 distinct products purchased.
+      Rank potential outlets by opportunity or Net Sales depending on the question.
+
+  minimum_sales_volume_based_on_history:
+    keywords:
+      - minimum sales volume
+      - minimum sales based on history
+      - low sales outlets
+      - minimum sales to be made
+    definition: |
+      Minimum Sales Volume Based on History identifies outlets with the lowest sales or volume compared with historical sales behavior.
+      Calculate Net Sales or sales volume by outlet for the selected period.
+      Rank outlets in ascending order to identify low-performing outlets.
+      If no limit is specified, return the lowest 10.
+      If no time period is specified, use current month unless the question clearly asks for historical analysis.
+
+  market_return_goods_trend:
+    keywords:
+      - market return goods trend
+      - return goods trend
+      - returned products
+      - highest return products
+      - return trend
+    definition: |
+      Market Return Goods Trend identifies products with return activity during the selected period.
+      Include only return transactions.
+      Aggregate return quantity by product.
+      Return only products with return quantity greater than zero.
+      Rank products by return quantity in descending order.
+
+  product_wise_discount_promotions:
+    keywords:
+      - product wise discounts
+      - promotions by outlet
+      - discount promotions
+      - average discount
+      - product discount
+    definition: |
+      Product-wise Discount Promotions show the average discount offered for each product and outlet.
+      Include only sales transactions.
+      Group by outlet/customer and product.
+      Calculate average discount or discount percentage depending on the available field and question wording.
+
+  best_sales_routes:
+    keywords:
+      - best sales routes
+      - top routes
+      - best 10 routes
+      - route wise sales
+      - best routes for rep
+    definition: |
+      Best Sales Routes are routes ranked by highest Net Sales for the selected rep and period.
+      Net Sales means sales minus returns.
+      Group results by route.
+      If no limit is specified, return top 10 routes.
+
+  product_highest_target:
+    keywords:
+      - product highest target
+      - highest target product
+      - product name highest target
+      - highest target set
+    definition: |
+      Product Highest Target identifies the product with the highest target value for the selected period and rep/scope.
+      Use target records that overlap the requested period.
+      For rep-level targets, use Type = 1.
+      Rank products by target value in descending order.
+      Return the highest product unless the user asks for a list.
+
+  product_target_achievement_percentage:
+    keywords:
+      - product target achievement percentage
+      - target achievement percentage
+      - top products based on target achievement
+      - product achievement percentage
+    definition: |
+      Product Target Achievement Percentage compares each product's current achievement against its product-level target.
+      Product Target is the target value assigned to the product for the selected period.
+      Product Achievement is net sales for that product during the same period.
+      Formula: Target Achievement % = (Product Achievement / Product Target) * 100.
+      Use safe division to avoid division by zero.
+      Rank by achievement percentage when the user asks for top products.
+      If no limit is specified, return top 10.
+
+  kpi_achievements_summary:
+    keywords:
+      - kpi achievements
+      - kpi summary
+      - line items per bill and bills per day
+      - achievement summary
+      - rep kpi achievements
+    definition: |
+      KPI Achievements Summary combines multiple KPIs for comparison across reps or selected scope.
+      Typical KPIs include Total Sales, Total Volume, Target, Line Items Per Bill, Bills Per Day, and Achievement Percentage.
+      Total Sales should use net sales unless otherwise specified.
+      Line Items Per Bill should be calculated as average unique products per invoice.
+      Bills Per Day should be calculated as average distinct invoices per day.
+      Achievement Percentage should compare sales achievement against target.
+      Use separate aggregations for sales, targets, line items, and bills to avoid row multiplication.
+      If no time period is specified, use current month unless the question asks for a historical range.
