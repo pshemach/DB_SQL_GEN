@@ -293,7 +293,6 @@ def hitl_clarify_node(state: AgentState) -> dict:
         "final_answer": question_to_user,
         "result_summary": question_to_user,
         "question_to_user": question_to_user,
-        "pending_original_question": state.get("question"),
         "waiting_for_user": True,
         "needs_clarification": True,
 

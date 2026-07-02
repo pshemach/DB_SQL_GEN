@@ -64,8 +64,6 @@ def _build_initial_state(
         "missing_pieces": [],
         "question_to_user": None,
         "waiting_for_user": False,
-        "pending_original_question": None,
-        "clarification_answer": clarification_answer,
         "business_definitions": "",
         "matched_knowledge": [],
         "plan": None,
@@ -109,7 +107,6 @@ def _finalize(result: dict) -> dict:
             if isinstance(payload, dict):
                 result["waiting_for_user"] = True
                 result["question_to_user"] = payload.get("question_to_user")
-                result["pending_original_question"] = payload.get("pending_original_question")
                 result["gap_type"] = payload.get("gap_type") or result.get("gap_type")
 
     return sanitize_state(result)
@@ -170,7 +167,6 @@ async def run_agent_async(
                         "type": "clarification",
                         "node": node_name,
                         "question_to_user": node_state.get("question_to_user"),
-                        "pending_original_question": node_state.get("pending_original_question"),
                         "gap_type": node_state.get("gap_type"),
                     }
 

@@ -138,7 +138,6 @@ class TurnRouterAgent:
 
             "needs_clarification": action == "clarify",
             "waiting_for_user": action == "clarify",
-            "pending_original_question": question if action == "clarify" else None,
 
             "metrics": set_router_action(metrics, action)
         }

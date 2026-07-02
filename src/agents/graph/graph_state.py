@@ -61,9 +61,6 @@ class AgentState(TypedDict):
     # CLARIFICATION
     # =============================
     question_to_user: Optional[str]
-    pending_original_question: Optional[str]
-    clarification_answer: Optional[str]
-    clarifications: Optional[List[Dict[str, Any]]]
 
     # =============================
     # BUSINESS KNOWLEDGE

@@ -199,8 +199,6 @@ def _build_initial_state(question: str, session_id: str, kwargs: dict) -> AgentS
         "missing_pieces": [],
         "question_to_user": None,
         "waiting_for_user": False,
-        "pending_original_question": None,
-        "clarification_answer": kwargs.get("clarification_answer"),
         "business_definitions": "",
         "matched_knowledge": [],
         "plan": None,
