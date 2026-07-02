@@ -61,7 +61,6 @@ Return ONLY a valid JSON object:
   "action": "run_sql | clarify | transform_previous | deny | chitchat",
   "confidence": 0.95,
   "clarification_question": "Explain defined business KPI rules only if action is clarify, else null",
-  "gap_type": "knowledge_gap | none",
   "gap_reason": "Explanation of the knowledge gap if any",
   "enriched_question": "Consolidated, pronoun-resolved, fully self-contained question"
 }}
@@ -132,9 +131,6 @@ class TurnRouterAgent:
             "router_confidence": float(result.get("confidence", 1.0)),
             "enriched_question": result.get("enriched_question") or question,
             "question_to_user": result.get("clarification_question"),
-
-            "gap_type": result.get("gap_type"),
-            "gap_reason": result.get("gap_reason"),
 
             "needs_clarification": action == "clarify",
             "waiting_for_user": action == "clarify",

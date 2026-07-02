@@ -30,12 +30,10 @@ class AgentState(TypedDict):
     # =============================
     # CONVERSATION ROUTING
     # =============================
-    conversation_route: Optional[str]
-    # normal_question | clarification_answer | new_question
+    conversation_route: Optional[str] # normal_question | clarification_answer | new_question
 
     # Production turn router
-    turn_action: Optional[str]
-    # run_sql | clarify | transform_previous | deny | chitchat | cache_hit
+    turn_action: Optional[str] # run_sql | clarify | transform_previous | deny | chitchat | cache_hit
     router_confidence: Optional[float]
     enriched_question: Optional[str]
     follow_up_type: Optional[str]
@@ -49,17 +47,9 @@ class AgentState(TypedDict):
     waiting_for_user: bool
 
     # =============================
-    # GAP DETECTION
+    # Need Clarification 
     # =============================
     needs_clarification: bool
-    gap_type: Optional[str]  # knowledge_gap | parameter_gap | none
-    gap_reason: Optional[str]
-    confidence: Optional[float]
-    missing_pieces: Optional[List[str]]
-
-    # =============================
-    # CLARIFICATION
-    # =============================
     question_to_user: Optional[str]
 
     # =============================
