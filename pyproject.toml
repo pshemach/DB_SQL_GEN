@@ -8,6 +8,7 @@ dependencies = [
     "chromadb>=0.4.22",
     "cryptography>=49.0.0",
     "diskcache>=5.6.3",
+    "duckdb>=1.5.4",
     "fastapi>=0.109.0",
     "langchain>=0.1.0",
     "langchain-anthropic>=1.4.2",
