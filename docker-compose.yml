@@ -1,14 +1,16 @@
-version: "3.8"
-
 services:
   streamlit:
     build: .
     container_name: db-sql-gen-app
     ports:
       - "8558:8558"
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./cache:/app/cache
       - ./data:/app/data
-    restart: unless-stopped
+    restart: unless-stoppeds
