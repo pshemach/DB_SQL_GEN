@@ -27,6 +27,9 @@ Chartable Columns:
 User Requested Chart Type:
 {requested_chart_type}
 
+Conversation memory context:
+{memory_context}
+
 Your task:
 Return ONLY valid JSON.
 
@@ -129,6 +132,7 @@ class ResultFormatterAgent:
             df, state.get("question", ""), numeric_columns
         )
         table_title = self._table_title(state, reused)
+        memory_context = state.get("memory_context") or ""
 
         try:
             response = self.chain.invoke({
@@ -138,6 +142,7 @@ class ResultFormatterAgent:
                 "computed_facts": json.dumps(computed_facts, default=str),
                 "chartable_columns": json.dumps(chartable_columns, default=str),
                 "requested_chart_type": requested_chart_type or "none",
+                "memory_context": memory_context or "",
             })
 
             result = extract_json(response.content)

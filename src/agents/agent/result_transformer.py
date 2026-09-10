@@ -8,7 +8,7 @@ from src.agents.tools.local_sql_engine import local_sql_engine
 from src.agents.agent.table_analyst import table_analyst
 
 from langchain_core.prompts import ChatPromptTemplate
-from src.utils.llm_factory import groq_llm
+from src.utils.llm_factory import groq_llm, openai_llm
 from src.utils.json_utils import extract_json
 
 FOLLOW_UP_CLASSIFIER_PROMPT = """
@@ -57,7 +57,7 @@ class ResultTransformer:
             ("system", FOLLOW_UP_CLASSIFIER_PROMPT),
             ("human", "{question}")
         ])
-        self.classifier_chain = self.classifier_prompt | groq_llm(temperature=0)
+        self.classifier_chain = self.classifier_prompt | openai_llm(temperature=0)
 
     def transform(self, state: dict) -> dict:
         session_id = state.get("session_id")
