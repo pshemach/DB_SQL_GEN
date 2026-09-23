@@ -7,7 +7,7 @@ import pandas as pd
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 
-from ...utils.llm_factory import groq_llm
+from ...utils.llm_factory import groq_llm, openai_llm
 from ...config import settings
 
 TABLE_ANALYST_PROMPT = """You are a senior Business Intelligence Analyst.
@@ -40,7 +40,8 @@ class TableAnalystAgent:
     
     def __init__(self):
         # Using the reasoning model for deep analysis
-        self.llm = groq_llm(temperature=0, model=settings.groq_model_reasoning)
+        # self.llm = groq_llm(temperature=0, model=settings.groq_model_reasoning)
+        self.llm = openai_llm()
         self.prompt = ChatPromptTemplate.from_template(TABLE_ANALYST_PROMPT)
         self.chain = self.prompt | self.llm
 

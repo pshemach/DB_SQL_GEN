@@ -61,7 +61,8 @@ class ContextAwareClassifier(BaseGuardrail):
     
     def __init__(self, llm_model: str = None, api_key: str = None):
         super().__init__(enabled=True, priority=10)
-        self.llm = groq_llm()
+        # self.llm = groq_llm()
+        self.llm = openai_llm()
         self.prompt = ChatPromptTemplate.from_template(DOMAIN_CLASSIFIER_PROMPT)
         self.chain = self.prompt | self.llm
     

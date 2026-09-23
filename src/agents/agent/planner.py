@@ -10,7 +10,8 @@ class PlannerAgent:
     """Decomposes natural language questions into structured logical plans."""
     
     def __init__(self):
-        self.llm = groq_llm(temperature=0)
+        # self.llm = groq_llm(temperature=0)
+        self.llm = anthropic_llm(temperature=0)
         
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", PLANNER_PROMPT),

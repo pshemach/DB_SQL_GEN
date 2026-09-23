@@ -11,7 +11,7 @@ from ...core import  db_manager
 from ..graph.graph_state import AgentState
 from ...config import settings
 from ..prompt import TABLE_SELECTION_TABLE, COLUMN_SELECTION_TABLE
-from ...utils.llm_factory import groq_llm
+from ...utils.llm_factory import groq_llm, openai_llm
 
 class SchemaLinkerAgent:
     """
@@ -20,8 +20,8 @@ class SchemaLinkerAgent:
     """
     
     def __init__(self):
-        self.llm = groq_llm(temperature=0)
-        
+        # self.llm = groq_llm(temperature=0)
+        self.llm = openai_llm()
         self.table_selection_prompt = ChatPromptTemplate.from_messages([
                 ("system", TABLE_SELECTION_TABLE),
                  ("human","{question}")

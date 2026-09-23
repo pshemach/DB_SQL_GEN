@@ -13,8 +13,17 @@ class SystemLoginRequest(BaseModel):
     
 
 class QueryRequest(BaseModel):
+<<<<<<< HEAD
     question: str
     session_id: Optional[str] = None
+=======
+    question: str = Field(..., description="Natural language question")
+    session_id: Optional[str] = Field(default=None, description="Conversation/session ID")
+    phone_no: Optional[str] = Field(
+        default="94718543880",
+        description="RepCodes this user is allowed to access"
+    )
+>>>>>>> dev
 
     # frontend sends these after login
     user_id: Optional[str] = None

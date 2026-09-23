@@ -16,8 +16,8 @@ class SQLGeneratorAgent:
     """
     
     def __init__(self):
-        # self.llm = anthropic_llm(temperature=0.0)
-        self.llm = groq_llm(temperature=0)
+        self.llm = anthropic_llm(temperature=0.0)
+        # self.llm = groq_llm(temperature=0)
 
         self.system_prompt = GENERATOR_PROMPT
         

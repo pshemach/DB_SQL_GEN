@@ -7,7 +7,11 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from ...config import settings
 from ...utils.json_utils import extract_json
+<<<<<<< HEAD
 from ...utils.llm_factory import openai_llm, groq_llm
+=======
+from ...utils.llm_factory import openai_llm
+>>>>>>> dev
 
 RESULT_FORMATTER_PROMPT = """
 You are a BI result formatter and chart planner for a field sales analytics assistant.
@@ -26,6 +30,34 @@ Chartable Columns:
 
 User Requested Chart Type:
 {requested_chart_type}
+
+<<<<<<< HEAD
+Your task:
+Return ONLY valid JSON.
+
+Rules:
+- Use ONLY computed facts. Do not calculate totals, max, min, averages, rankings, or percentages yourself.
+- Choose 1–3 meaningful charts when charts add value.
+- If only one chart is meaningful, return only one.
+- If no chart is meaningful, return an empty visualizations list.
+- If the user requested a chart type, prefer it only if it fits the data.
+- If the requested chart type is not suitable, choose a better chart.
+- Do not invent column names.
+- Do not mention SQL unless the user asks.
+- Keep summary concise and business-friendly.
+- Use Rs prefix only for monetary fields already marked as currency.
+- Avoid duplicate charts that show the same x_column, y_column, and chart_type.
+
+Chart selection guidance:
+- bar/horizontal_bar: category vs numeric metric, rep/customer/product ranking, top/bottom comparison.
+- line: date/month/week trend.
+- pie: share contribution with 2–8 categories only.
+- scatter: relationship between two numeric metrics.
+- no_chart: if chart would not add value.
+
+=======
+Conversation memory context:
+{memory_context}
 
 Your task:
 Return ONLY valid JSON.
@@ -50,6 +82,7 @@ Chart selection guidance:
 - scatter: relationship between two numeric metrics.
 - no_chart: if chart would not add value.
 
+>>>>>>> dev
 Return JSON format:
 {{
   "summary": "1-4 sentence business answer",
@@ -68,8 +101,13 @@ Return JSON format:
 
 class ResultFormatterAgent:
     def __init__(self):
+<<<<<<< HEAD
         self.llm = groq_llm(temperature=0)
         # self.llm = openai_llm()
+=======
+        # self.llm = groq_llm(temperature=0)
+        self.llm = openai_llm()
+>>>>>>> dev
 
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", RESULT_FORMATTER_PROMPT),
@@ -129,6 +167,10 @@ class ResultFormatterAgent:
             df, state.get("question", ""), numeric_columns
         )
         table_title = self._table_title(state, reused)
+<<<<<<< HEAD
+=======
+        memory_context = state.get("memory_context") or ""
+>>>>>>> dev
 
         try:
             response = self.chain.invoke({
@@ -138,6 +180,10 @@ class ResultFormatterAgent:
                 "computed_facts": json.dumps(computed_facts, default=str),
                 "chartable_columns": json.dumps(chartable_columns, default=str),
                 "requested_chart_type": requested_chart_type or "none",
+<<<<<<< HEAD
+=======
+                "memory_context": memory_context or "",
+>>>>>>> dev
             })
 
             result = extract_json(response.content)
