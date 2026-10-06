@@ -1,19 +1,22 @@
-# Streamlit Hosting Guide on Linux
+# Hosting Guide on Linux
 
-This guide explains how to host the Text-to-SQL Streamlit app on a Linux server using `systemd`, so the app continues running after SSH logout and restarts automatically on failure/server reboot.
+Host both apps with `systemd` so they keep running after SSH logout and restart on failure or server reboot.
 
-## 1. Project Details
+| App | File | Port | URL |
+|---|---|---|---|
+| Streamlit UI | `app.py` | `8582` | `http://SERVER_IP:8582` |
+| FastAPI + web UI | `api.py` | `8588` | `http://SERVER_IP:8588` |
 
-Current project path:
+FastAPI also serves:
+
+- API docs: `http://SERVER_IP:8588/docs`
+- Web UI: `http://SERVER_IP:8588/app`
+- Health: `http://SERVER_IP:8588/health`
+
+Project path:
 
 ```bash
 /root/Desktop/ML-Projects/DB_SQL_GEN
-```
-
-Streamlit app file:
-
-```bash
-app.py
 ```
 
 Virtual environment:
@@ -22,159 +25,66 @@ Virtual environment:
 /root/Desktop/ML-Projects/DB_SQL_GEN/.venv
 ```
 
-Application port:
-
-```bash
-8582
-```
-
-Access URL:
-
-```text
-http://SERVER_IP:8582
-```
-
 ---
 
-## 2. Test Streamlit Manually First
-
-Go to the project directory:
+## 1. Test Both Apps Manually First
 
 ```bash
 cd /root/Desktop/ML-Projects/DB_SQL_GEN
-```
-
-Activate the virtual environment:
-
-```bash
 source .venv/bin/activate
 ```
 
-Run Streamlit manually:
+Streamlit UI:
 
 ```bash
 streamlit run app.py --server.port 8582 --server.address 0.0.0.0 --server.headless true
 ```
 
-Open in browser:
-
-```text
-http://SERVER_IP:8582
-```
-
-Stop manual execution with:
+FastAPI (in a second SSH session):
 
 ```bash
-Ctrl + C
+cd /root/Desktop/ML-Projects/DB_SQL_GEN
+source .venv/bin/activate
+uvicorn src.api:app --host 0.0.0.0 --port 8588
 ```
+
+If `uvicorn` is missing:
+
+```bash
+pip install uvicorn
+```
+
+Stop each process with `Ctrl + C` before installing systemd services.
 
 ---
 
-## 3. Create systemd Service
+## 2. Install systemd Services
 
-Create the service file:
-
-```bash
-sudo nano /etc/systemd/system/textsql-streamlit.service
-```
-
-Add the following content:
-
-```ini
-[Unit]
-Description=Text-to-SQL Streamlit App
-After=network.target
-
-[Service]
-WorkingDirectory=/root/Desktop/ML-Projects/DB_SQL_GEN
-ExecStart=/root/Desktop/ML-Projects/DB_SQL_GEN/.venv/bin/streamlit run app.py --server.port 8582 --server.address 0.0.0.0 --server.headless true
-Restart=on-failure
-RestartSec=10
-User=root
-Environment=PYTHONUNBUFFERED=1
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Save and exit.
-
----
-
-## 4. Start and Enable the Service
-
-Reload systemd:
+From the project folder:
 
 ```bash
+cd /root/Desktop/ML-Projects/DB_SQL_GEN
+
+sudo cp deploy/textsql-streamlit.service /etc/systemd/system/textsql-streamlit.service
+sudo cp deploy/textsql-api.service /etc/systemd/system/textsql-api.service
+
 sudo systemctl daemon-reload
+sudo systemctl enable --now textsql-streamlit textsql-api
+sudo systemctl status textsql-streamlit textsql-api --no-pager
 ```
 
-Start the service:
-
-```bash
-sudo systemctl start textsql-streamlit
-```
-
-Enable service on server startup:
-
-```bash
-sudo systemctl enable textsql-streamlit
-```
-
-Check service status:
-
-```bash
-sudo systemctl status textsql-streamlit
-```
+If you previously created the Streamlit unit by hand, copying the file from `deploy/` replaces it with the same port and command.
 
 ---
 
-## 5. Check Logs
+## 3. Open Firewall Ports
 
-To view live logs:
-
-```bash
-journalctl -u textsql-streamlit -f
-```
-
-To view recent logs:
-
-```bash
-journalctl -u textsql-streamlit -n 100
-```
-
----
-
-## 6. Check Port
-
-Check if Streamlit is listening on port `8582`:
-
-```bash
-sudo ss -tulpn | grep 8582
-```
-
-Expected result should show a process listening on:
-
-```text
-0.0.0.0:8582
-```
-
----
-
-## 7. Open Firewall Port
-
-If firewall is enabled, allow port `8582`.
-
-For Ubuntu with UFW:
+If UFW is enabled:
 
 ```bash
 sudo ufw allow 8582/tcp
+sudo ufw allow 8588/tcp
 sudo ufw reload
-```
-
-Check UFW status:
-
-```bash
 sudo ufw status
 ```
 
@@ -182,124 +92,154 @@ If UFW is inactive, no firewall change is required at OS level.
 
 ---
 
-## 8. Common Commands
+## 4. Check Ports
 
-Restart the Streamlit app:
+```bash
+sudo ss -tulpn | grep -E '8582|8588'
+```
+
+Expected:
+
+```text
+0.0.0.0:8582
+0.0.0.0:8588
+```
+
+---
+
+## 5. Logs
+
+Live logs:
+
+```bash
+journalctl -u textsql-streamlit -u textsql-api -f
+```
+
+Recent logs:
+
+```bash
+journalctl -u textsql-streamlit -n 100 --no-pager
+journalctl -u textsql-api -n 100 --no-pager
+```
+
+---
+
+## 6. Common Commands
+
+Restart both after a code update:
+
+```bash
+sudo systemctl restart textsql-streamlit textsql-api
+```
+
+Restart one app:
 
 ```bash
 sudo systemctl restart textsql-streamlit
+sudo systemctl restart textsql-api
 ```
 
-Stop the app:
+Stop / start:
 
 ```bash
-sudo systemctl stop textsql-streamlit
+sudo systemctl stop textsql-streamlit textsql-api
+sudo systemctl start textsql-streamlit textsql-api
 ```
 
-Start the app:
+Status:
 
 ```bash
-sudo systemctl start textsql-streamlit
+sudo systemctl status textsql-streamlit textsql-api --no-pager
 ```
 
 Disable auto-start:
 
 ```bash
-sudo systemctl disable textsql-streamlit
-```
-
-View status:
-
-```bash
-sudo systemctl status textsql-streamlit
+sudo systemctl disable textsql-streamlit textsql-api
 ```
 
 ---
 
-## 9. If the Service Keeps Restarting
-
-If status shows:
-
-```text
-Active: activating (auto-restart)
-```
-
-or:
-
-```text
-status=1/FAILURE
-```
-
-Check logs:
+## 7. Update Code on the Server
 
 ```bash
-journalctl -u textsql-streamlit -f
+cd /root/Desktop/ML-Projects/DB_SQL_GEN
+git fetch origin
+git pull origin dev
+sudo systemctl restart textsql-streamlit textsql-api
+sudo systemctl status textsql-streamlit textsql-api --no-pager
+```
+
+If the server has local edits you want to throw away:
+
+```bash
+cd /root/Desktop/ML-Projects/DB_SQL_GEN
+git fetch origin
+git reset --hard origin/dev
+git clean -fd
+sudo systemctl restart textsql-streamlit textsql-api
+```
+
+---
+
+## 8. If a Service Keeps Restarting
+
+Status will show `activating (auto-restart)` or `status=1/FAILURE`.
+
+```bash
+journalctl -u textsql-streamlit -u textsql-api -f
 ```
 
 Common causes:
 
 1. Wrong virtual environment path
-2. Streamlit not installed in `.venv`
-3. Wrong app file name
-4. Port already in use
-5. Missing Python package
-6. Environment/config file not found
+2. Streamlit or uvicorn missing from `.venv`
+3. Port already in use
+4. Missing Python package
+5. `.env` missing from the project directory
+6. Database not reachable
 
-Check whether Streamlit exists:
+Check binaries:
 
 ```bash
 ls -la /root/Desktop/ML-Projects/DB_SQL_GEN/.venv/bin/streamlit
+ls -la /root/Desktop/ML-Projects/DB_SQL_GEN/.venv/bin/uvicorn
 ```
 
-If missing, install Streamlit:
+Install if missing:
 
 ```bash
 cd /root/Desktop/ML-Projects/DB_SQL_GEN
 source .venv/bin/activate
-pip install streamlit
+pip install streamlit uvicorn
 ```
 
-Check if port is already used:
+Check ports:
 
 ```bash
-sudo ss -tulpn | grep 8582
+sudo ss -tulpn | grep -E '8582|8588'
 ```
 
 ---
 
-## 10. Change Port Later
+## 9. Change a Port Later
 
-Edit service file:
+Edit the unit, then reload:
 
 ```bash
 sudo nano /etc/systemd/system/textsql-streamlit.service
-```
-
-Change this part:
-
-```ini
---server.port 8582
-```
-
-Then reload and restart:
-
-```bash
+sudo nano /etc/systemd/system/textsql-api.service
 sudo systemctl daemon-reload
-sudo systemctl restart textsql-streamlit
+sudo systemctl restart textsql-streamlit textsql-api
 ```
+
+Streamlit port is `--server.port 8582`. API port is `--port 8588`.
 
 ---
 
-## 11. Notes
+## 10. Notes
 
-`Restart=on-failure` means the service restarts only if the app crashes or exits with failure.
-
-It will not restart repeatedly if the app is running normally.
-
-The app will continue running after SSH logout.
-
-The app will start automatically after server reboot because this command was used:
-
-```bash
-sudo systemctl enable textsql-streamlit
-```
+- `Restart=on-failure` restarts a service only if it crashes.
+- Both apps keep running after SSH logout.
+- Both start on reboot after `systemctl enable`.
+- Keep `.env` in `/root/Desktop/ML-Projects/DB_SQL_GEN`. systemd uses that working directory, and settings load `.env` from there.

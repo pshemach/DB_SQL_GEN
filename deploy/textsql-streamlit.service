@@ -1,0 +1,15 @@
+[Unit]
+Description=Text-to-SQL Streamlit UI (app.py)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Desktop/ML-Projects/DB_SQL_GEN
+ExecStart=/root/Desktop/ML-Projects/DB_SQL_GEN/.venv/bin/streamlit run app.py --server.port 8582 --server.address 0.0.0.0 --server.headless true
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
