@@ -113,6 +113,7 @@ class AgentState(TypedDict):
     # chart_json: Optional[Dict[str, Any]] = None
     # chart_image_base64: Optional[str]
     visualizations: Optional[List[Dict[str, Any]]]
+    requested_chart_type: Optional[str]
 
     # =============================
     # ERROR HANDLING

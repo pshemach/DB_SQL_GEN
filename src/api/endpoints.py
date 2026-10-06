@@ -208,6 +208,7 @@ async def query_database(request: QueryRequest):
             # visualization_config=result.get("visualization_config"),
             
             visualizations=result.get("visualizations"),
+            requested_chart_type=result.get("requested_chart_type"),
 
             # runtime
             total_latency_ms=result.get("total_latency_ms"),

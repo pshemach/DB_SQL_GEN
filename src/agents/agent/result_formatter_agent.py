@@ -6,6 +6,7 @@ from loguru import logger
 from langchain_core.prompts import ChatPromptTemplate
 
 from ...config import settings
+from ...utils.chart_request import detect_requested_chart_type
 from ...utils.json_utils import extract_json
 from ...utils.llm_factory import openai_llm
 
@@ -27,6 +28,9 @@ Chartable Columns:
 User Requested Chart Type:
 {requested_chart_type}
 
+Currency symbol:
+{currency_symbol}
+
 Conversation memory context:
 {memory_context}
 
@@ -38,25 +42,29 @@ Rules:
 - Choose 1–3 meaningful charts when charts add value.
 - If only one chart is meaningful, return only one.
 - If no chart is meaningful, return an empty visualizations list.
-- If the user requested a chart type, prefer it only if it fits the data.
-- If the requested chart type is not suitable, choose a better chart.
+- If the user requested a chart type, use that chart type.
 - Do not invent column names.
 - Do not mention SQL unless the user asks.
-- Keep summary concise and business-friendly.
-- Use Rs prefix only for monetary fields already marked as currency.
+- Write a factual summary, not a description of the chart.
+- The summary must use Computed Facts and include: how many groups, the total, the average, the top 3 names with their values, and the lowest name with its value.
+- Copy amounts from Computed Facts. Do not invent or recalculate numbers.
+- Do not answer with only "the chart illustrates" or "highlighting top and bottom performers" unless those people and amounts are named.
+- Decide which numeric columns are monetary amounts. Return those exact column names in currency_columns.
+- Prefix only those monetary amounts with the currency symbol. Leave rates, counts, and identifiers unprefixed.
 - Avoid duplicate charts that show the same x_column, y_column, and chart_type.
 
 Chart selection guidance:
 - bar/horizontal_bar: category vs numeric metric, rep/customer/product ranking, top/bottom comparison.
 - line: date/month/week trend.
-- pie: share contribution with 2–8 categories only.
+- pie: share of a numeric metric across categories.
 - scatter: relationship between two numeric metrics.
 - no_chart: if chart would not add value.
 
 Return JSON format:
 {{
-  "summary": "1-4 sentence business answer",
+  "summary": "factual answer with if available (count, total, average, top 3 names and values, and the lowest name and value)",
   "table_title": "short business table title",
+  "currency_columns": ["monetary column names only"],
   "visualizations": [
     {{
       "title": "chart title",
@@ -68,6 +76,7 @@ Return JSON format:
   ]
 }}
 """
+
 
 class ResultFormatterAgent:
     def __init__(self):
@@ -91,6 +100,7 @@ class ResultFormatterAgent:
                 "final_answer": msg,
                 "table_title": "Query Result",
                 "visualizations": [],
+                "requested_chart_type": None,
             }
 
         df = self._rows_to_dataframe(rows)
@@ -100,7 +110,8 @@ class ResultFormatterAgent:
             return {
                 "result_summary": "Query executed successfully, but no table data was available.",
                 "table_title": "Query Result",
-                "visualizations": []
+                "visualizations": [],
+                "requested_chart_type": None,
             }
 
         numeric_columns = self._get_numeric_columns(df)
@@ -124,13 +135,10 @@ class ResultFormatterAgent:
             numeric_columns=numeric_columns,
             category_columns=category_columns,
             )
-        requested_chart_type = self._detect_requested_chart_type(
+        requested_chart_type = detect_requested_chart_type(
             state.get("question", "")
             )
         
-        fallback_summary = self._build_data_driven_summary(
-            df, state.get("question", ""), numeric_columns
-        )
         table_title = self._table_title(state, reused)
         memory_context = state.get("memory_context") or ""
 
@@ -142,18 +150,29 @@ class ResultFormatterAgent:
                 "computed_facts": json.dumps(computed_facts, default=str),
                 "chartable_columns": json.dumps(chartable_columns, default=str),
                 "requested_chart_type": requested_chart_type or "none",
+                "currency_symbol": settings.currency_symbol or "Rs",
                 "memory_context": memory_context or "",
             })
 
             result = extract_json(response.content)
+            currency_columns = self._currency_columns_from_model(result, numeric_columns)
 
             raw_visualizations = result.get("visualizations", [])
+            if requested_chart_type:
+                raw_visualizations = self._specs_for_requested_chart(
+                    raw_visualizations,
+                    requested_chart_type,
+                    df,
+                    numeric_columns,
+                    category_columns,
+                )
 
             visualizations = self._build_visualizations(
                 df=df,
                 raw_visualizations=raw_visualizations,
                 numeric_columns=numeric_columns,
-                category_columns=category_columns
+                category_columns=category_columns,
+                currency_columns=currency_columns,
             )
 
             if not visualizations:
@@ -162,21 +181,38 @@ class ResultFormatterAgent:
                     numeric_columns=numeric_columns,
                     category_columns=category_columns
                 )
+                if requested_chart_type:
+                    fallback_specs = self._specs_for_requested_chart(
+                        fallback_specs,
+                        requested_chart_type,
+                        df,
+                        numeric_columns,
+                        category_columns,
+                    )
 
                 visualizations = self._build_visualizations(
                     df=df,
                     raw_visualizations=fallback_specs,
                     numeric_columns=numeric_columns,
-                    category_columns=category_columns
+                    category_columns=category_columns,
+                    currency_columns=currency_columns,
                 )
 
-            summary = (result.get("summary") or "").strip() or fallback_summary
+            summary = self._choose_summary(
+                llm_summary=(result.get("summary") or "").strip(),
+                df=df,
+                numeric_columns=numeric_columns,
+                category_columns=category_columns,
+                visualizations=visualizations,
+                currency_columns=currency_columns,
+            )
 
             return {
                 "result_summary": summary,
                 "final_answer": summary,
                 "table_title": result.get("table_title") or table_title,
                 "visualizations": visualizations,
+                "requested_chart_type": requested_chart_type,
             }
 
         except Exception as e:
@@ -187,12 +223,29 @@ class ResultFormatterAgent:
                 numeric_columns=numeric_columns,
                 category_columns=category_columns
             )
+            if requested_chart_type:
+                fallback_specs = self._specs_for_requested_chart(
+                    fallback_specs,
+                    requested_chart_type,
+                    df,
+                    numeric_columns,
+                    category_columns,
+                )
 
             visualizations = self._build_visualizations(
                 df=df,
                 raw_visualizations=fallback_specs,
                 numeric_columns=numeric_columns,
-                category_columns=category_columns
+                category_columns=category_columns,
+                currency_columns=[],
+            )
+            fallback_summary = self._choose_summary(
+                llm_summary="",
+                df=df,
+                numeric_columns=numeric_columns,
+                category_columns=category_columns,
+                visualizations=visualizations,
+                currency_columns=[],
             )
 
             return {
@@ -200,6 +253,7 @@ class ResultFormatterAgent:
                 "final_answer": fallback_summary,
                 "table_title": table_title,
                 "visualizations": visualizations,
+                "requested_chart_type": requested_chart_type,
             }
             
     def _build_dataset_profile(self, df: pd.DataFrame, numeric_columns: list, category_columns: list) -> dict:
@@ -208,10 +262,6 @@ class ResultFormatterAgent:
             "columns": list(df.columns),
             "numeric_columns": numeric_columns,
             "category_columns": category_columns,
-            "currency_columns": [
-                col for col in numeric_columns
-                if self._is_currency_column(col)
-            ],
         }
         
     def _build_computed_facts(self, df: pd.DataFrame, numeric_columns: list, category_columns: list) -> dict:
@@ -234,10 +284,10 @@ class ResultFormatterAgent:
                 continue
 
             metric_facts = {
-                "sum": self._format_number(series.sum(), col),
-                "min": self._format_number(series.min(), col),
-                "max": self._format_number(series.max(), col),
-                "avg": self._format_number(series.mean(), col),
+                "sum": self._format_number(series.sum()),
+                "min": self._format_number(series.min()),
+                "max": self._format_number(series.max()),
+                "avg": self._format_number(series.mean()),
             }
 
             max_idx = series.idxmax()
@@ -272,26 +322,28 @@ class ResultFormatterAgent:
 
         return facts
     
-    def _detect_requested_chart_type(self, question: str) -> str | None:
-        q = (question or "").lower()
+    def _specs_for_requested_chart(
+        self,
+        raw_visualizations: list,
+        requested_chart_type: str,
+        df: pd.DataFrame,
+        numeric_columns: list,
+        category_columns: list,
+    ) -> list:
+        """Keep one chart and force the type the user asked for."""
+        specs = [dict(spec) for spec in (raw_visualizations or []) if isinstance(spec, dict)]
+        if not specs:
+            specs = self._fallback_visualization_specs(
+                df=df,
+                numeric_columns=numeric_columns,
+                category_columns=category_columns,
+            )
+        if not specs:
+            return []
 
-        mapping = {
-            "horizontal bar": "horizontal_bar",
-            "bar chart": "bar",
-            "bar graph": "bar",
-            "line chart": "line",
-            "line graph": "line",
-            "trend chart": "line",
-            "pie chart": "pie",
-            "scatter": "scatter",
-            "scatter plot": "scatter",
-        }
-
-        for key, value in mapping.items():
-            if key in q:
-                return value
-
-        return None
+        primary = dict(specs[0])
+        primary["chart_type"] = requested_chart_type
+        return [primary]
 
     def _build_chartable_columns(
         self,
@@ -308,10 +360,6 @@ class ResultFormatterAgent:
             "numeric_columns": numeric_columns,
             "category_columns": category_columns,
             "date_like_columns": date_like_columns,
-            "currency_columns": [
-                col for col in numeric_columns
-                if self._is_currency_column(col)
-            ],
             "row_count": int(len(df)),
             "recommended_x_candidates": category_columns[:8] + date_like_columns[:5],
             "recommended_y_candidates": self._sort_numeric_columns_by_business_priority(numeric_columns)[:8],
@@ -326,33 +374,23 @@ class ResultFormatterAgent:
             return "Follow-up results"
         return "Query results"
 
-    _CURRENCY_COLUMN_TERMS = (
-        "sales", "revenue", "amount", "value", "target", "in_sales",
-        "net", "gross", "price", "cost", "margin", "earning",
-    )
-    _NON_CURRENCY_COLUMN_TERMS = (
-        "percent", "pct", "percentage", "ratio", "count", "qty",
-        "quantity", "calls", "visits", "rank", "index", "id",
-    )
+    @staticmethod
+    def _currency_columns_from_model(result: dict, numeric_columns: list) -> list:
+        raw = result.get("currency_columns") if isinstance(result, dict) else None
+        if not isinstance(raw, list):
+            return []
+        allowed = set(numeric_columns)
+        return [col for col in raw if isinstance(col, str) and col in allowed]
 
     @staticmethod
-    def _is_currency_column(column_name: str | None) -> bool:
-        if not column_name:
-            return True
-        c = column_name.lower()
-        if any(t in c for t in ResultFormatterAgent._NON_CURRENCY_COLUMN_TERMS):
-            return False
-        return any(t in c for t in ResultFormatterAgent._CURRENCY_COLUMN_TERMS)
-
-    @staticmethod
-    def _format_number(value, column_name: str | None = None) -> str:
+    def _format_number(value, as_currency: bool = False) -> str:
         try:
             num = float(value)
             if abs(num) >= 1000:
                 formatted = f"{num:,.2f}".rstrip("0").rstrip(".")
             else:
                 formatted = f"{num:.2f}".rstrip("0").rstrip(".")
-            if ResultFormatterAgent._is_currency_column(column_name):
+            if as_currency:
                 symbol = settings.currency_symbol or "Rs"
                 return f"{symbol} {formatted}"
             return formatted
@@ -361,88 +399,128 @@ class ResultFormatterAgent:
 
     @staticmethod
     def _humanize_column(name: str) -> str:
-        return name.replace("_", " ").strip().title()
+        chars = []
+        for index, char in enumerate(name or ""):
+            if index and char.isupper() and (name[index - 1].islower() or name[index - 1].isdigit()):
+                chars.append(" ")
+            chars.append(char)
+        return "".join(chars).replace("_", " ").strip().title()
+
+    @staticmethod
+    def _summary_is_thin(summary: str) -> bool:
+        """A useful answer names amounts, not only that a chart exists."""
+        return sum(ch.isdigit() for ch in (summary or "")) < 3
+
+    def _choose_summary(
+        self,
+        llm_summary: str,
+        df: pd.DataFrame,
+        numeric_columns: list,
+        category_columns: list,
+        visualizations: list,
+        currency_columns: list | None = None,
+    ) -> str:
+        chart_metric = None
+        if visualizations:
+            chart_metric = (visualizations[0].get("visualization_config") or {}).get("y_column")
+
+        factual = self._build_data_driven_summary(
+            df,
+            numeric_columns,
+            category_columns=category_columns,
+            preferred_metric=chart_metric,
+            currency_columns=currency_columns,
+        )
+        if llm_summary and not self._summary_is_thin(llm_summary):
+            return llm_summary
+        return factual
 
     def _build_data_driven_summary(
-        self, df: pd.DataFrame, question: str, numeric_columns: list
+        self,
+        df: pd.DataFrame,
+        numeric_columns: list,
+        category_columns: list | None = None,
+        preferred_metric: str | None = None,
+        currency_columns: list | None = None,
     ) -> str:
         """Deterministic summary grounded in actual query results."""
         if df.empty:
             return (
                 "No rows match your follow-up filter on the previous result. "
-                "See the prior answer for the full customer list."
+                "See the prior answer for the full result."
             )
         if not numeric_columns:
             return f"Found **{len(df)}** matching row(s). See the table below."
 
-        q = (question or "").strip()
-        period = ""
-        if any(t in q.lower() for t in ("month", "week", "today", "year", "quarter")):
-            period = " for the requested period"
-        elif "current" in (q + " ").lower() or "this month" in q.lower():
-            period = " for the current month"
+        category_columns = category_columns or [
+            col for col in df.columns if col not in numeric_columns
+        ]
+        money_columns = set(currency_columns or [])
 
         if len(df) == 1:
             parts = []
-            for col in numeric_columns[:3]:
+            ordered = []
+            if preferred_metric in numeric_columns:
+                ordered.append(preferred_metric)
+            ordered.extend(col for col in numeric_columns if col not in ordered)
+            for col in ordered[:3]:
                 val = df[col].iloc[0]
                 if pd.notna(val):
                     parts.append(
                         f"**{self._humanize_column(col)}** is "
-                        f"**{self._format_number(val, col)}**"
+                        f"**{self._format_number(val, as_currency=col in money_columns)}**"
                     )
             if parts:
-                return (
-                    f"Based on your data{period}, "
-                    + " and ".join(parts)
-                    + "."
-                )
+                return "Based on your data, " + " and ".join(parts) + "."
 
-        if len(df) == 1 and len(df.columns) == 1:
-            col = df.columns[0]
-            val = df[col].iloc[0]
-            if pd.notna(val):
-                return (
-                    f"**{self._humanize_column(col)}**{period} is "
-                    f"**{self._format_number(val, col)}**."
-                )
+        if preferred_metric in numeric_columns:
+            primary = preferred_metric
+        else:
+            primary = self._choose_best_numeric_column(numeric_columns)
 
-        primary = self._choose_best_numeric_column(numeric_columns)
-        series = df[primary].dropna()
-        if series.empty:
+        ranked = df.dropna(subset=[primary]).sort_values(by=primary, ascending=False)
+        if ranked.empty:
             return f"Found {len(df)} row(s). No numeric values to summarize."
 
-        top_idx = series.idxmax()
-        top_row = df.loc[top_idx]
-        label_col = None
-        for c in df.columns:
-            if c != primary and c not in numeric_columns:
-                label_col = c
-                break
-
-        if len(df) == 1 and label_col is not None:
-            label = top_row.get(label_col, top_idx)
-            val = top_row[primary]
-            return (
-                f"Based on the previous result{period}, "
-                f"**{label}** has **{self._humanize_column(primary)}** of "
-                f"**{self._format_number(val, primary)}**."
-            )
-
-        if label_col is not None:
-            label = top_row.get(label_col, top_idx)
-            return (
-                f"Showing **{len(df)}** results{period}. "
-                f"Highest **{self._humanize_column(primary)}** is "
-                f"**{self._format_number(series.max(), primary)}** ({label})."
-            )
-
-        return (
-            f"Showing **{len(df)}** results{period}. "
-            f"**{self._humanize_column(primary)}** ranges from "
-            f"**{self._format_number(series.min(), primary)}** to "
-            f"**{self._format_number(series.max(), primary)}**."
+        metric = self._humanize_column(primary)
+        as_currency = primary in money_columns
+        total = self._format_number(ranked[primary].sum(), as_currency=as_currency)
+        average = self._format_number(ranked[primary].mean(), as_currency=as_currency)
+        label_col = (
+            self._choose_best_category_column(category_columns)
+            if category_columns else None
         )
+        count = len(ranked)
+        grouped_by = (
+            f" by **{self._humanize_column(label_col)}**" if label_col else ""
+        )
+
+        lead = (
+            f"**{count}** rows{grouped_by}. "
+            f"Total **{metric}** is **{total}**, "
+            f"and the average is **{average}**."
+        )
+
+        if not label_col:
+            return (
+                f"{lead} "
+                f"Values range from **{self._format_number(ranked[primary].min(), as_currency=as_currency)}** "
+                f"to **{self._format_number(ranked[primary].max(), as_currency=as_currency)}**."
+            )
+
+        top_bits = []
+        for _, row in ranked.head(3).iterrows():
+            top_bits.append(
+                f"**{row[label_col]}** ({self._format_number(row[primary], as_currency=as_currency)})"
+            )
+        detail = f" Highest: {', '.join(top_bits)}."
+        if count > 3:
+            bottom = ranked.iloc[-1]
+            detail += (
+                f" Lowest: **{bottom[label_col]}** "
+                f"({self._format_number(bottom[primary], as_currency=as_currency)})."
+            )
+        return lead + detail
 
     def _rows_to_dataframe(self, rows):
         if hasattr(rows[0], "_mapping"):
@@ -493,7 +571,8 @@ class ResultFormatterAgent:
         df: pd.DataFrame,
         raw_visualizations: list,
         numeric_columns: list,
-        category_columns: list
+        category_columns: list,
+        currency_columns: list | None = None,
     ) -> list:
         output = []
 
@@ -538,7 +617,8 @@ class ResultFormatterAgent:
             fig = self._build_plotly_figure(
                 df=df,
                 config=config,
-                title=title
+                title=title,
+                currency_columns=currency_columns,
             )
 
             if not fig:
@@ -621,18 +701,12 @@ class ResultFormatterAgent:
                     df["_row_label"] = [f"Row {i + 1}" for i in range(len(df))]
                     x_col = "_row_label"
 
-        # pie should use category x and numeric y, and not too many categories
         elif chart_type == "pie":
             if not category_columns:
                 return self._disabled_config()
 
             if x_col not in category_columns:
                 x_col = self._choose_best_category_column(category_columns)
-
-            unique_count = df[x_col].nunique(dropna=True)
-            if unique_count < 2 or unique_count > 8:
-                # pie is not meaningful; change to bar instead
-                chart_type = "horizontal_bar" if len(df) > 10 else "bar"
 
         # bar/horizontal_bar
         else:
@@ -809,7 +883,8 @@ class ResultFormatterAgent:
         self,
         df: pd.DataFrame,
         config: dict,
-        title: str = None
+        title: str = None,
+        currency_columns: list | None = None,
     ):
         if not config or not config.get("enabled"):
             return None
@@ -900,7 +975,7 @@ class ResultFormatterAgent:
         symbol = settings.currency_symbol or "Rs"
 
         axis_update = {}
-        if self._is_currency_column(y_col):
+        if y_col in set(currency_columns or []):
             prefix = f"{symbol} "
 
             if chart_type == "horizontal_bar":

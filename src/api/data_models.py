@@ -87,6 +87,7 @@ class QueryResponse(BaseModel):
     # chart_image_base64: Optional[str] = None
     
     visualizations: Optional[List[Dict[str, Any]]] = None
+    requested_chart_type: Optional[str] = None
 
 
 class ExampleRequest(BaseModel):

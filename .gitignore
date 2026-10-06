@@ -221,3 +221,5 @@ cache
 vector_store/
 vector_store/chroma.sqlite3
 database
+
+research
