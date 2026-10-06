@@ -29,6 +29,7 @@
   };
 
   const el = (id) => document.getElementById(id);
+  const qs = (root, selector) => root.querySelector(selector);
 
   function toast(message, type = "info") {
     const box = document.createElement("div");
@@ -69,7 +70,7 @@
   }
 
   function saveLocal() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    const payload = {
       token: state.token,
       user: state.user,
       sessionId: state.sessionId,
@@ -77,7 +78,28 @@
       lastResult: state.lastResult,
       queryCount: state.queryCount,
       hasStarted: state.hasStarted,
-    }));
+    };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      try {
+        const slim = {
+          ...payload,
+          lastResult: compactResult(state.lastResult),
+          messages: state.messages.map((message) => ({
+            ...message,
+            metadata: {
+              ...(message.metadata || {}),
+              charts: [],
+              result: compactResult(message.metadata?.result),
+            },
+          })),
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(slim));
+      } catch {
+        /* keep in-memory history even if storage is full */
+      }
+    }
   }
 
   function loadLocal() {
@@ -104,9 +126,23 @@
       .replace(/"/g, "&quot;");
   }
 
+  function wrapMarkdownTables(html) {
+    const holder = document.createElement("div");
+    holder.innerHTML = html;
+    holder.querySelectorAll("table").forEach((table) => {
+      if (table.parentElement?.classList.contains("table-wrap")) return;
+      const wrap = document.createElement("div");
+      wrap.className = "table-wrap";
+      table.replaceWith(wrap);
+      wrap.appendChild(table);
+    });
+    return holder.innerHTML;
+  }
+
   function renderMarkdown(text) {
     const raw = window.marked ? marked.parse(String(text || "")) : `<p>${escapeHtml(text)}</p>`;
-    return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
+    const safe = window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
+    return wrapMarkdownTables(safe);
   }
 
   function setLoginMethod(method) {
@@ -157,54 +193,101 @@
     el("kb-definition").textContent = current.definition || "";
   }
 
+  function buildMessageEl(message) {
+    const wrap = document.createElement("div");
+    wrap.className = `message ${message.role}`;
+    if (message.role === "user") {
+      wrap.innerHTML = `<div>${escapeHtml(message.content)}</div>`;
+      return wrap;
+    }
+
+    const canFeedback = Boolean(message.message_id) && ["answer", "clarification"].includes(message.type);
+    wrap.innerHTML = `
+      <div class="message-top">
+        <div class="content">${renderMarkdown(message.content)}</div>
+        ${canFeedback ? `
+          <div class="feedback">
+            <button type="button" class="btn icon" data-feedback="like" data-id="${escapeHtml(message.message_id)}">👍</button>
+            <button type="button" class="btn icon" data-feedback="dislike" data-id="${escapeHtml(message.message_id)}">👎</button>
+          </div>` : ""}
+      </div>
+    `;
+    mountResults(wrap, message.metadata?.result);
+    (message.metadata?.charts || []).forEach((chart, index) => {
+      if (chart.title) {
+        const title = document.createElement("h4");
+        title.className = "chart-title";
+        title.textContent = chart.title;
+        wrap.appendChild(title);
+      }
+      const chartEl = document.createElement("div");
+      chartEl.className = "chart";
+      chartEl.dataset.chartIndex = String(index);
+      wrap.appendChild(chartEl);
+      requestAnimationFrame(() => renderPlotly(chartEl, chart.chart_json, { hideTitle: true }));
+    });
+    return wrap;
+  }
+
   function renderMessages() {
     const root = el("messages");
     root.innerHTML = "";
     state.messages.forEach((message) => {
-      const wrap = document.createElement("div");
-      wrap.className = `message ${message.role}`;
-      if (message.role === "user") {
-        wrap.innerHTML = `<div>${escapeHtml(message.content)}</div>`;
-      } else {
-        const canFeedback = Boolean(message.message_id) && ["answer", "clarification"].includes(message.type);
-        wrap.innerHTML = `
-          <div class="message-top">
-            <div class="content">${renderMarkdown(message.content)}</div>
-            ${canFeedback ? `
-              <div class="feedback">
-                <button type="button" class="btn icon" data-feedback="like" data-id="${escapeHtml(message.message_id)}">👍</button>
-                <button type="button" class="btn icon" data-feedback="dislike" data-id="${escapeHtml(message.message_id)}">👎</button>
-              </div>` : ""}
-          </div>
-        `;
-        (message.metadata?.charts || []).forEach((chart, index) => {
-          if (chart.title) {
-            const title = document.createElement("h4");
-            title.textContent = chart.title;
-            wrap.appendChild(title);
-          }
-          const chartEl = document.createElement("div");
-          chartEl.className = "chart";
-          chartEl.dataset.chartIndex = String(index);
-          wrap.appendChild(chartEl);
-          requestAnimationFrame(() => renderPlotly(chartEl, chart.chart_json));
-        });
-      }
-      root.appendChild(wrap);
+      root.appendChild(buildMessageEl(message));
     });
-    root.scrollTop = root.scrollHeight;
   }
 
-  function renderPlotly(target, chartJson) {
+  function appendMessageEl(message) {
+    const root = el("messages");
+    root.appendChild(buildMessageEl(message));
+    const scroller = document.querySelector(".main-scroll");
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  }
+
+  function renderPlotly(target, chartJson, options = {}) {
     if (!window.Plotly || !chartJson) return;
     try {
       const spec = typeof chartJson === "string" ? JSON.parse(chartJson) : chartJson;
-      const layout = Object.assign({
+      const traces = (spec.data || []).map((trace) => ({ ...trace }));
+      const isPie = traces.some((trace) => trace.type === "pie");
+      traces.forEach((trace) => {
+        if (trace.type === "pie") {
+          trace.textinfo = "percent";
+          trace.textposition = "inside";
+          trace.insidetextorientation = "horizontal";
+          trace.automargin = true;
+          trace.hole = trace.hole || 0;
+          trace.domain = { x: [0.15, 0.85], y: [0.28, 1] };
+        }
+      });
+
+      const baseLayout = spec.layout || {};
+      const layout = {
+        ...baseLayout,
         autosize: true,
-        height: 460,
-        margin: { t: 48, r: 24, b: 72, l: 64 },
-      }, spec.layout || {});
-      Plotly.react(target, spec.data || [], layout, { responsive: true, displaylogo: false });
+        height: isPie ? 640 : Math.max(baseLayout.height || 0, 480),
+        title: options.hideTitle ? null : baseLayout.title,
+        margin: isPie
+          ? { t: 8, r: 16, b: 180, l: 16, pad: 4 }
+          : Object.assign({ t: 48, r: 32, b: 72, l: 64 }, baseLayout.margin || {}),
+        legend: isPie
+          ? {
+              orientation: "h",
+              y: -0.08,
+              x: 0.5,
+              xanchor: "center",
+              yanchor: "top",
+              font: { size: 11 },
+              itemwidth: 80,
+              tracegroupgap: 6,
+              bgcolor: "rgba(255,255,255,0.92)",
+            }
+          : baseLayout.legend,
+        showlegend: true,
+      };
+
+      target.style.height = `${layout.height}px`;
+      Plotly.react(target, traces, layout, { responsive: true, displaylogo: false });
     } catch (error) {
       target.textContent = `Failed to render chart: ${error.message}`;
     }
@@ -363,33 +446,54 @@
     return [...select.selectedOptions].map((option) => option.value);
   }
 
-  function renderPivot() {
-    const rows = coerceRows(asRows(state.lastResult?.query_result));
-    const types = columnTypes(rows);
-    const indexCols = selectedValues(el("pivot-rows"));
-    const columnCols = selectedValues(el("pivot-cols"));
-    const valueCol = el("pivot-value").value;
-    const aggFunc = el("pivot-agg").value;
+  function compactResult(result) {
+    if (!result) return null;
+    return {
+      query_result: result.query_result,
+      sql_query: result.sql_query,
+      plan: result.plan,
+      table_title: result.table_title,
+      waiting_for_user: result.waiting_for_user,
+      question_to_user: result.question_to_user,
+      error: result.error,
+      requested_chart_type: result.requested_chart_type,
+      charts: result.charts || [],
+    };
+  }
+
+  function hasResultOutput(result) {
+    if (!result) return false;
+    return asRows(result.query_result).length > 0 || Boolean(result.sql_query) || Boolean(result.plan);
+  }
+
+  function renderPivot(panel) {
+    const result = panel._result;
+    const rows = coerceRows(asRows(result?.query_result));
+    const indexCols = selectedValues(qs(panel, ".pivot-rows"));
+    const columnCols = selectedValues(qs(panel, ".pivot-cols"));
+    const valueCol = qs(panel, ".pivot-value").value;
+    const aggFunc = qs(panel, ".pivot-agg").value;
+    const pivotEl = qs(panel, ".pivot-table");
     if (!indexCols.length || !valueCol) {
-      el("pivot-table").innerHTML = `<p class="muted">Please select at least one row field.</p>`;
-      state.pivotRows = [];
+      pivotEl.innerHTML = `<p class="muted">Please select at least one row field.</p>`;
+      panel._pivotRows = [];
       return;
     }
     try {
-      state.pivotRows = pivotTable(rows, indexCols, columnCols, valueCol, aggFunc);
-      el("pivot-table").innerHTML = tableHtml(state.pivotRows);
+      panel._pivotRows = pivotTable(rows, indexCols, columnCols, valueCol, aggFunc);
+      pivotEl.innerHTML = tableHtml(panel._pivotRows);
     } catch (error) {
-      el("pivot-table").innerHTML = `<p class="muted">Failed to create pivot table: ${escapeHtml(error.message)}</p>`;
+      pivotEl.innerHTML = `<p class="muted">Failed to create pivot table: ${escapeHtml(error.message)}</p>`;
     }
   }
 
-  function setupPivot() {
-    const rows = coerceRows(asRows(state.lastResult?.query_result));
+  function setupPivot(panel, result) {
+    const rows = coerceRows(asRows(result?.query_result));
     const types = columnTypes(rows);
-    fillSelect(el("pivot-rows"), types.all, types.all[0] ? [types.all[0]] : []);
-    fillSelect(el("pivot-cols"), types.all.filter((col) => col !== types.all[0]));
-    fillSelect(el("pivot-value"), types.numeric, types.numeric[0]);
-    renderPivot();
+    fillSelect(qs(panel, ".pivot-rows"), types.all, types.all[0] ? [types.all[0]] : []);
+    fillSelect(qs(panel, ".pivot-cols"), types.all.filter((col) => col !== types.all[0]));
+    fillSelect(qs(panel, ".pivot-value"), types.numeric, types.numeric[0]);
+    renderPivot(panel);
   }
 
   function defaultX(nonNumeric, all) {
@@ -425,109 +529,118 @@
     };
   }
 
-  function renderGraph() {
-    const source = prepareChartRows(asRows(state.lastResult?.query_result));
+  function renderGraph(panel) {
+    const result = panel._result;
+    const source = prepareChartRows(asRows(result?.query_result));
     let rows = source;
-    const filterCol = el("graph-filter-col").value;
+    const filterCol = qs(panel, ".graph-filter-col").value;
     if (filterCol && filterCol !== "None") {
-      const selected = new Set(selectedValues(el("graph-filter-values")));
+      const selected = new Set(selectedValues(qs(panel, ".graph-filter-values")));
       rows = rows.filter((row) => selected.has(String(row[filterCol])));
     }
 
     const types = columnTypes(rows);
-    const xCol = el("graph-x").value;
-    const yCol = el("graph-y").value;
+    const xCol = qs(panel, ".graph-x").value;
+    const yCol = qs(panel, ".graph-y").value;
+    const chartEl = qs(panel, ".graph-chart");
     if (!xCol || !yCol) {
-      el("graph-chart").innerHTML = `<p class="muted">No numeric column found for chart.</p>`;
+      chartEl.innerHTML = `<p class="muted">No numeric column found for chart.</p>`;
       return;
     }
 
     rows = rows.filter((row) => row[xCol] != null && row[yCol] != null);
     if (!rows.length) {
-      el("graph-chart").innerHTML = `<p class="muted">No rows available for selected chart columns.</p>`;
+      chartEl.innerHTML = `<p class="muted">No rows available for selected chart columns.</p>`;
       return;
     }
 
     rows = [...rows].sort((a, b) => Number(b[yCol] || 0) - Number(a[yCol] || 0));
+    const topn = qs(panel, ".graph-topn");
     const maxN = Math.min(100, rows.length);
-    el("graph-topn").max = String(maxN);
-    if (Number(el("graph-topn").value) > maxN) el("graph-topn").value = String(maxN);
-    el("graph-topn-value").textContent = el("graph-topn").value;
-    const topN = rows.length === 1 ? 1 : Number(el("graph-topn").value);
+    topn.max = String(maxN);
+    if (Number(topn.value) > maxN) topn.value = String(maxN);
+    qs(panel, ".graph-topn-value").textContent = topn.value;
+    const topN = rows.length === 1 ? 1 : Number(topn.value);
     const chartRows = rows.slice(0, topN);
-    if (el("graph-type").value === "Horizontal Bar") {
+    const chartTypeSelect = qs(panel, ".graph-type").value;
+    if (chartTypeSelect === "Horizontal Bar") {
       chartRows.reverse();
     }
 
-    let chartType = el("graph-type").value;
+    let chartType = chartTypeSelect;
     if (chartType === "Auto") chartType = chartRows.length > 15 ? "Horizontal Bar" : "Bar";
-    renderPlotly(el("graph-chart"), buildChartFigure(chartType, chartRows, xCol, yCol));
-    el("graph-data").innerHTML = tableHtml(chartRows);
-    el("graph-meta").textContent = JSON.stringify({
+    renderPlotly(chartEl, buildChartFigure(chartType, chartRows, xCol, yCol));
+    qs(panel, ".graph-data").innerHTML = tableHtml(chartRows);
+    qs(panel, ".graph-meta").textContent = JSON.stringify({
       numeric_columns: types.numeric,
       non_numeric_columns: types.nonNumeric,
       selected_x: xCol,
       selected_y: yCol,
       rows_after_null_filter: chartRows.length,
     }, null, 2);
-    state.chartRows = chartRows;
   }
 
-  function setupGraph() {
-    const rows = prepareChartRows(asRows(state.lastResult?.query_result));
+  function setupGraph(panel, result) {
+    const rows = prepareChartRows(asRows(result?.query_result));
     const types = columnTypes(rows);
     const filterCols = types.nonNumeric.filter((col) => {
       const count = uniqueValues(rows, col).length;
       return count > 1 && count <= 20;
     });
-    fillSelect(el("graph-filter-col"), ["None", ...filterCols], "None");
-    fillSelect(el("graph-x"), types.all, defaultX(types.nonNumeric, types.all));
-    fillSelect(el("graph-y"), types.numeric, types.numeric[0]);
-    const requested = CHART_TYPE_LABELS[state.lastResult?.requested_chart_type] || "Auto";
-    el("graph-type").value = [...el("graph-type").options].some((opt) => opt.value === requested) ? requested : "Auto";
-    el("graph-topn").value = String(Math.min(20, rows.length || 1));
-    updateFilterValues();
-    renderGraph();
+    fillSelect(qs(panel, ".graph-filter-col"), ["None", ...filterCols], "None");
+    fillSelect(qs(panel, ".graph-x"), types.all, defaultX(types.nonNumeric, types.all));
+    fillSelect(qs(panel, ".graph-y"), types.numeric, types.numeric[0]);
+    const requested = CHART_TYPE_LABELS[result?.requested_chart_type] || "Auto";
+    const typeSelect = qs(panel, ".graph-type");
+    typeSelect.value = [...typeSelect.options].some((opt) => opt.value === requested) ? requested : "Auto";
+    qs(panel, ".graph-topn").value = String(Math.min(20, rows.length || 1));
+    updateFilterValues(panel);
+    renderGraph(panel);
   }
 
-  function updateFilterValues() {
-    const rows = prepareChartRows(asRows(state.lastResult?.query_result));
-    const col = el("graph-filter-col").value;
-    const wrap = el("graph-filter-values-wrap");
+  function updateFilterValues(panel) {
+    const result = panel._result;
+    const rows = prepareChartRows(asRows(result?.query_result));
+    const col = qs(panel, ".graph-filter-col").value;
+    const wrap = qs(panel, ".graph-filter-values-wrap");
     if (!col || col === "None") {
       wrap.classList.add("hidden");
       return;
     }
     wrap.classList.remove("hidden");
     const values = uniqueValues(rows, col).map(String).sort();
-    fillSelect(el("graph-filter-values"), values, values);
+    fillSelect(qs(panel, ".graph-filter-values"), values, values);
   }
 
-  function renderResults() {
-    const result = state.lastResult;
+  function fillResultsPanel(panel, result) {
+    panel._result = result;
     const rows = coerceRows(asRows(result?.query_result));
-    const hasOutput = rows.length || result?.sql_query || result?.plan;
-    el("results-panel").classList.toggle("hidden", !result || !hasOutput);
-    if (!result || !hasOutput) return;
-
-    el("table-title").textContent = result.table_title || "Extracted Table";
+    qs(panel, ".table-title").textContent = result.table_title || "Extracted Table";
+    const tableEl = qs(panel, ".result-table");
     if (result.waiting_for_user) {
-      el("result-table").innerHTML = `<p class="muted">${escapeHtml(result.question_to_user || "")}</p>`;
+      tableEl.innerHTML = `<p class="muted">${escapeHtml(result.question_to_user || "")}</p>`;
     } else if (result.error) {
-      el("result-table").innerHTML = `<p class="muted">${escapeHtml(result.error)}</p>`;
+      tableEl.innerHTML = `<p class="muted">${escapeHtml(result.error)}</p>`;
     } else {
-      el("result-table").innerHTML = tableHtml(rows);
-      setupPivot();
+      tableEl.innerHTML = tableHtml(rows);
+      try { setupPivot(panel, result); } catch { /* table still visible */ }
     }
+    qs(panel, ".sql-code").textContent = result.sql_query || "No SQL generated yet.";
+    qs(panel, ".plan-text").textContent = result.plan || "No plan available.";
+    panel._graphReady = false;
+  }
 
-    if (result.sql_query) {
-      el("sql-code").textContent = result.sql_query;
-    } else {
-      el("sql-code").textContent = "No SQL generated yet.";
+  function mountResults(wrap, result) {
+    if (!hasResultOutput(result)) return;
+    const template = el("results-template");
+    if (!template) return;
+    const panel = template.content.firstElementChild.cloneNode(true);
+    wrap.appendChild(panel);
+    try {
+      fillResultsPanel(panel, result);
+    } catch {
+      qs(panel, ".result-table").innerHTML = tableHtml(coerceRows(asRows(result.query_result)));
     }
-
-    el("plan-text").textContent = result.plan || "No plan available.";
-    setupGraph();
   }
 
   function addMessage(role, content, type, metadata, messageId) {
@@ -542,7 +655,7 @@
 
   async function submitQuestion(question) {
     addMessage("user", question, "question");
-    renderMessages();
+    appendMessageEl(state.messages[state.messages.length - 1]);
     saveLocal();
 
     const thinking = document.createElement("div");
@@ -577,15 +690,19 @@
         "assistant",
         result.answer_text || "Done.",
         messageType,
-        result.charts?.length ? { charts: result.charts } : null,
+        {
+          charts: result.charts || [],
+          result: compactResult(result),
+        },
         result.assistant_message_id,
       );
-      renderMessages();
-      renderResults();
+      thinking.remove();
+      appendMessageEl(state.messages[state.messages.length - 1]);
       saveLocal();
     } catch (error) {
+      thinking.remove();
       addMessage("assistant", `Unexpected error: ${error.message}`, "error");
-      renderMessages();
+      appendMessageEl(state.messages[state.messages.length - 1]);
       toast(error.message, "error");
     } finally {
       thinking.remove();
@@ -606,7 +723,6 @@
     state.hasStarted = false;
     renderAuth();
     renderMessages();
-    renderResults();
     if (state.user.can_edit_kb) await loadDefinitions();
     saveLocal();
     toast("Login successful.", "success");
@@ -671,7 +787,6 @@
       localStorage.removeItem(STORAGE_KEY);
       renderAuth();
       renderMessages();
-      renderResults();
     });
 
     el("new-chat-btn").addEventListener("click", async () => {
@@ -684,7 +799,6 @@
         state.hasStarted = false;
         renderAuth();
         renderMessages();
-        renderResults();
         saveLocal();
       } catch (error) {
         toast(error.message, "error");
@@ -768,6 +882,38 @@
     });
 
     el("messages").addEventListener("click", async (event) => {
+      const panel = event.target.closest(".results-panel");
+      if (panel) {
+        const tab = event.target.closest(".tab");
+        if (tab) {
+          panel.querySelectorAll(".tab").forEach((btn) => btn.classList.toggle("active", btn === tab));
+          panel.querySelectorAll(".tab-panel").forEach((item) => {
+            item.classList.toggle("hidden", item.dataset.panel !== tab.dataset.tab);
+          });
+          if (tab.dataset.tab === "graph") {
+            if (!panel._graphReady) {
+              try { setupGraph(panel, panel._result); } catch { /* ignore */ }
+              panel._graphReady = true;
+            } else {
+              renderGraph(panel);
+            }
+          }
+          return;
+        }
+        if (event.target.closest(".table-download")) {
+          downloadText("query_result.csv", toCsv(coerceRows(asRows(panel._result?.query_result))), "text/csv");
+          return;
+        }
+        if (event.target.closest(".sql-download")) {
+          downloadText("query.sql", panel._result?.sql_query || "", "text/plain");
+          return;
+        }
+        if (event.target.closest(".pivot-download")) {
+          downloadText("pivot_result.csv", toCsv(panel._pivotRows || []), "text/csv");
+          return;
+        }
+      }
+
       const btn = event.target.closest("[data-feedback]");
       if (!btn) return;
       const message = state.messages.find((item) => item.message_id === btn.dataset.id);
@@ -789,32 +935,26 @@
       }
     });
 
-    document.querySelectorAll(".tab").forEach((tab) => {
-      tab.addEventListener("click", () => {
-        document.querySelectorAll(".tab").forEach((btn) => btn.classList.toggle("active", btn === tab));
-        ["table", "graph", "sql", "plan"].forEach((name) => {
-          el(`tab-${name}`).classList.toggle("hidden", name !== tab.dataset.tab);
-        });
-        if (tab.dataset.tab === "graph") renderGraph();
-      });
+    el("messages").addEventListener("change", (event) => {
+      const panel = event.target.closest(".results-panel");
+      if (!panel) return;
+      if (event.target.matches(".pivot-rows, .pivot-cols, .pivot-value, .pivot-agg")) {
+        renderPivot(panel);
+      }
+      if (event.target.matches(".graph-filter-col")) {
+        updateFilterValues(panel);
+        renderGraph(panel);
+      }
+      if (event.target.matches(".graph-filter-values, .graph-x, .graph-y, .graph-type")) {
+        renderGraph(panel);
+      }
     });
 
-    ["pivot-rows", "pivot-cols", "pivot-value", "pivot-agg"].forEach((id) => {
-      el(id).addEventListener("change", renderPivot);
+    el("messages").addEventListener("input", (event) => {
+      const panel = event.target.closest(".results-panel");
+      if (panel && event.target.matches(".graph-topn")) renderGraph(panel);
     });
-    el("pivot-download").addEventListener("click", () => downloadText("pivot_result.csv", toCsv(state.pivotRows), "text/csv"));
-    el("table-download").addEventListener("click", () => {
-      downloadText("query_result.csv", toCsv(coerceRows(asRows(state.lastResult?.query_result))), "text/csv");
-    });
-    el("sql-download").addEventListener("click", () => {
-      downloadText("query.sql", state.lastResult?.sql_query || "", "text/plain");
-    });
-    el("graph-filter-col").addEventListener("change", () => { updateFilterValues(); renderGraph(); });
-    el("graph-filter-values").addEventListener("change", renderGraph);
-    el("graph-x").addEventListener("change", renderGraph);
-    el("graph-y").addEventListener("change", renderGraph);
-    el("graph-type").addEventListener("change", renderGraph);
-    el("graph-topn").addEventListener("input", renderGraph);
+
     el("sidebar-toggle").addEventListener("click", () => el("sidebar").classList.toggle("open"));
   }
 
@@ -823,7 +963,6 @@
     loadLocal();
     renderAuth();
     renderMessages();
-    renderResults();
     if (!state.token) return;
     try {
       const me = await api("/auth/me");

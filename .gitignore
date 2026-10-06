@@ -223,3 +223,4 @@ vector_store/chroma.sqlite3
 database
 
 research
+data/sales_flat sql.txt
