@@ -103,3 +103,36 @@ class HealthResponse(BaseModel):
     total_tables: int
     cache_enabled: bool
     few_shot_enabled: bool
+
+
+class PhoneLoginRequest(BaseModel):
+    phone_no: str = Field(..., description="Phone number used for chatbot auth")
+
+
+class SystemLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class ConversationStartRequest(BaseModel):
+    question: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class ConversationFollowUpRequest(BaseModel):
+    question: str
+    clarification_answer: Optional[str] = None
+
+
+class FeedbackRequest(BaseModel):
+    session_id: str
+    message_id: str
+    message_type: str
+    message_content: str
+    feedback_type: str = Field(..., pattern="^(like|dislike)$")
+
+
+class KnowledgeDefinitionRequest(BaseModel):
+    key: str
+    keywords: List[str]
+    definition: str

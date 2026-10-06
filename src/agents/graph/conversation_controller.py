@@ -120,22 +120,50 @@ def _finalize(result: dict) -> dict:
     run_type="chain",
     tags=["text-to-sql", "openai", "anthropic", "production"],
 )
+def _resolve_turn_type(
+    session_id: str,
+    turn_type: str | None,
+    clarification_answer: str | None,
+) -> str:
+    if turn_type in ("start", "follow_up"):
+        return turn_type
+    if clarification_answer:
+        return "follow_up"
+    session = chat_memory.get_session(session_id) or {}
+    if session.get("messages"):
+        return "follow_up"
+    return "start"
+
+
 async def run_agent_async(
     question: str,
     session_id: str | None = None,
     allowed_rep_codes: list[str] | None = None,
     user_role: str | None = None,
     clarification_answer: str | None = None,
-    user_id: str = None
+    user_id: str = None,
+    turn_type: str | None = None,
 ) -> dict:
     session_id = chat_memory.get_or_create_session(session_id)
+    resolved_turn = _resolve_turn_type(session_id, turn_type, clarification_answer)
+
+    if resolved_turn == "follow_up" and not clarification_answer:
+        last_state = chat_memory.get_last_state(session_id) or {}
+        if last_state.get("waiting_for_user"):
+            clarification_answer = question
+
     config = build_invoke_config(session_id)
     initial_state = _build_initial_state(
         question, session_id, allowed_rep_codes, user_role, clarification_answer, user_id
     )
+    initial_state["is_follow_up"] = resolved_turn == "follow_up"
 
     try:
-        if clarification_answer and settings.enable_production_graph:
+        if (
+            resolved_turn == "follow_up"
+            and clarification_answer
+            and settings.enable_production_graph
+        ):
             result = await graph.ainvoke(
                 Command(resume=clarification_answer),
                 config,
@@ -143,8 +171,15 @@ async def run_agent_async(
         else:
             result = await graph.ainvoke(initial_state, config)
 
-        return _finalize(result)
+        finalized = _finalize(result)
+        finalized["turn_type"] = resolved_turn
+        return finalized
 
     except Exception as e:
         logger.error(f"Graph execution error: {e}")
-        return {**initial_state, "error": str(e), "should_retry": False}
+        return {
+            **initial_state,
+            "error": str(e),
+            "should_retry": False,
+            "turn_type": resolved_turn,
+        }

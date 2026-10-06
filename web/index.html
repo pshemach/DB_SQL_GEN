@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EVision Agent</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Toggle sidebar">☰</button>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">💬</div>
+        <div>
+          <h2>EVision Agent</h2>
+          <p>Sales intelligence</p>
+        </div>
+      </div>
+
+      <section class="panel">
+        <h3>👤 Login</h3>
+        <div id="login-form">
+          <div class="segmented" role="tablist">
+            <button type="button" class="segment active" data-login-method="phone">Phone Number</button>
+            <button type="button" class="segment" data-login-method="system">User Login</button>
+          </div>
+
+          <form id="phone-login" class="stack">
+            <label>
+              Phone Number
+              <input type="text" name="phone_no" placeholder="0718543880" autocomplete="tel" />
+            </label>
+            <button type="submit" class="btn primary block">Login</button>
+          </form>
+
+          <form id="system-login" class="stack hidden">
+            <label>
+              Username
+              <input type="text" name="username" autocomplete="username" />
+            </label>
+            <label>
+              Password
+              <input type="password" name="password" autocomplete="current-password" />
+            </label>
+            <button type="submit" class="btn primary block">Login</button>
+          </form>
+        </div>
+
+        <div id="logged-in" class="hidden">
+          <div class="success-box">
+            ✅ Logged in as: <strong id="user-name"></strong>
+          </div>
+          <p class="muted">Role: <span id="user-role"></span></p>
+          <p class="muted">Login method: <span id="login-method"></span></p>
+          <details class="expander">
+            <summary>Allowed Rep Codes</summary>
+            <p id="rep-codes" class="wrap"></p>
+          </details>
+          <button type="button" id="logout-btn" class="btn danger block">Logout</button>
+        </div>
+      </section>
+
+      <section class="panel hidden" id="session-panel">
+        <h3>⚙️ Session</h3>
+        <label>
+          Session ID
+          <input type="text" id="session-id" disabled />
+        </label>
+        <button type="button" id="new-chat-btn" class="btn block">🔄 New Chat</button>
+      </section>
+
+      <section class="panel hidden" id="kb-panel">
+        <h3>📘 Business Knowledge Base</h3>
+        <button type="button" id="kb-reload-btn" class="btn block">🔄 Reload KB</button>
+        <button type="button" id="kb-add-btn" class="btn block">➕ Add KPI Definition</button>
+        <label>
+          Select KPI definition
+          <select id="kb-select"></select>
+        </label>
+        <div class="row">
+          <button type="button" id="kb-edit-btn" class="btn">✏️ Edit</button>
+          <button type="button" id="kb-delete-btn" class="btn danger">🗑️ Delete</button>
+        </div>
+        <details class="expander">
+          <summary>View Definition</summary>
+          <p class="label">Keywords</p>
+          <p id="kb-keywords" class="wrap"></p>
+          <p class="label">Definition</p>
+          <pre id="kb-definition"></pre>
+        </details>
+      </section>
+    </aside>
+
+    <main class="main">
+      <div class="main-scroll">
+      <header class="hero">
+        <h1>SFA SmartAnalyst</h1>
+        <p>Your AI-Powered Sales Intelligence Assistant</p>
+      </header>
+
+      <section id="kb-editor" class="card hidden">
+        <h2 id="kb-editor-title">➕ Add KPI Definition</h2>
+        <form id="kb-editor-form" class="stack">
+          <label>
+            KPI Key
+            <input type="text" name="key" placeholder="productive_calls, outlet_productivity" />
+          </label>
+          <label>
+            Keywords
+            <textarea name="keywords" rows="5" placeholder="Enter one keyword per line"></textarea>
+          </label>
+          <label>
+            Definition
+            <textarea name="definition" rows="10" placeholder="Write business meaning, formula, filters, aggregation rules, and defaults"></textarea>
+          </label>
+          <details class="expander">
+            <summary>📋 Definition Template</summary>
+            <pre class="template">&lt;KPI Name&gt; measures ...
+
+Calculation:
+- Step 1:
+- Step 2:
+
+Filters:
+- Use current month if no time period is specified.
+- Apply RepCode when the question refers to a rep or says "my".
+
+Aggregation:
+- Explain whether this is single-level or multi-level aggregation.
+
+Exclusions:
+- Exclude returns unless specifically requested.</pre>
+          </details>
+          <div class="row">
+            <button type="submit" class="btn primary">💾 Save</button>
+            <button type="button" id="kb-cancel-btn" class="btn">Cancel</button>
+          </div>
+        </form>
+      </section>
+
+      <div id="login-gate" class="banner warning">⚠️ Please login first</div>
+
+      <section id="workspace" class="hidden">
+        <div id="messages" class="messages"></div>
+
+        <section id="results-panel" class="card hidden">
+          <div class="tabs" role="tablist">
+            <button type="button" class="tab active" data-tab="table">Extracted Table</button>
+            <button type="button" class="tab" data-tab="graph">Graph</button>
+            <button type="button" class="tab" data-tab="sql">SQL</button>
+            <button type="button" class="tab" data-tab="plan">Plan</button>
+          </div>
+
+          <div class="tab-panel" id="tab-table">
+            <h3 id="table-title">Extracted Table</h3>
+            <div id="result-table" class="table-wrap"></div>
+            <details class="expander">
+              <summary>📊 Create Pivot Table</summary>
+              <div class="grid-4">
+                <label>Rows <select id="pivot-rows" multiple></select></label>
+                <label>Columns <select id="pivot-cols" multiple></select></label>
+                <label>Values <select id="pivot-value"></select></label>
+                <label>Aggregation
+                  <select id="pivot-agg">
+                    <option value="sum">sum</option>
+                    <option value="mean">mean</option>
+                    <option value="count">count</option>
+                    <option value="min">min</option>
+                    <option value="max">max</option>
+                  </select>
+                </label>
+              </div>
+              <div id="pivot-table" class="table-wrap"></div>
+              <button type="button" id="pivot-download" class="btn">⬇️ Download Pivot CSV</button>
+            </details>
+            <button type="button" id="table-download" class="btn">⬇️ Download CSV</button>
+          </div>
+
+          <div class="tab-panel hidden" id="tab-graph">
+            <h3>Graph View</h3>
+            <div class="grid-4">
+              <label>Optional Filter Column <select id="graph-filter-col"></select></label>
+              <label id="graph-filter-values-wrap" class="hidden">Filter values <select id="graph-filter-values" multiple></select></label>
+              <label>X Axis / Label <select id="graph-x"></select></label>
+              <label>Y Axis / Metric <select id="graph-y"></select></label>
+              <label>Chart Type
+                <select id="graph-type">
+                  <option>Auto</option>
+                  <option>Bar</option>
+                  <option>Horizontal Bar</option>
+                  <option>Line</option>
+                  <option>Pie</option>
+                  <option>Scatter</option>
+                </select>
+              </label>
+            </div>
+            <label class="slider-label">
+              Rows to show
+              <input type="range" id="graph-topn" min="1" max="20" value="20" />
+              <span id="graph-topn-value">20</span>
+            </label>
+            <div id="graph-chart" class="chart"></div>
+            <h4>Chart Data</h4>
+            <div id="graph-data" class="table-wrap"></div>
+            <details class="expander">
+              <summary>Detected Columns</summary>
+              <pre id="graph-meta"></pre>
+            </details>
+          </div>
+
+          <div class="tab-panel hidden" id="tab-sql">
+            <pre id="sql-code" class="code"></pre>
+            <button type="button" id="sql-download" class="btn">⬇️ Download SQL</button>
+          </div>
+
+          <div class="tab-panel hidden" id="tab-plan">
+            <pre id="plan-text" class="code"></pre>
+          </div>
+        </section>
+      </section>
+      </div>
+
+      <form id="chat-form" class="chat-form hidden">
+        <textarea id="chat-input" rows="1" placeholder="Ask a sales/business question..." required></textarea>
+        <button type="submit" class="btn primary" id="send-btn">Send</button>
+      </form>
+    </main>
+  </div>
+
+  <div id="toasts" class="toasts"></div>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
