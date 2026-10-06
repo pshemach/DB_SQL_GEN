@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EVision Agent</title>
-  <link rel="stylesheet" href="/static/css/app.css?v=5" />
+  <link rel="stylesheet" href="/static/css/app.css?v=11" />
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
@@ -76,13 +76,15 @@
 
       <section class="panel hidden" id="kb-panel">
         <h3>📘 Business Knowledge Base</h3>
-        <button type="button" id="kb-reload-btn" class="btn block">🔄 Reload KB</button>
-        <button type="button" id="kb-add-btn" class="btn block">➕ Add KPI Definition</button>
+        <div class="kb-actions">
+          <button type="button" id="kb-reload-btn" class="btn block">🔄 Reload KB</button>
+          <button type="button" id="kb-add-btn" class="btn block">➕ Add KPI Definition</button>
+        </div>
         <label>
           Select KPI definition
           <select id="kb-select"></select>
         </label>
-        <div class="row">
+        <div class="row kb-edit-row">
           <button type="button" id="kb-edit-btn" class="btn">✏️ Edit</button>
           <button type="button" id="kb-delete-btn" class="btn danger">🗑️ Delete</button>
         </div>
@@ -170,11 +172,18 @@ Exclusions:
       <div class="tab-panel" data-panel="table">
         <h3 class="table-title">Extracted Table</h3>
         <div class="result-table table-wrap"></div>
-        <details class="expander">
+        <button type="button" class="table-download btn">⬇️ Download CSV</button>
+        <details class="expander pivot-expander">
           <summary>📊 Create Pivot Table</summary>
-          <div class="grid-4">
-            <label>Rows <select class="pivot-rows" multiple></select></label>
-            <label>Columns <select class="pivot-cols" multiple></select></label>
+          <div class="pivot-controls">
+            <fieldset class="pivot-field">
+              <legend>Rows</legend>
+              <div class="pivot-options pivot-rows"></div>
+            </fieldset>
+            <fieldset class="pivot-field">
+              <legend>Columns</legend>
+              <div class="pivot-options pivot-cols"></div>
+            </fieldset>
             <label>Values <select class="pivot-value"></select></label>
             <label>Aggregation
               <select class="pivot-agg">
@@ -189,7 +198,6 @@ Exclusions:
           <div class="pivot-table table-wrap"></div>
           <button type="button" class="pivot-download btn">⬇️ Download Pivot CSV</button>
         </details>
-        <button type="button" class="table-download btn">⬇️ Download CSV</button>
       </div>
 
       <div class="tab-panel hidden" data-panel="graph">
@@ -234,6 +242,6 @@ Exclusions:
       </div>
     </section>
   </template>
-  <script src="/static/js/app.js?v=5"></script>
+  <script src="/static/js/app.js?v=11"></script>
 </body>
 </html>

@@ -132,7 +132,7 @@
     holder.querySelectorAll("table").forEach((table) => {
       if (table.parentElement?.classList.contains("table-wrap")) return;
       const wrap = document.createElement("div");
-      wrap.className = "table-wrap";
+      wrap.className = "table-wrap has-table";
       table.replaceWith(wrap);
       wrap.appendChild(table);
     });
@@ -237,11 +237,39 @@
     });
   }
 
-  function appendMessageEl(message) {
-    const root = el("messages");
-    root.appendChild(buildMessageEl(message));
+  function scrollToLatest() {
     const scroller = document.querySelector(".main-scroll");
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  }
+
+  function appendMessageEl(message) {
+    el("messages").appendChild(buildMessageEl(message));
+    scrollToLatest();
+  }
+
+  async function* readSse(response) {
+    if (!response.body) {
+      throw new Error("Streaming is not supported by this browser.");
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
+      for (const part of parts) {
+        const data = part
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trimStart())
+          .join("");
+        if (!data) continue;
+        yield JSON.parse(data);
+      }
+    }
   }
 
   function renderPlotly(target, chartJson, options = {}) {
@@ -250,6 +278,7 @@
       const spec = typeof chartJson === "string" ? JSON.parse(chartJson) : chartJson;
       const traces = (spec.data || []).map((trace) => ({ ...trace }));
       const isPie = traces.some((trace) => trace.type === "pie");
+      const baseLayout = spec.layout || {};
       traces.forEach((trace) => {
         if (trace.type === "pie") {
           trace.textinfo = "percent";
@@ -257,53 +286,99 @@
           trace.insidetextorientation = "horizontal";
           trace.automargin = true;
           trace.hole = trace.hole || 0;
-          trace.domain = { x: [0.15, 0.85], y: [0.28, 1] };
+          trace.domain = { x: [0.18, 0.82], y: [0.32, 1] };
         }
       });
 
-      const baseLayout = spec.layout || {};
+      const compactHeight = isPie ? 520 : 480;
       const layout = {
         ...baseLayout,
         autosize: true,
-        height: isPie ? 640 : Math.max(baseLayout.height || 0, 480),
+        height: compactHeight,
         title: options.hideTitle ? null : baseLayout.title,
         margin: isPie
-          ? { t: 8, r: 16, b: 180, l: 16, pad: 4 }
-          : Object.assign({ t: 48, r: 32, b: 72, l: 64 }, baseLayout.margin || {}),
+          ? { t: 6, r: 12, b: 110, l: 12, pad: 2 }
+          : { t: 28, r: 18, b: 48, l: 48, pad: 2 },
         legend: isPie
           ? {
               orientation: "h",
-              y: -0.08,
+              y: -0.12,
               x: 0.5,
               xanchor: "center",
               yanchor: "top",
-              font: { size: 11 },
-              itemwidth: 80,
-              tracegroupgap: 6,
+              font: { size: 10 },
+              itemwidth: 70,
+              tracegroupgap: 4,
               bgcolor: "rgba(255,255,255,0.92)",
             }
           : baseLayout.legend,
         showlegend: true,
+        font: { ...(baseLayout.font || {}), size: 11 },
       };
 
-      target.style.height = `${layout.height}px`;
+      target.style.height = `${compactHeight}px`;
       Plotly.react(target, traces, layout, { responsive: true, displaylogo: false });
     } catch (error) {
       target.textContent = `Failed to render chart: ${error.message}`;
     }
   }
 
-  function tableHtml(rows) {
+  function formatCell(value) {
+    if (value == null || value === "") return "";
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value.toLocaleString(undefined, {
+        maximumFractionDigits: Number.isInteger(value) ? 0 : 2,
+      });
+    }
+    return escapeHtml(value);
+  }
+
+  function tableHtml(rows, options = {}) {
     if (!rows.length) return `<p class="muted">No tabular result available.</p>`;
-    const cols = Object.keys(rows[0]);
+    const cols = options.columns || Object.keys(rows[0]);
     return `
       <table>
-        <thead><tr>${cols.map((col) => `<th>${escapeHtml(col)}</th>`).join("")}</tr></thead>
+        <thead><tr>${cols.map((col) => `<th title="${escapeHtml(col)}">${escapeHtml(col)}</th>`).join("")}</tr></thead>
         <tbody>
-          ${rows.map((row) => `<tr>${cols.map((col) => `<td>${escapeHtml(row[col])}</td>`).join("")}</tr>`).join("")}
+          ${rows.map((row) => `<tr>${cols.map((col) => {
+            const value = row[col];
+            const numeric = typeof value === "number";
+            const display = formatCell(value);
+            const title = value == null ? "" : String(numeric ? display : value);
+            return `<td class="${numeric ? "numeric" : ""}" title="${escapeHtml(title)}">${display}</td>`;
+          }).join("")}</tr>`).join("")}
         </tbody>
       </table>
     `;
+  }
+
+  function applyStickyColumns(el, count) {
+    const table = el.querySelector("table");
+    if (!table || count < 1) return;
+    const firstRow = table.querySelector("thead tr") || table.querySelector("tr");
+    if (!firstRow) return;
+    const cells = [...firstRow.children].slice(0, count);
+    let left = 0;
+    cells.forEach((header, index) => {
+      const width = header.getBoundingClientRect().width;
+      table.querySelectorAll(`tr > :nth-child(${index + 1})`).forEach((cell) => {
+        cell.classList.add("is-sticky-col");
+        cell.style.left = `${left}px`;
+      });
+      left += width;
+    });
+  }
+
+  function setTable(el, html, options = {}) {
+    el.innerHTML = html;
+    const hasTable = Boolean(el.querySelector("table"));
+    el.classList.toggle("has-table", hasTable);
+    const stickyCols = hasTable ? Number(options.stickyCols || 0) : 0;
+    if (stickyCols) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => applyStickyColumns(el, stickyCols));
+      });
+    }
   }
 
   function csvEscape(value) {
@@ -312,9 +387,9 @@
     return text;
   }
 
-  function toCsv(rows) {
+  function toCsv(rows, columns) {
     if (!rows.length) return "";
-    const cols = Object.keys(rows[0]);
+    const cols = columns || Object.keys(rows[0]);
     return [cols.join(","), ...rows.map((row) => cols.map((col) => csvEscape(row[col])).join(","))].join("\n");
   }
 
@@ -412,7 +487,8 @@
       bucket.values[colKey].push(row[valueCol]);
     });
 
-    const colNames = [...new Set([...groups.values()].flatMap((group) => Object.keys(group.values)))];
+    const colNames = [...new Set([...groups.values()].flatMap((group) => Object.keys(group.values)))]
+      .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" }));
     const result = [];
     const totals = Object.fromEntries(colNames.map((name) => [name, []]));
 
@@ -439,7 +515,24 @@
     });
     totalRow.Total = aggregate(grand, aggFunc);
     result.push(totalRow);
-    return result;
+    return {
+      rows: result,
+      columns: [...indexCols, ...colNames, "Total"],
+    };
+  }
+
+  function fillChecks(container, options, selected) {
+    const current = new Set(Array.isArray(selected) ? selected.map(String) : selected != null ? [String(selected)] : []);
+    container.innerHTML = options.map((value) => (
+      `<label class="check-option">
+        <input type="checkbox" value="${escapeHtml(value)}" ${current.has(String(value)) ? "checked" : ""} />
+        <span>${escapeHtml(value)}</span>
+      </label>`
+    )).join("") || `<p class="muted">No fields</p>`;
+  }
+
+  function checkedValues(container) {
+    return [...container.querySelectorAll("input:checked")].map((input) => input.value);
   }
 
   function selectedValues(select) {
@@ -466,32 +559,48 @@
     return asRows(result.query_result).length > 0 || Boolean(result.sql_query) || Boolean(result.plan);
   }
 
+  function uncheckOverlap(source, other) {
+    const selected = new Set(checkedValues(source));
+    other.querySelectorAll("input:checked").forEach((input) => {
+      if (selected.has(input.value)) input.checked = false;
+    });
+  }
+
   function renderPivot(panel) {
     const result = panel._result;
     const rows = coerceRows(asRows(result?.query_result));
-    const indexCols = selectedValues(qs(panel, ".pivot-rows"));
-    const columnCols = selectedValues(qs(panel, ".pivot-cols"));
+    const rowBox = qs(panel, ".pivot-rows");
+    const colBox = qs(panel, ".pivot-cols");
+    const indexCols = checkedValues(rowBox);
+    const columnCols = checkedValues(colBox);
     const valueCol = qs(panel, ".pivot-value").value;
     const aggFunc = qs(panel, ".pivot-agg").value;
     const pivotEl = qs(panel, ".pivot-table");
     if (!indexCols.length || !valueCol) {
-      pivotEl.innerHTML = `<p class="muted">Please select at least one row field.</p>`;
+      setTable(pivotEl, `<p class="muted">Please select at least one row field.</p>`);
       panel._pivotRows = [];
+      panel._pivotColumns = [];
       return;
     }
     try {
-      panel._pivotRows = pivotTable(rows, indexCols, columnCols, valueCol, aggFunc);
-      pivotEl.innerHTML = tableHtml(panel._pivotRows);
+      const pivoted = pivotTable(rows, indexCols, columnCols, valueCol, aggFunc);
+      panel._pivotRows = pivoted.rows;
+      panel._pivotColumns = pivoted.columns;
+      setTable(pivotEl, tableHtml(pivoted.rows, { columns: pivoted.columns }), {
+        stickyCols: indexCols.length,
+      });
     } catch (error) {
-      pivotEl.innerHTML = `<p class="muted">Failed to create pivot table: ${escapeHtml(error.message)}</p>`;
+      setTable(pivotEl, `<p class="muted">Failed to create pivot table: ${escapeHtml(error.message)}</p>`);
     }
   }
 
   function setupPivot(panel, result) {
     const rows = coerceRows(asRows(result?.query_result));
     const types = columnTypes(rows);
-    fillSelect(qs(panel, ".pivot-rows"), types.all, types.all[0] ? [types.all[0]] : []);
-    fillSelect(qs(panel, ".pivot-cols"), types.all.filter((col) => col !== types.all[0]));
+    const dimFields = types.nonNumeric.length ? types.nonNumeric : types.all;
+    const rowDefault = dimFields[0];
+    fillChecks(qs(panel, ".pivot-rows"), dimFields, rowDefault ? [rowDefault] : []);
+    fillChecks(qs(panel, ".pivot-cols"), dimFields, []);
     fillSelect(qs(panel, ".pivot-value"), types.numeric, types.numeric[0]);
     renderPivot(panel);
   }
@@ -511,21 +620,21 @@
     if (type === "Horizontal Bar") {
       return {
         data: [{ type: "bar", orientation: "h", x: y, y: x, text: y, textposition: "outside" }],
-        layout: { title, height: 460 },
+        layout: { title, height: 480 },
       };
     }
     if (type === "Line") {
-      return { data: [{ type: "scatter", mode: "lines+markers", x, y }], layout: { title, height: 460 } };
+      return { data: [{ type: "scatter", mode: "lines+markers", x, y }], layout: { title, height: 480 } };
     }
     if (type === "Pie") {
-      return { data: [{ type: "pie", labels: x, values: y }], layout: { title: `${yCol} share by ${xCol}`, height: 460 } };
+      return { data: [{ type: "pie", labels: x, values: y }], layout: { title: `${yCol} share by ${xCol}`, height: 520 } };
     }
     if (type === "Scatter") {
-      return { data: [{ type: "scatter", mode: "markers", x, y, marker: { size: y.map((v) => Math.max(8, Number(v) || 8)) } }], layout: { title, height: 460 } };
+      return { data: [{ type: "scatter", mode: "markers", x, y, marker: { size: y.map((v) => Math.max(8, Number(v) || 8)) } }], layout: { title, height: 480 } };
     }
     return {
       data: [{ type: "bar", x, y, text: y, textposition: "outside" }],
-      layout: { title, height: 460, xaxis: { tickangle: -45 } },
+      layout: { title, height: 480, xaxis: { tickangle: -45 } },
     };
   }
 
@@ -570,7 +679,7 @@
     let chartType = chartTypeSelect;
     if (chartType === "Auto") chartType = chartRows.length > 15 ? "Horizontal Bar" : "Bar";
     renderPlotly(chartEl, buildChartFigure(chartType, chartRows, xCol, yCol));
-    qs(panel, ".graph-data").innerHTML = tableHtml(chartRows);
+    setTable(qs(panel, ".graph-data"), tableHtml(chartRows));
     qs(panel, ".graph-meta").textContent = JSON.stringify({
       numeric_columns: types.numeric,
       non_numeric_columns: types.nonNumeric,
@@ -618,11 +727,11 @@
     qs(panel, ".table-title").textContent = result.table_title || "Extracted Table";
     const tableEl = qs(panel, ".result-table");
     if (result.waiting_for_user) {
-      tableEl.innerHTML = `<p class="muted">${escapeHtml(result.question_to_user || "")}</p>`;
+      setTable(tableEl, `<p class="muted">${escapeHtml(result.question_to_user || "")}</p>`);
     } else if (result.error) {
-      tableEl.innerHTML = `<p class="muted">${escapeHtml(result.error)}</p>`;
+      setTable(tableEl, `<p class="muted">${escapeHtml(result.error)}</p>`);
     } else {
-      tableEl.innerHTML = tableHtml(rows);
+      setTable(tableEl, tableHtml(rows), { stickyCols: 1 });
       try { setupPivot(panel, result); } catch { /* table still visible */ }
     }
     qs(panel, ".sql-code").textContent = result.sql_query || "No SQL generated yet.";
@@ -639,7 +748,7 @@
     try {
       fillResultsPanel(panel, result);
     } catch {
-      qs(panel, ".result-table").innerHTML = tableHtml(coerceRows(asRows(result.query_result)));
+      setTable(qs(panel, ".result-table"), tableHtml(coerceRows(asRows(result.query_result))), { stickyCols: 1 });
     }
   }
 
@@ -658,37 +767,82 @@
     appendMessageEl(state.messages[state.messages.length - 1]);
     saveLocal();
 
-    const thinking = document.createElement("div");
-    thinking.className = "message assistant thinking";
-    thinking.textContent = "Thinking...";
-    el("messages").appendChild(thinking);
+    const live = document.createElement("div");
+    live.className = "message assistant streaming";
+    live.innerHTML = `
+      <div class="message-top">
+        <div class="content">
+          <div class="stream-status">Thinking...</div>
+          <div class="stream-body"></div>
+          <span class="stream-caret">▍</span>
+        </div>
+      </div>
+    `;
+    el("messages").appendChild(live);
+    scrollToLatest();
     el("send-btn").disabled = true;
     el("chat-input").disabled = true;
 
+    const statusEl = qs(live, ".stream-status");
+    const bodyEl = qs(live, ".stream-body");
+    let answer = "";
+    let result = null;
+    const starting = !state.hasStarted;
+
     try {
-      let result;
-      if (!state.hasStarted) {
-        result = await api("/conversations", {
-          method: "POST",
-          body: JSON.stringify({
-            question,
-            session_id: state.sessionId,
-          }),
-        });
-        state.hasStarted = true;
-      } else {
-        result = await api(`/conversations/${encodeURIComponent(state.sessionId)}/follow-up`, {
-          method: "POST",
-          body: JSON.stringify({ question }),
-        });
+      const headers = {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      };
+      if (state.token) headers.Authorization = `Bearer ${state.token}`;
+
+      const path = starting
+        ? "/conversations/stream"
+        : `/conversations/${encodeURIComponent(state.sessionId)}/follow-up/stream`;
+      const response = await fetch(path, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(starting ? { question, session_id: state.sessionId } : { question }),
+      });
+
+      if (!response.ok) {
+        let payload = null;
+        try {
+          payload = await response.json();
+        } catch {
+          payload = null;
+        }
+        throw new Error(apiError(payload, `Request failed (${response.status})`));
       }
+
+      if (starting) state.hasStarted = true;
+
+      for await (const event of readSse(response)) {
+        if (event.type === "status" && !answer) {
+          statusEl.textContent = event.text || "Thinking...";
+        } else if (event.type === "token") {
+          statusEl.textContent = "";
+          answer += event.text || "";
+          bodyEl.innerHTML = renderMarkdown(answer);
+          scrollToLatest();
+        } else if (event.type === "result") {
+          result = event.payload || null;
+        } else if (event.type === "error") {
+          throw new Error(event.error || "Stream failed.");
+        }
+      }
+
+      if (!result) {
+        throw new Error("The assistant stream ended before a complete answer arrived.");
+      }
+
       state.sessionId = result.session_id || state.sessionId;
       state.lastResult = result;
       state.queryCount += 1;
       const messageType = result.waiting_for_user ? "clarification" : (result.error ? "error" : "answer");
       addMessage(
         "assistant",
-        result.answer_text || "Done.",
+        result.answer_text || answer || "Done.",
         messageType,
         {
           charts: result.charts || [],
@@ -696,16 +850,16 @@
         },
         result.assistant_message_id,
       );
-      thinking.remove();
+      live.remove();
       appendMessageEl(state.messages[state.messages.length - 1]);
       saveLocal();
     } catch (error) {
-      thinking.remove();
+      live.remove();
       addMessage("assistant", `Unexpected error: ${error.message}`, "error");
       appendMessageEl(state.messages[state.messages.length - 1]);
       toast(error.message, "error");
     } finally {
-      thinking.remove();
+      live.remove();
       el("send-btn").disabled = false;
       el("chat-input").disabled = false;
       el("chat-input").focus();
@@ -909,7 +1063,7 @@
           return;
         }
         if (event.target.closest(".pivot-download")) {
-          downloadText("pivot_result.csv", toCsv(panel._pivotRows || []), "text/csv");
+          downloadText("pivot_result.csv", toCsv(panel._pivotRows || [], panel._pivotColumns), "text/csv");
           return;
         }
       }
@@ -938,7 +1092,11 @@
     el("messages").addEventListener("change", (event) => {
       const panel = event.target.closest(".results-panel");
       if (!panel) return;
-      if (event.target.matches(".pivot-rows, .pivot-cols, .pivot-value, .pivot-agg")) {
+      if (event.target.matches(".pivot-value, .pivot-agg") || event.target.closest(".pivot-options")) {
+        const rowBox = qs(panel, ".pivot-rows");
+        const colBox = qs(panel, ".pivot-cols");
+        if (event.target.closest(".pivot-rows")) uncheckOverlap(rowBox, colBox);
+        if (event.target.closest(".pivot-cols")) uncheckOverlap(colBox, rowBox);
         renderPivot(panel);
       }
       if (event.target.matches(".graph-filter-col")) {

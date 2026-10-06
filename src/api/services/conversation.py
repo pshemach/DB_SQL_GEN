@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
 from typing import Any, Optional
 
 from loguru import logger
 
-from ...agents.graph import run_agent_async
+from ...agents.graph import run_agent_async, run_agent_stream
 from ...agents.tools.chat_memory import chat_memory
 from ...guardrails.pipeline import guardrail_pipeline
 from ...utils.chart_request import detect_requested_chart_type
@@ -108,17 +110,7 @@ async def execute_turn(
     if not guardrail_result.get("passed", False):
         error_text = guardrail_result.get("reason", "Query rejected by safety checks")
         logger.warning(f"Query rejected by guardrails: {error_text}")
-        return {
-            "success": False,
-            "error": error_text,
-            "error_type": "guardrail_rejection",
-            "session_id": session_id,
-            "waiting_for_user": False,
-            "answer_text": error_text,
-            "charts": [],
-            "query_result": None,
-            "turn_type": turn_type,
-        }
+        return _guardrail_failure(error_text, session_id, turn_type)
 
     result = await run_agent_async(
         question=question,
@@ -130,3 +122,89 @@ async def execute_turn(
         turn_type=turn_type,
     )
     return build_turn_response(result, question, session_id)
+
+
+async def iter_answer_tokens(text: str, chunk_size: int = 28) -> AsyncIterator[str]:
+    if not text:
+        return
+    index = 0
+    length = len(text)
+    while index < length:
+        end = min(index + chunk_size, length)
+        if end < length:
+            space = text.find(" ", end)
+            newline = text.find("\n", end)
+            boundaries = [pos for pos in (space, newline) if pos != -1]
+            if boundaries:
+                end = min(boundaries) + 1
+        yield text[index:end]
+        index = end
+        await asyncio.sleep(0.018)
+
+
+def _guardrail_failure(error_text: str, session_id: str, turn_type: str) -> dict[str, Any]:
+    return {
+        "success": False,
+        "error": error_text,
+        "error_type": "guardrail_rejection",
+        "session_id": session_id,
+        "waiting_for_user": False,
+        "answer_text": error_text,
+        "charts": [],
+        "query_result": None,
+        "turn_type": turn_type,
+    }
+
+
+async def stream_turn(
+    *,
+    question: str,
+    session_id: str,
+    user_id: Any = None,
+    user_role: Optional[str] = None,
+    allowed_rep_codes: Optional[list] = None,
+    turn_type: str,
+    clarification_answer: Optional[str] = None,
+) -> AsyncIterator[dict[str, Any]]:
+    yield {"type": "status", "text": "Thinking..."}
+
+    guardrail_context = {
+        "conversation_history": [],
+        "previous_topics": [],
+        "user_role": user_role,
+    }
+    session = chat_memory.get_session(session_id)
+    if session:
+        guardrail_context["conversation_history"] = session.get("messages", [])
+
+    guardrail_result = await guardrail_pipeline.evaluate(question, guardrail_context)
+    if not guardrail_result.get("passed", False):
+        error_text = guardrail_result.get("reason", "Query rejected by safety checks")
+        logger.warning(f"Query rejected by guardrails: {error_text}")
+        payload = _guardrail_failure(error_text, session_id, turn_type)
+        async for token in iter_answer_tokens(error_text):
+            yield {"type": "token", "text": token}
+        yield {"type": "result", "payload": payload}
+        yield {"type": "done"}
+        return
+
+    result_state = None
+    async for event in run_agent_stream(
+        question=question,
+        session_id=session_id,
+        user_role=user_role,
+        allowed_rep_codes=allowed_rep_codes or [],
+        clarification_answer=clarification_answer,
+        user_id=user_id,
+        turn_type=turn_type,
+    ):
+        if event.get("type") == "status":
+            yield event
+        elif event.get("type") == "complete":
+            result_state = event.get("state") or {}
+
+    payload = build_turn_response(result_state or {}, question, session_id)
+    async for token in iter_answer_tokens(payload.get("answer_text") or ""):
+        yield {"type": "token", "text": token}
+    yield {"type": "result", "payload": payload}
+    yield {"type": "done"}

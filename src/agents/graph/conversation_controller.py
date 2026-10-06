@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import AsyncIterator
+from typing import Any
 
 from langgraph.types import Command
 from langsmith import traceable
@@ -13,6 +15,22 @@ from ...utils.metrics import finalize_metrics, init_metrics
 from ...utils.serialization import sanitize_state
 from ...utils.graph_config import build_invoke_config
 from .multiagent_graph import graph
+
+NODE_STATUS = {
+    "init": "Starting...",
+    "memory_loader": "Loading conversation...",
+    "semantic_cache": "Checking previous answers...",
+    "authz": "Checking access...",
+    "turn_router": "Understanding your question...",
+    "sql_pipeline": "Generating and running SQL...",
+    "transform_result": "Updating the previous result...",
+    "formatter": "Writing the answer...",
+    "chitchat": "Writing a reply...",
+    "hitl_clarify": "Need a bit more detail...",
+    "safe_response": "Preparing a response...",
+    "cache_result": "Saving the result...",
+    "save_memory": "Saving the conversation...",
+}
 
 
 def _setup_langsmith():
@@ -159,18 +177,7 @@ async def run_agent_async(
     initial_state["is_follow_up"] = resolved_turn == "follow_up"
 
     try:
-        if (
-            resolved_turn == "follow_up"
-            and clarification_answer
-            and settings.enable_production_graph
-        ):
-            result = await graph.ainvoke(
-                Command(resume=clarification_answer),
-                config,
-            )
-        else:
-            result = await graph.ainvoke(initial_state, config)
-
+        result = await graph.ainvoke(_graph_input(resolved_turn, clarification_answer, initial_state), config)
         finalized = _finalize(result)
         finalized["turn_type"] = resolved_turn
         return finalized
@@ -182,4 +189,81 @@ async def run_agent_async(
             "error": str(e),
             "should_retry": False,
             "turn_type": resolved_turn,
+        }
+
+
+def _graph_input(resolved_turn: str, clarification_answer: str | None, initial_state: dict) -> Any:
+    if (
+        resolved_turn == "follow_up"
+        and clarification_answer
+        and settings.enable_production_graph
+    ):
+        return Command(resume=clarification_answer)
+    return initial_state
+
+
+def _normalize_stream_item(item: Any) -> tuple[str, Any]:
+    if isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], str):
+        return item[0], item[1]
+    return "updates", item
+
+
+async def run_agent_stream(
+    question: str,
+    session_id: str | None = None,
+    allowed_rep_codes: list[str] | None = None,
+    user_role: str | None = None,
+    clarification_answer: str | None = None,
+    user_id: str = None,
+    turn_type: str | None = None,
+) -> AsyncIterator[dict[str, Any]]:
+    session_id = chat_memory.get_or_create_session(session_id)
+    resolved_turn = _resolve_turn_type(session_id, turn_type, clarification_answer)
+
+    if resolved_turn == "follow_up" and not clarification_answer:
+        last_state = chat_memory.get_last_state(session_id) or {}
+        if last_state.get("waiting_for_user"):
+            clarification_answer = question
+
+    config = build_invoke_config(session_id)
+    initial_state = _build_initial_state(
+        question, session_id, allowed_rep_codes, user_role, clarification_answer, user_id
+    )
+    initial_state["is_follow_up"] = resolved_turn == "follow_up"
+    stream_input = _graph_input(resolved_turn, clarification_answer, initial_state)
+    merged: dict[str, Any] = dict(initial_state)
+
+    try:
+        try:
+            stream = graph.astream(stream_input, config, stream_mode=["updates", "values"])
+        except TypeError:
+            stream = graph.astream(stream_input, config, stream_mode="updates")
+
+        async for item in stream:
+            mode, data = _normalize_stream_item(item)
+            if mode == "values" and isinstance(data, dict):
+                merged = data
+                continue
+            if mode != "updates" or not isinstance(data, dict):
+                continue
+            for node_name, update in data.items():
+                label = NODE_STATUS.get(node_name)
+                if label:
+                    yield {"type": "status", "text": label, "node": node_name}
+                if isinstance(update, dict):
+                    merged.update(update)
+
+        finalized = _finalize(merged)
+        finalized["turn_type"] = resolved_turn
+        yield {"type": "complete", "state": finalized}
+    except Exception as e:
+        logger.error(f"Graph stream error: {e}")
+        yield {
+            "type": "complete",
+            "state": {
+                **initial_state,
+                "error": str(e),
+                "should_retry": False,
+                "turn_type": resolved_turn,
+            },
         }
