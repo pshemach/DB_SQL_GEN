@@ -162,7 +162,7 @@ async def run_agent_async(
     user_id: str = None,
     turn_type: str | None = None,
 ) -> dict:
-    session_id = chat_memory.get_or_create_session(session_id)
+    session_id = chat_memory.get_or_create_session(session_id, user_id=user_id, user_role=user_role)
     resolved_turn = _resolve_turn_type(session_id, turn_type, clarification_answer)
 
     if resolved_turn == "follow_up" and not clarification_answer:
@@ -217,7 +217,7 @@ async def run_agent_stream(
     user_id: str = None,
     turn_type: str | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
-    session_id = chat_memory.get_or_create_session(session_id)
+    session_id = chat_memory.get_or_create_session(session_id, user_id=user_id, user_role=user_role)
     resolved_turn = _resolve_turn_type(session_id, turn_type, clarification_answer)
 
     if resolved_turn == "follow_up" and not clarification_answer:

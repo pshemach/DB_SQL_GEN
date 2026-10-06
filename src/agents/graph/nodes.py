@@ -54,6 +54,8 @@ def save_memory_node(state: AgentState) -> dict:
             role="assistant",
             content=assistant_content,
             message_type=message_type,
+            user_id=state.get("user_id"),
+            user_role=state.get("user_role"),
         )
 
     # Save SQL execution once, after successful SQL run
@@ -157,6 +159,8 @@ def memory_loader_node(state: dict) -> dict:
             role="user",
             content=state["question"],
             message_type="question",
+            user_id=state.get("user_id"),
+            user_role=state.get("user_role"),
         )
 
     metrics = record_node_timing(

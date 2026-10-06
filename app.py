@@ -898,6 +898,15 @@ if st.session_state.user is None:
     st.warning("⚠️ Please login first")
     st.stop()
 
+existing_session = chat_memory.get_session(st.session_state.session_id)
+if not st.session_state.chat_memory_initialized or not existing_session.get("user_id"):
+    chat_memory.get_or_create_session(
+        session_id=st.session_state.session_id,
+        user_id=st.session_state.user_id,
+        user_role=st.session_state.user_role
+    )
+    st.session_state.chat_memory_initialized = True
+
 # =============================
 # SIDEBAR
 # =============================
