@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import AsyncIterator
+from typing import Any
 
 from langgraph.types import Command
 from langsmith import traceable
@@ -13,6 +15,22 @@ from ...utils.metrics import finalize_metrics, init_metrics
 from ...utils.serialization import sanitize_state
 from ...utils.graph_config import build_invoke_config
 from .multiagent_graph import graph
+
+NODE_STATUS = {
+    "init": "Starting...",
+    "memory_loader": "Loading conversation...",
+    "semantic_cache": "Checking previous answers...",
+    "authz": "Checking access...",
+    "turn_router": "Understanding your question...",
+    "sql_pipeline": "Generating and running SQL...",
+    "transform_result": "Updating the previous result...",
+    "formatter": "Writing the answer...",
+    "chitchat": "Writing a reply...",
+    "hitl_clarify": "Need a bit more detail...",
+    "safe_response": "Preparing a response...",
+    "cache_result": "Saving the result...",
+    "save_memory": "Saving the conversation...",
+}
 
 
 def _setup_langsmith():
@@ -113,84 +131,132 @@ def _finalize(result: dict) -> dict:
     run_type="chain",
     tags=["text-to-sql", "openai", "anthropic", "production"],
 )
+def _resolve_turn_type(
+    session_id: str,
+    turn_type: str | None,
+    clarification_answer: str | None,
+) -> str:
+    if turn_type in ("start", "follow_up"):
+        return turn_type
+    if clarification_answer:
+        return "follow_up"
+    session = chat_memory.get_session(session_id) or {}
+    if session.get("messages"):
+        return "follow_up"
+    return "start"
+
+
 async def run_agent_async(
     question: str,
     session_id: str | None = None,
     allowed_rep_codes: list[str] | None = None,
     user_role: str | None = None,
     clarification_answer: str | None = None,
-    user_id: str = None
-):
-    session_id = chat_memory.get_or_create_session(session_id)
+    user_id: str = None,
+    turn_type: str | None = None,
+) -> dict:
+    session_id = chat_memory.get_or_create_session(session_id, user_id=user_id, user_role=user_role)
+    resolved_turn = _resolve_turn_type(session_id, turn_type, clarification_answer)
+
+    if resolved_turn == "follow_up" and not clarification_answer:
+        last_state = chat_memory.get_last_state(session_id) or {}
+        if last_state.get("waiting_for_user"):
+            clarification_answer = question
+
     config = build_invoke_config(session_id)
     initial_state = _build_initial_state(
         question, session_id, allowed_rep_codes, user_role, clarification_answer, user_id
     )
+    initial_state["is_follow_up"] = resolved_turn == "follow_up"
 
     try:
-        input_payload = (
-            Command(resume=clarification_answer)
-            if clarification_answer and settings.enable_production_graph
-            else initial_state
-        )
-
-        final_state = dict(initial_state)
-
-        async for event in graph.astream(
-            input_payload,
-            config,
-            stream_mode="updates",
-        ):
-            if not isinstance(event, dict):
-                continue
-
-            for node_name, node_state in event.items():
-                if not isinstance(node_state, dict):
-                    continue
-
-                final_state.update(node_state)
-
-                if node_state.get("error"):
-                    yield {
-                        "type": "error",
-                        "node": node_name,
-                        "error": node_state.get("error"),
-                        "should_retry": False,
-                    }
-
-                elif node_state.get("waiting_for_user") or node_state.get("question_to_user"):
-                    yield {
-                        "type": "clarification",
-                        "node": node_name,
-                        "question_to_user": node_state.get("question_to_user"),
-                        "gap_type": node_state.get("gap_type"),
-                    }
-
-                elif node_state.get("final_answer"):
-                    yield {
-                        "type": "answer",
-                        "node": node_name,
-                        "text": node_state.get("final_answer"),
-                    }
-
-                else:
-                    yield {
-                        "type": "status",
-                        "node": node_name,
-                        "message": f"{node_name} completed",
-                    }
-
-        finalized = _finalize(final_state)
-
-        yield {
-            "type": "final",
-            "result": finalized,
-        }
+        result = await graph.ainvoke(_graph_input(resolved_turn, clarification_answer, initial_state), config)
+        finalized = _finalize(result)
+        finalized["turn_type"] = resolved_turn
+        return finalized
 
     except Exception as e:
         logger.error(f"Graph execution error: {e}")
-        yield {
-            "type": "error",
+        return {
+            **initial_state,
             "error": str(e),
             "should_retry": False,
+            "turn_type": resolved_turn,
+        }
+
+
+def _graph_input(resolved_turn: str, clarification_answer: str | None, initial_state: dict) -> Any:
+    if (
+        resolved_turn == "follow_up"
+        and clarification_answer
+        and settings.enable_production_graph
+    ):
+        return Command(resume=clarification_answer)
+    return initial_state
+
+
+def _normalize_stream_item(item: Any) -> tuple[str, Any]:
+    if isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], str):
+        return item[0], item[1]
+    return "updates", item
+
+
+async def run_agent_stream(
+    question: str,
+    session_id: str | None = None,
+    allowed_rep_codes: list[str] | None = None,
+    user_role: str | None = None,
+    clarification_answer: str | None = None,
+    user_id: str = None,
+    turn_type: str | None = None,
+) -> AsyncIterator[dict[str, Any]]:
+    session_id = chat_memory.get_or_create_session(session_id, user_id=user_id, user_role=user_role)
+    resolved_turn = _resolve_turn_type(session_id, turn_type, clarification_answer)
+
+    if resolved_turn == "follow_up" and not clarification_answer:
+        last_state = chat_memory.get_last_state(session_id) or {}
+        if last_state.get("waiting_for_user"):
+            clarification_answer = question
+
+    config = build_invoke_config(session_id)
+    initial_state = _build_initial_state(
+        question, session_id, allowed_rep_codes, user_role, clarification_answer, user_id
+    )
+    initial_state["is_follow_up"] = resolved_turn == "follow_up"
+    stream_input = _graph_input(resolved_turn, clarification_answer, initial_state)
+    merged: dict[str, Any] = dict(initial_state)
+
+    try:
+        try:
+            stream = graph.astream(stream_input, config, stream_mode=["updates", "values"])
+        except TypeError:
+            stream = graph.astream(stream_input, config, stream_mode="updates")
+
+        async for item in stream:
+            mode, data = _normalize_stream_item(item)
+            if mode == "values" and isinstance(data, dict):
+                merged = data
+                continue
+            if mode != "updates" or not isinstance(data, dict):
+                continue
+            for node_name, update in data.items():
+                label = NODE_STATUS.get(node_name)
+                if label:
+                    yield {"type": "status", "text": label, "node": node_name}
+                if isinstance(update, dict):
+                    merged.update(update)
+
+        finalized = _finalize(merged)
+        finalized["turn_type"] = resolved_turn
+        yield {"type": "complete", "state": finalized}
+    except Exception as e:
+        logger.error(f"Graph stream error: {e}")
+        yield {
+            "type": "complete",
+            "state": {
+                **initial_state,
+                "error": str(e),
+                "should_retry": False,
+                "turn_type": resolved_turn,
+            },
         }

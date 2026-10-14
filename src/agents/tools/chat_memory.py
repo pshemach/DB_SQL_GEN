@@ -7,6 +7,13 @@ from sqlalchemy import text
 from ...core.database import db_manager
 
 
+def _normalize_user_id(user_id: Any) -> Optional[str]:
+    if user_id is None:
+        return None
+    text_id = str(user_id).strip()
+    return text_id or None
+
+
 class MySQLSessionStore:
     """Handles MySQL persistence for chat sessions with feedback."""
     
@@ -128,7 +135,7 @@ class MySQLSessionStore:
         user_role: Optional[str] = None
     ):
         try:
-            effective_user_id = user_id or session_data.get("user_id")
+            effective_user_id = _normalize_user_id(user_id) or _normalize_user_id(session_data.get("user_id"))
             effective_user_role = user_role or session_data.get("user_role")
 
             if not effective_user_id:
@@ -166,7 +173,7 @@ class MySQLSessionStore:
         except Exception as e:
             logger.error(f"Error saving session {session_id}: {e}")
     
-    def save_sql_execution(self, session_id: str, user_id: str, sql_query: str, result: Any, execution_time_ms: float, success: bool = True, error_message: Optional[str] = None):
+    def save_sql_execution(self, session_id: str, user_id: str, sql_query: str, result: Any, execution_time_ms: float, success: bool = True, error_message: Optional[str] = None) -> bool:
         """Save SQL query execution to dedicated table."""
         try:
             insert_sql = f"""
@@ -178,7 +185,7 @@ class MySQLSessionStore:
             with db_manager.engine.begin() as conn:
                 conn.execute(text(insert_sql), {
                     "session_id": session_id,
-                    "user_id": user_id,
+                    "user_id": _normalize_user_id(user_id),
                     "sql_query": sql_query,
                     "execution_result": json.dumps(result) if result else None,
                     "execution_time_ms": execution_time_ms,
@@ -187,8 +194,10 @@ class MySQLSessionStore:
                     "created_at": datetime.utcnow().isoformat()
                 })
                 logger.info(f"✓ SQL execution logged for session {session_id}")
+            return True
         except Exception as e:
             logger.error(f"Error saving SQL execution: {e}")
+            return False
     
     def update_session_latest_sql(self, session_id: str, sql_query: str, result: Any, execution_time_ms: float, success: bool = True):
         """Update the latest SQL query in session."""
@@ -240,7 +249,7 @@ class MySQLSessionStore:
             with db_manager.engine.begin() as conn:
                 conn.execute(text(insert_sql), {
                     "session_id": session_id,
-                    "user_id": user_id,
+                    "user_id": _normalize_user_id(user_id),
                     "message_id": message_id,
                     "message_type": message_type,
                     "message_content": message_content,
@@ -488,7 +497,7 @@ class MySQLSessionStore:
             with db_manager.engine.begin() as conn:
                 conn.execute(text(insert_sql), {
                     "session_id": session_id,
-                    "user_id": user_id,
+                    "user_id": _normalize_user_id(user_id),
                     "message_id": message_id,
                     "role": role,
                     "message_type": message_type,
@@ -539,37 +548,49 @@ class ChatMemoryStore:
         self.mysql_store = MySQLSessionStore()
 
     def get_or_create_session(self, session_id: Optional[str] = None, user_id: Optional[str] = None, user_role: Optional[str] = None) -> str:
-        if session_id and session_id in self.sessions:
-            return session_id
-
         new_session_id = session_id or str(uuid4())
+        normalized_user_id = _normalize_user_id(user_id)
+        created = False
+        identity_updated = False
 
-        # Try to load from MySQL first
-        mysql_session = self.mysql_store.load_session(new_session_id)
-        
-        if mysql_session:
-            self.sessions[new_session_id] = mysql_session
-            logger.info(f"✓ Loaded session {new_session_id} from MySQL")
-        else:
-            # Create new session
-            self.sessions[new_session_id] = {
-                "user_id": user_id,
-                "user_role": user_role,
-                "messages": [],
-                "clarifications": [],
-                "knowledge_gaps": [],
-                "discovered_knowledge": [],
-                "last_state": None,
-                "total_likes": 0,
-                "total_dislikes": 0,
-                "average_satisfaction": 0,
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat()
-            }
-            
-            # Save to MySQL
-            self.mysql_store.save_session(new_session_id, self.sessions[new_session_id], user_id, user_role)
-            logger.info(f"✓ Created and saved session {new_session_id} for user {user_id}")
+        if new_session_id not in self.sessions:
+            mysql_session = self.mysql_store.load_session(new_session_id)
+            if mysql_session:
+                self.sessions[new_session_id] = mysql_session
+                logger.info(f"✓ Loaded session {new_session_id} from MySQL")
+            else:
+                self.sessions[new_session_id] = {
+                    "user_id": normalized_user_id,
+                    "user_role": user_role,
+                    "messages": [],
+                    "clarifications": [],
+                    "knowledge_gaps": [],
+                    "discovered_knowledge": [],
+                    "last_state": None,
+                    "total_likes": 0,
+                    "total_dislikes": 0,
+                    "average_satisfaction": 0,
+                    "created_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+                created = True
+
+        session = self.sessions[new_session_id]
+        if normalized_user_id and not _normalize_user_id(session.get("user_id")):
+            session["user_id"] = normalized_user_id
+            identity_updated = True
+        if user_role and not session.get("user_role"):
+            session["user_role"] = user_role
+            identity_updated = True
+
+        if (created or identity_updated) and session.get("user_id"):
+            self.mysql_store.save_session(
+                new_session_id,
+                session,
+                user_id=session.get("user_id"),
+                user_role=session.get("user_role"),
+            )
+            logger.info(f"✓ Created and saved session {new_session_id} for user {session.get('user_id')}")
 
         return new_session_id
 
@@ -584,9 +605,19 @@ class ChatMemoryStore:
         return self.sessions.get(session_id, {}).get("last_state")
 
     def set_last_state(self, session_id: str, state: Dict[str, Any]):
+        self.get_or_create_session(
+            session_id,
+            user_id=(state or {}).get("user_id"),
+            user_role=(state or {}).get("user_role"),
+        )
         self.sessions[session_id]["last_state"] = state
         self.sessions[session_id]["updated_at"] = datetime.utcnow().isoformat()
-        self.mysql_store.save_session(session_id, self.sessions[session_id])
+        self.mysql_store.save_session(
+            session_id,
+            self.sessions[session_id],
+            user_id=self.sessions[session_id].get("user_id"),
+            user_role=self.sessions[session_id].get("user_role"),
+        )
 
     def add_message(
         self,
@@ -594,14 +625,15 @@ class ChatMemoryStore:
         role: str,
         content: str,
         message_type: str = "message",
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
+        user_role: Optional[str] = None,
     ) -> str:
         if message_type in ["sql", "plan"]:
             logger.warning(f"Prevented {message_type} from being saved as conversational message.")
             return ""
 
-        if session_id not in self.sessions:
-            self.get_or_create_session(session_id)
+        self.get_or_create_session(session_id, user_id=user_id, user_role=user_role)
 
         message_id = str(uuid4())
 
@@ -618,11 +650,13 @@ class ChatMemoryStore:
         self.sessions[session_id]["messages"].append(message)
         self.sessions[session_id]["updated_at"] = datetime.utcnow().isoformat()
 
-        user_id = self.sessions[session_id].get("user_id")
+        session_user_id = _normalize_user_id(user_id) or _normalize_user_id(
+            self.sessions[session_id].get("user_id")
+        )
 
         message_saved = self.mysql_store.save_message(
             session_id=session_id,
-            user_id=user_id,
+            user_id=session_user_id,
             message_id=message_id,
             role=role,
             message_type=message_type,
@@ -632,16 +666,16 @@ class ChatMemoryStore:
 
         if not message_saved:
             logger.error(f"Message was NOT saved to DB: {message_id}")
+        else:
+            logger.info(f"✓ Message stored: {role} - {message_type} (ID: {message_id})")
 
         # save session JSON also
         self.mysql_store.save_session(
             session_id,
             self.sessions[session_id],
-            user_id=user_id,
-            user_role=self.sessions[session_id].get("user_role")
+            user_id=session_user_id,
+            user_role=user_role or self.sessions[session_id].get("user_role")
         )
-
-        logger.info(f"✓ Message stored: {role} - {message_type} (ID: {message_id})")
 
         return message_id
 
@@ -650,7 +684,9 @@ class ChatMemoryStore:
         if feedback_type not in ["like", "dislike"]:
             logger.error(f"Invalid feedback type: {feedback_type}")
             return
-        
+
+        self.get_or_create_session(session_id, user_id=user_id)
+
         saved = self.mysql_store.save_feedback(
             session_id,
             user_id,
@@ -689,8 +725,9 @@ class ChatMemoryStore:
         execution_time_ms: float
     ):
         execution_time_ms = execution_time_ms or 0
+        self.get_or_create_session(session_id, user_id=user_id)
 
-        self.mysql_store.save_sql_execution(
+        saved = self.mysql_store.save_sql_execution(
             session_id=session_id,
             user_id=user_id,
             sql_query=sql,
@@ -707,10 +744,12 @@ class ChatMemoryStore:
             success=True
         )
 
-        logger.info(f"✓ SQL execution saved: {execution_time_ms:.2f}ms")
+        if saved:
+            logger.info(f"✓ SQL execution saved: {execution_time_ms:.2f}ms")
 
     def save_sql_execution_error(self, session_id: str, user_id: str, sql: str, error: str, execution_time_ms: float):
         """Save failed SQL execution."""
+        self.get_or_create_session(session_id, user_id=user_id)
         self.mysql_store.save_sql_execution(session_id, user_id, sql, None, execution_time_ms, success=False, error_message=error)
         self.mysql_store.update_session_latest_sql(session_id, sql, {"error": error}, execution_time_ms, success=False)
         logger.warning(f"⚠ SQL error: {error}")

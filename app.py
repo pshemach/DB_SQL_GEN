@@ -23,13 +23,16 @@ except Exception:
 from datetime import datetime
 from uuid import uuid4
 import asyncio
+import json
 import uuid
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.io as pio
 from loguru import logger
 from typing import Optional, Dict, Any
 
+from src.utils.chart_request import detect_requested_chart_type
 from src.agents.tools.business_knowledge_store import business_knowledge_store
 from src.agents.tools.chat_memory import chat_memory
 from ui.agent_runner import stream_async_agent
@@ -197,6 +200,58 @@ def add_message(
     })
 
     return message_id
+
+
+_CHART_TYPE_LABELS = {
+    "bar": "Bar",
+    "horizontal_bar": "Horizontal Bar",
+    "line": "Line",
+    "pie": "Pie",
+    "scatter": "Scatter",
+}
+
+
+def charts_for_message(result: dict, question: str) -> list:
+    """Keep plotly figures only when the user asked for a chart type."""
+    requested = result.get("requested_chart_type") or detect_requested_chart_type(question)
+    if not requested:
+        return []
+
+    charts = []
+    for viz in result.get("visualizations") or []:
+        chart_json = viz.get("chart_json")
+        if not chart_json:
+            continue
+        config = viz.get("visualization_config") or {}
+        charts.append({
+            "title": viz.get("title"),
+            "chart_type": config.get("chart_type") or requested,
+            "chart_json": chart_json,
+        })
+    return charts
+
+
+def render_charts_below_text(charts: list, key_prefix: str) -> None:
+    if not charts:
+        return
+
+    for index, chart in enumerate(charts):
+        title = chart.get("title")
+        if title:
+            st.markdown(f"**{title}**")
+
+        raw = chart.get("chart_json")
+        try:
+            figure_json = raw if isinstance(raw, str) else json.dumps(raw)
+            fig = pio.from_json(figure_json)
+            fig.update_layout(height=460)
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                key=f"{key_prefix}_chart_{index}",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to render chart under answer: {e}")
 
 
 def format_agent_response(result: dict) -> str:
@@ -633,7 +688,7 @@ def render_message_with_feedback(message: Dict, session_id: str, user_id: str):
             selected_feedback = st.session_state.get(feedback_key)
 
             with col_content:
-                st.write(content)
+                st.markdown(content)
 
             with col_like:
                 if st.button(
@@ -673,7 +728,12 @@ def render_message_with_feedback(message: Dict, session_id: str, user_id: str):
                     # st.warning("Feedback saved.")
                     st.rerun()
         else:
-            st.write(content)
+            st.markdown(content or "")
+
+        render_charts_below_text(
+            (message.get("metadata") or {}).get("charts") or [],
+            key_prefix=message_id or "chart",
+        )
                 
                 
 # =============================
@@ -854,6 +914,15 @@ if st.session_state.user is None:
     st.warning("⚠️ Please login first")
     st.stop()
 
+existing_session = chat_memory.get_session(st.session_state.session_id)
+if not st.session_state.chat_memory_initialized or not existing_session.get("user_id"):
+    chat_memory.get_or_create_session(
+        session_id=st.session_state.session_id,
+        user_id=st.session_state.user_id,
+        user_role=st.session_state.user_role
+    )
+    st.session_state.chat_memory_initialized = True
+
 # =============================
 # SIDEBAR
 # =============================
@@ -1017,36 +1086,27 @@ if user_question:
                 st.session_state.last_result = final_result
                 st.session_state.query_count += 1
 
-                assistant_text = format_agent_response(final_result)
-
-                if assistant_text:
-                    rendered_text = ""
-                    for char in assistant_text:
-                        rendered_text += char
-                        answer_placeholder.markdown(rendered_text + "▌")
-                        time.sleep(0.01)
-                    answer_placeholder.markdown(rendered_text)
-                else:
-                    answer_placeholder.markdown("Done.")
+                assistant_text = format_agent_response(result)
+                st.markdown(assistant_text)
 
                 current_message_type = (
                     "clarification" if final_result.get("waiting_for_user") else "answer"
                 )
 
-                assistant_message_id = final_result.get("assistant_message_id")
+                assistant_message_id = result.get("assistant_message_id")
 
                 if assistant_message_id:
                     add_message(
                         "assistant",
                         assistant_text,
                         current_message_type,
-                        message_id=assistant_message_id,
+                        message_id=assistant_message_id
                     )
                 else:
                     add_message(
                         "assistant",
                         assistant_text,
-                        current_message_type,
+                        current_message_type
                     )
                     logger.warning("assistant_message_id missing from backend result; feedback will not link to DB message.")
 
@@ -1224,12 +1284,12 @@ if result:
                                     key=f"graph_y_col_{graph_key}"
                                 )
 
-                            with col_c:
-                                chart_type = st.selectbox(
-                                    "Chart Type",
-                                    options=["Auto", "Bar", "Horizontal Bar", "Line", "Pie", "Scatter"],
-                                    key=f"chart_type_{graph_key}"
-                                )
+                        with col_c:
+                            chart_type = st.selectbox(
+                                "Chart Type",
+                                options=["Auto", "Bar", "Horizontal Bar", "Line", "Pie", "Scatter"],
+                                key=f"chart_type_{graph_key}"
+                            )
 
                             chart_df = chart_df.dropna(subset=[y_col])
 

@@ -32,6 +32,7 @@ Sales analytics topics (IN-SCOPE):
 - Business/revenue analytics
 - System/database questions about sales data
 - Reps, customers, products related data
+- Data visualization requests
 
 Non-sales topics (OUT-OF-SCOPE):
 - General knowledge unrelated to sales
@@ -170,24 +171,42 @@ class ContextAwareClassifier(BaseGuardrail):
         logger.warning(f"Could not extract JSON from text: {text[:300]}")
         return None
     
-    def _summarize_conversation(self, history: list, max_chars: int = 500) -> str:
-        """Create brief summary of conversation history."""
+    @staticmethod
+    def _message_text(message) -> str:
+        if isinstance(message, dict):
+            return (message.get("content") or message.get("question") or "").strip()
+        return str(message).strip()
+
+    @staticmethod
+    def _message_role(message) -> str:
+        if isinstance(message, dict):
+            return (message.get("role") or "user").strip()
+        return "user"
+
+    def _summarize_conversation(self, history: list, max_chars: int = 800) -> str:
+        """Use the stored role and content, including the assistant reply."""
         if not history:
             return "No previous conversation"
-        
-        summary = "; ".join([
-            f"Q: {h.get('question', '')[:50]}"
-            for h in history[-3:]  # Last 3 exchanges
-        ])
+
+        lines = []
+        for message in history[-6:]:
+            text = self._message_text(message)
+            if not text:
+                continue
+            lines.append(f"{self._message_role(message)}: {text[:180]}")
+
+        summary = "; ".join(lines)
         return summary[:max_chars] if summary else "No previous conversation"
-    
+
     def _extract_previous_topics(self, history: list) -> list:
-        """Extract main topics from conversation."""
+        """Recent user messages, taken from the stored content field."""
         topics = []
-        for msg in history[-10:]:  # Last 10 messages
-            q = msg.get("question", "").lower() if isinstance(msg, dict) else str(msg).lower()
-            if any(kw in q for kw in ["sales", "rep", "productivity", "revenue", "outlet", "kpi"]):
-                topics.append(msg.get("question", "") if isinstance(msg, dict) else str(msg))
+        for message in history[-10:]:
+            if isinstance(message, dict) and message.get("role") not in (None, "user"):
+                continue
+            text = self._message_text(message)
+            if text:
+                topics.append(text[:120])
         return topics
     
     def get_rejection_message(self) -> str:

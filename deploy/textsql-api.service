@@ -1,0 +1,15 @@
+[Unit]
+Description=Text-to-SQL FastAPI (api.py)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Desktop/ML-Projects/DB_SQL_GEN
+ExecStart=/root/Desktop/ML-Projects/DB_SQL_GEN/.venv/bin/uvicorn src.api:app --host 0.0.0.0 --port 8588
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

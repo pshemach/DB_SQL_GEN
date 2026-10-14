@@ -1,199 +1,247 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>SFA SmartAnalyst</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EVision Agent</title>
+  <link rel="stylesheet" href="/static/css/app.css?v=11" />
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Toggle sidebar">☰</button>
 
-    <link rel="stylesheet" href="style.css" />
-  </head>
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">💬</div>
+        <div>
+          <h2>EVision Agent</h2>
+          <p>Sales intelligence</p>
+        </div>
+      </div>
 
-  <body>
-    <div class="layout">
-      <!-- SIDEBAR -->
-      <aside class="sidebar">
-        <div class="brand">
-          <div class="brand-logo">S</div>
-          <div>
-            <h2>SFA SmartAnalyst</h2>
-            <p>Sales Intelligence Assistant</p>
+      <section class="panel">
+        <h3>👤 Login</h3>
+        <div id="login-form">
+          <div class="segmented" role="tablist">
+            <button type="button" class="segment active" data-login-method="phone">Phone Number</button>
+            <button type="button" class="segment" data-login-method="system">User Login</button>
           </div>
+
+          <form id="phone-login" class="stack">
+            <label>
+              Phone Number
+              <input type="text" name="phone_no" placeholder="0718543880" autocomplete="tel" />
+            </label>
+            <button type="submit" class="btn primary block">Login</button>
+          </form>
+
+          <form id="system-login" class="stack hidden">
+            <label>
+              Username
+              <input type="text" name="username" autocomplete="username" />
+            </label>
+            <label>
+              Password
+              <input type="password" name="password" autocomplete="current-password" />
+            </label>
+            <button type="submit" class="btn primary block">Login</button>
+          </form>
         </div>
 
-        <!-- LOGIN -->
-        <section id="loginBox" class="panel">
-          <h3>Login</h3>
-
-          <div class="login-tabs">
-            <button
-              type="button"
-              id="phoneModeBtn"
-              class="active"
-              onclick="showLoginMode('phone')"
-            >
-              Phone
-            </button>
-            <button
-              type="button"
-              id="systemModeBtn"
-              onclick="showLoginMode('system')"
-            >
-              User Login
-            </button>
+        <div id="logged-in" class="hidden">
+          <div class="success-box">
+            ✅ Logged in as: <strong id="user-name"></strong>
           </div>
+          <p class="muted">Role: <span id="user-role"></span></p>
+          <p class="muted">Login method: <span id="login-method"></span></p>
+          <details class="expander">
+            <summary>Allowed Rep Codes</summary>
+            <p id="rep-codes" class="wrap"></p>
+          </details>
+          <button type="button" id="logout-btn" class="btn danger block">Logout</button>
+        </div>
+      </section>
 
-          <div id="phoneLogin">
-            <label>Phone Number</label>
-            <input id="phoneNo" type="text" placeholder="0718543880" />
-            <button type="button" class="primary-btn" onclick="loginPhone()">
-              Login
-            </button>
+      <section class="panel hidden" id="session-panel">
+        <h3>⚙️ Session</h3>
+        <label>
+          Session ID
+          <input type="text" id="session-id" disabled />
+        </label>
+        <button type="button" id="new-chat-btn" class="btn block">🔄 New Chat</button>
+      </section>
+
+      <section class="panel hidden" id="kb-panel">
+        <h3>📘 Business Knowledge Base</h3>
+        <div class="kb-actions">
+          <button type="button" id="kb-reload-btn" class="btn block">🔄 Reload KB</button>
+          <button type="button" id="kb-add-btn" class="btn block">➕ Add KPI Definition</button>
+        </div>
+        <label>
+          Select KPI definition
+          <select id="kb-select"></select>
+        </label>
+        <div class="row kb-edit-row">
+          <button type="button" id="kb-edit-btn" class="btn">✏️ Edit</button>
+          <button type="button" id="kb-delete-btn" class="btn danger">🗑️ Delete</button>
+        </div>
+        <details class="expander">
+          <summary>View Definition</summary>
+          <p class="label">Keywords</p>
+          <p id="kb-keywords" class="wrap"></p>
+          <p class="label">Definition</p>
+          <pre id="kb-definition"></pre>
+        </details>
+      </section>
+    </aside>
+
+    <main class="main">
+      <div class="main-scroll">
+      <header class="hero">
+        <h1>SFA SmartAnalyst</h1>
+        <p>Your AI-Powered Sales Intelligence Assistant</p>
+      </header>
+
+      <section id="kb-editor" class="card hidden">
+        <h2 id="kb-editor-title">➕ Add KPI Definition</h2>
+        <form id="kb-editor-form" class="stack">
+          <label>
+            KPI Key
+            <input type="text" name="key" placeholder="productive_calls, outlet_productivity" />
+          </label>
+          <label>
+            Keywords
+            <textarea name="keywords" rows="5" placeholder="Enter one keyword per line"></textarea>
+          </label>
+          <label>
+            Definition
+            <textarea name="definition" rows="10" placeholder="Write business meaning, formula, filters, aggregation rules, and defaults"></textarea>
+          </label>
+          <details class="expander">
+            <summary>📋 Definition Template</summary>
+            <pre class="template">&lt;KPI Name&gt; measures ...
+
+Calculation:
+- Step 1:
+- Step 2:
+
+Filters:
+- Use current month if no time period is specified.
+- Apply RepCode when the question refers to a rep or says "my".
+
+Aggregation:
+- Explain whether this is single-level or multi-level aggregation.
+
+Exclusions:
+- Exclude returns unless specifically requested.</pre>
+          </details>
+          <div class="row">
+            <button type="submit" class="btn primary">💾 Save</button>
+            <button type="button" id="kb-cancel-btn" class="btn">Cancel</button>
           </div>
+        </form>
+      </section>
 
-          <div id="systemLogin" class="hidden">
-            <label>Username</label>
-            <input id="username" type="text" placeholder="Username" />
+      <div id="login-gate" class="banner warning">⚠️ Please login first</div>
 
-            <label>Password</label>
-            <input id="password" type="password" placeholder="Password" />
+      <section id="workspace" class="hidden">
+        <div id="messages" class="messages"></div>
+      </section>
+      </div>
 
-            <button type="button" class="primary-btn" onclick="loginSystem()">
-              Login
-            </button>
+      <form id="chat-form" class="chat-form hidden">
+        <textarea id="chat-input" rows="1" placeholder="Ask a sales/business question..." required></textarea>
+        <button type="submit" class="btn primary" id="send-btn">Send</button>
+      </form>
+    </main>
+  </div>
+
+  <div id="toasts" class="toasts"></div>
+  <template id="results-template">
+    <section class="results-panel card">
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab active" data-tab="table">Extracted Table</button>
+        <button type="button" class="tab" data-tab="graph">Graph</button>
+        <button type="button" class="tab" data-tab="sql">SQL</button>
+        <button type="button" class="tab" data-tab="plan">Plan</button>
+      </div>
+
+      <div class="tab-panel" data-panel="table">
+        <h3 class="table-title">Extracted Table</h3>
+        <div class="result-table table-wrap"></div>
+        <button type="button" class="table-download btn">⬇️ Download CSV</button>
+        <details class="expander pivot-expander">
+          <summary>📊 Create Pivot Table</summary>
+          <div class="pivot-controls">
+            <fieldset class="pivot-field">
+              <legend>Rows</legend>
+              <div class="pivot-options pivot-rows"></div>
+            </fieldset>
+            <fieldset class="pivot-field">
+              <legend>Columns</legend>
+              <div class="pivot-options pivot-cols"></div>
+            </fieldset>
+            <label>Values <select class="pivot-value"></select></label>
+            <label>Aggregation
+              <select class="pivot-agg">
+                <option value="sum">sum</option>
+                <option value="mean">mean</option>
+                <option value="count">count</option>
+                <option value="min">min</option>
+                <option value="max">max</option>
+              </select>
+            </label>
           </div>
+          <div class="pivot-table table-wrap"></div>
+          <button type="button" class="pivot-download btn">⬇️ Download Pivot CSV</button>
+        </details>
+      </div>
 
-          <p id="loginMessage" class="error-text"></p>
-        </section>
+      <div class="tab-panel hidden" data-panel="graph">
+        <h3>Graph View</h3>
+        <div class="grid-4">
+          <label>Optional Filter Column <select class="graph-filter-col"></select></label>
+          <label class="graph-filter-values-wrap hidden">Filter values <select class="graph-filter-values" multiple></select></label>
+          <label>X Axis / Label <select class="graph-x"></select></label>
+          <label>Y Axis / Metric <select class="graph-y"></select></label>
+          <label>Chart Type
+            <select class="graph-type">
+              <option>Auto</option>
+              <option>Bar</option>
+              <option>Horizontal Bar</option>
+              <option>Line</option>
+              <option>Pie</option>
+              <option>Scatter</option>
+            </select>
+          </label>
+        </div>
+        <label class="slider-label">
+          Rows to show
+          <input type="range" class="graph-topn" min="1" max="20" value="20" />
+          <span class="graph-topn-value">20</span>
+        </label>
+        <div class="graph-chart chart"></div>
+        <h4>Chart Data</h4>
+        <div class="graph-data table-wrap"></div>
+        <details class="expander">
+          <summary>Detected Columns</summary>
+          <pre class="graph-meta code"></pre>
+        </details>
+      </div>
 
-        <!-- USER -->
-        <section id="userBox" class="panel hidden">
-          <h3>User</h3>
-          <p class="user-name" id="userName"></p>
-          <p class="muted" id="userRole"></p>
-          <p class="muted" id="loginMethod"></p>
+      <div class="tab-panel hidden" data-panel="sql">
+        <pre class="sql-code code"></pre>
+        <button type="button" class="sql-download btn">⬇️ Download SQL</button>
+      </div>
 
-          <button type="button" class="primary-btn" onclick="newChat()">
-            New Chat
-          </button>
-          <button type="button" class="secondary-btn" onclick="logout()">
-            Logout
-          </button>
-        </section>
-
-        <!-- FEEDBACK STATS -->
-        <section id="feedbackStatsBox" class="panel hidden">
-          <h3>Session Feedback</h3>
-
-          <div class="stats-grid">
-            <div>
-              <span>👍</span>
-              <strong id="likes">0</strong>
-            </div>
-            <div>
-              <span>👎</span>
-              <strong id="dislikes">0</strong>
-            </div>
-            <div>
-              <span>😊</span>
-              <strong id="satisfaction">0%</strong>
-            </div>
-          </div>
-        </section>
-
-        <!-- KB EDITOR - HIDDEN FOR REPS -->
-        <section id="kbBox" class="panel hidden">
-          <h3>Business Knowledge Base</h3>
-
-          <button type="button" class="secondary-btn" onclick="loadKb()">
-            Reload KB
-          </button>
-          <button type="button" class="primary-btn" onclick="showKbForm()">
-            Add / Edit KPI
-          </button>
-
-          <label>KPI Definitions</label>
-          <select id="kbSelect" onchange="loadSelectedKb()"></select>
-
-          <div id="kbView" class="kb-view"></div>
-
-          <div id="kbForm" class="hidden kb-form">
-            <label>KPI Key</label>
-            <input id="kbKey" type="text" placeholder="productive_calls" />
-
-            <label>Keywords</label>
-            <textarea
-              id="kbKeywords"
-              placeholder="One keyword per line"
-            ></textarea>
-
-            <label>Definition</label>
-            <textarea
-              id="kbDefinition"
-              placeholder="Write KPI definition"
-            ></textarea>
-
-            <button type="button" class="primary-btn" onclick="saveKb()">
-              Save
-            </button>
-            <button type="button" class="secondary-btn" onclick="cancelKb()">
-              Cancel
-            </button>
-            <button type="button" class="danger-btn" onclick="deleteKb()">
-              Delete
-            </button>
-          </div>
-        </section>
-      </aside>
-
-      <!-- MAIN -->
-      <main class="main">
-        <header class="topbar">
-          <div>
-            <h1>Chat</h1>
-            <p id="sessionText"></p>
-          </div>
-        </header>
-
-        <section id="messages" class="messages"></section>
-
-        <section class="chat-input-row">
-          <input
-            id="questionInput"
-            type="text"
-            placeholder="Ask a sales/business question..."
-          />
-          <button type="button" onclick="sendQuestion()">Send</button>
-        </section>
-
-        <section id="resultBox" class="result-box hidden">
-          <div class="result-tabs">
-            <button
-              type="button"
-              id="tableTabBtn"
-              class="active"
-              onclick="showTab('table')"
-            >
-              Table
-            </button>
-            <button type="button" id="chartTabBtn" onclick="showTab('chart')">
-              Chart
-            </button>
-            <button type="button" id="sqlTabBtn" onclick="showTab('sql')">
-              SQL
-            </button>
-            <button type="button" id="planTabBtn" onclick="showTab('plan')">
-              Plan
-            </button>
-          </div>
-
-          <div id="tableTab" class="tab-content"></div>
-          <div id="chartTab" class="tab-content hidden"></div>
-          <pre id="sqlTab" class="tab-content hidden"></pre>
-          <pre id="planTab" class="tab-content hidden"></pre>
-        </section>
-      </main>
-    </div>
-
-    <script src="app.js"></script>
-  </body>
+      <div class="tab-panel hidden" data-panel="plan">
+        <pre class="plan-text code"></pre>
+      </div>
+    </section>
+  </template>
+  <script src="/static/js/app.js?v=11"></script>
+</body>
 </html>

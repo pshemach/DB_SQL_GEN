@@ -33,6 +33,13 @@ Example, if your current branch is `dev`:
 git pull origin dev
 ```
 
+Restart both hosted apps after the pull:
+
+```bash
+sudo systemctl restart textsql-streamlit textsql-api
+sudo systemctl status textsql-streamlit textsql-api --no-pager
+```
+
 ---
 
 ## If you have local changes and want to keep them
@@ -90,3 +97,5 @@ git clean -fd
 - `git stash` is safer when you have local uncommitted changes.
 - `git reset --hard` removes local modifications.
 - `git clean -fd` removes untracked files and folders.
+- Streamlit UI runs as `textsql-streamlit` on port `8582`.
+- FastAPI runs as `textsql-api` on port `8588`. Always restart both after a code update.
