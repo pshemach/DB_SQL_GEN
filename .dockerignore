@@ -1,0 +1,38 @@
+# Git and version control
+.git
+.gitignore
+.github
+
+# Python cache and virtual environments
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+.venv
+venv
+env
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project-specific
+cache/
+research/
+*.db
+*.sqlite3
+.env
+.env.local
+
+# Build and test artifacts
+.pytest_cache
+.coverage
+htmlcov/
+dist/
+build/

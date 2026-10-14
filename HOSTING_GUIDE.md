@@ -2,9 +2,9 @@
 
 Host both apps with `systemd` so they keep running after SSH logout and restart on failure or server reboot.
 
-| App | File | Port | URL |
-|---|---|---|---|
-| Streamlit UI | `app.py` | `8582` | `http://SERVER_IP:8582` |
+| App              | File     | Port   | URL                     |
+| ---------------- | -------- | ------ | ----------------------- |
+| Streamlit UI     | `app.py` | `8582` | `http://SERVER_IP:8582` |
 | FastAPI + web UI | `api.py` | `8588` | `http://SERVER_IP:8588` |
 
 FastAPI also serves:
@@ -243,3 +243,56 @@ Streamlit port is `--server.port 8582`. API port is `--port 8588`.
 - Both apps keep running after SSH logout.
 - Both start on reboot after `systemctl enable`.
 - Keep `.env` in `/root/Desktop/ML-Projects/DB_SQL_GEN`. systemd uses that working directory, and settings load `.env` from there.
+
+# ASIRI HOSTING
+
+## Configuration
+
+```text
+[Unit]
+Description=ASIRI Text-to-SQL FastAPI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Desktop/ML-Projects/ASIRI/DB_SQL_GEN
+
+ExecStart=/root/Desktop/ML-Projects/ASIRI/DB_SQL_GEN/.venv/bin/uvicorn src.api:app --host 0.0.0.0 --port 8688
+
+Restart=always
+RestartSec=10
+
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## Enable and start the service
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable asiri-sql-api
+sudo systemctl start asiri-sql-api
+```
+
+## Check status
+
+```bash
+sudo systemctl status asiri-sql-api
+```
+
+## Deploy new code from GitHub
+
+```bash
+cd /root/Desktop/ML-Projects/ASIRI/DB_SQL_GEN
+
+git pull --ff-only origin master
+
+uv sync --python 3.11.14
+
+sudo systemctl restart asiri-sql-api
+```

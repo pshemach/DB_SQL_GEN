@@ -1,0 +1,13 @@
+services:
+  streamlit:
+    build: .
+    container_name: db-sql-gen-app
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./cache:/app/cache
+      - ./data:/app/data
+    restart: unless-stopped

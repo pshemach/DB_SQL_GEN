@@ -1,6 +1,7 @@
 import os
 import warnings
 import logging
+import time
 
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
@@ -34,7 +35,7 @@ from typing import Optional, Dict, Any
 from src.utils.chart_request import detect_requested_chart_type
 from src.agents.tools.business_knowledge_store import business_knowledge_store
 from src.agents.tools.chat_memory import chat_memory
-from ui.agent_runner import run_async_agent
+from ui.agent_runner import stream_async_agent
 from ui.user_utils import login_with_phone, login_with_system
 
 # =============================
@@ -681,13 +682,21 @@ def render_message_with_feedback(message: Dict, session_id: str, user_id: str):
 
     with st.chat_message("assistant"):
         if message_id and user_id and msg_type in ["answer", "clarification"]:
-            col_content, col_like, col_dislike = st.columns([0.7, 0.15, 0.15])
+            col_content, col_like, col_dislike = st.columns([0.95, 0.05, 0.05])
+            
+            feedback_key = f"feedback_{message_id}"
+            selected_feedback = st.session_state.get(feedback_key)
 
             with col_content:
                 st.markdown(content)
 
             with col_like:
-                if st.button("👍", key=f"like_{message_id}", help="Like"):
+                if st.button(
+                    "👍",
+                    key=f"like_{message_id}",
+                    help="Like",
+                    type="primary" if selected_feedback == "like" else "secondary"
+                    ):
                     chat_memory.save_feedback(
                         session_id=session_id,
                         user_id=user_id,
@@ -696,11 +705,17 @@ def render_message_with_feedback(message: Dict, session_id: str, user_id: str):
                         message_content=content[:500],
                         feedback_type="like"
                     )
-                    st.success("Feedback saved.")
+                    st.session_state[feedback_key] = "like"
+                    # st.success("Feedback saved.")
                     st.rerun()
 
             with col_dislike:
-                if st.button("👎", key=f"dislike_{message_id}", help="Dislike"):
+                if st.button(
+                    "👎",
+                    key=f"dislike_{message_id}",
+                    help="Dislike",
+                    type="primary" if selected_feedback == "dislike" else "secondary"
+                    ):
                     chat_memory.save_feedback(
                         session_id=session_id,
                         user_id=user_id,
@@ -709,7 +724,8 @@ def render_message_with_feedback(message: Dict, session_id: str, user_id: str):
                         message_content=content[:500],
                         feedback_type="dislike"
                     )
-                    st.warning("Feedback saved.")
+                    st.session_state[feedback_key] = "dislike"
+                    # st.warning("Feedback saved.")
                     st.rerun()
         else:
             st.markdown(content or "")
@@ -1026,49 +1042,75 @@ if user_question:
         st.markdown(user_question)
 
     with st.chat_message("assistant"):
+        status_placeholder = st.empty()
+        answer_placeholder = st.empty()
         with st.spinner("Thinking..."):
             try:
-                result = run_async_agent(
-                    question=user_question,
-                    session_id=st.session_state.session_id,
-                    user_role=st.session_state.user_role,
-                    allowed_rep_codes=st.session_state.allowed_rep_codes,
-                    user_id=st.session_state.user_id
-                )
+                final_result_holder = {"value": None}
+                last_answer_holder = {"value": ""}
 
-                st.session_state.last_result = result
+                async def consume_stream():
+                    async for chunk in stream_async_agent(
+                        question=user_question,
+                        session_id=st.session_state.session_id,
+                        user_role=st.session_state.user_role,
+                        allowed_rep_codes=st.session_state.allowed_rep_codes,
+                        user_id=st.session_state.user_id,
+                    ):
+                        chunk_type = chunk.get("type")
+
+                        if chunk_type == "answer":
+                            last_answer_holder["value"] = chunk.get("text", "") or ""
+
+                        elif chunk_type == "clarification":
+                            status_placeholder.info(
+                                chunk.get("question_to_user") or "Please provide more details."
+                            )
+
+                        elif chunk_type == "status":
+                            status_placeholder.caption(chunk.get("message", "Working..."))
+
+                        elif chunk_type == "final":
+                            final_result_holder["value"] = chunk.get("result") or {}
+
+                asyncio.run(consume_stream())
+
+                final_result = final_result_holder["value"]
+
+                if final_result is None:
+                    final_result = {
+                        "error": "No response was generated.",
+                        "should_retry": False,
+                    }
+
+                st.session_state.last_result = final_result
                 st.session_state.query_count += 1
 
                 assistant_text = format_agent_response(result)
-                answer_charts = charts_for_message(result, user_question)
                 st.markdown(assistant_text)
-                render_charts_below_text(answer_charts, key_prefix="live_answer")
 
                 current_message_type = (
-                    "clarification" if result.get("waiting_for_user") else "answer"
+                    "clarification" if final_result.get("waiting_for_user") else "answer"
                 )
 
                 assistant_message_id = result.get("assistant_message_id")
-                answer_metadata = {"charts": answer_charts} if answer_charts else None
 
                 if assistant_message_id:
                     add_message(
                         "assistant",
                         assistant_text,
                         current_message_type,
-                        metadata=answer_metadata,
                         message_id=assistant_message_id
                     )
                 else:
                     add_message(
                         "assistant",
                         assistant_text,
-                        current_message_type,
-                        metadata=answer_metadata,
+                        current_message_type
                     )
                     logger.warning("assistant_message_id missing from backend result; feedback will not link to DB message.")
 
-                result["message_id"] = assistant_message_id
+                final_result["message_id"] = assistant_message_id
 
                 st.rerun()
 
@@ -1094,356 +1136,278 @@ if result:
     
     # Show tabs only if there are table results OR SQL/plan data
     if has_table or has_sql or has_plan:
-        tab_table, tab_graph, tab_sql, tab_plan = st.tabs([
-            "Extracted Table",
-            "Graph",
-            "SQL",
-            "Plan"
-        ])       
-        with tab_table:
-            if result.get("waiting_for_user"):
-                st.info(result.get("question_to_user"))
+        st.markdown("### Result Details")
 
-            elif result.get("error"):
-                st.error(result.get("error"))
+        if has_table:
+            with st.expander("📊 Extracted Table", expanded=False):
+                if result.get("error"):
+                    st.error(result.get("error"))
+                else:
+                    table_title = result.get("table_title", "Extracted Table")
+                    st.markdown(f"### {table_title}")
 
-            else:
-                # if result.get("result_summary"):
-                #     st.success(result["result_summary"])
+                    if not df.empty:
+                        st.dataframe(df, use_container_width=True)
 
-                table_title = result.get("table_title", "Extracted Table")
-                st.markdown(f"### {table_title}")
+                        st.markdown("---")
+                        with st.expander("📊 Create Pivot Table", expanded=False):
+                            render_pivot_table(
+                                df,
+                                key_prefix=f"pivot_{st.session_state.session_id}_{st.session_state.query_count}"
+                            )
 
-                if not df.empty:
-                    # st.markdown("### Raw Result Table")
-                    st.dataframe(df, use_container_width=True)
-                    
-                    st.markdown("---")
-                    with st.expander("📊 Create Pivot Table", expanded=False):
-                        render_pivot_table(
-                            df,
-                            key_prefix=f"pivot_{st.session_state.session_id}_{st.session_state.query_count}"
+                        csv = df.to_csv(index=False).encode("utf-8")
+                        st.download_button(
+                            label="⬇️ Download CSV",
+                            data=csv,
+                            file_name="query_result.csv",
+                            mime="text/csv"
                         )
+                    else:
+                        st.info("No tabular result available.")
 
-                    csv = df.to_csv(index=False).encode("utf-8")
+        if has_sql:
+            with st.expander("🧾 SQL", expanded=False):
+                if result.get("sql_query"):
+                    st.code(result["sql_query"], language="sql")
+
                     st.download_button(
-                        label="⬇️ Download CSV",
-                        data=csv,
-                        file_name="query_result.csv",
-                        mime="text/csv"
+                        "⬇️ Download SQL",
+                        data=result["sql_query"],
+                        file_name="query.sql",
+                        mime="text/plain"
                     )
                 else:
-                    st.info("No tabular result available.")
+                    st.info("No SQL generated yet.")
 
-        # -----------------------------
-        # GRAPH TAB
-        # -----------------------------    
-        with tab_graph:
-            if result.get("waiting_for_user"):
-                st.info("Graph will be available after the query is completed.")
-
-            elif result.get("error"):
-                st.error(result.get("error"))
-
-            elif df.empty:
-                st.info("No data available for graph.")
-
-            else:
-                st.markdown("### Graph View")
-
-                graph_key = f"{st.session_state.session_id}_{st.session_state.query_count}"
-
-                chart_df = prepare_chart_dataframe(df)
-
-                numeric_cols = get_chart_numeric_columns(chart_df)
-                non_numeric_cols = [
-                    col for col in chart_df.columns
-                    if col not in numeric_cols
-                ]
-
-                if not numeric_cols:
-                    st.warning("No numeric column found for chart.")
-                    st.write("Detected column types:")
-                    st.write(chart_df.dtypes)
-                    st.dataframe(chart_df.head(), use_container_width=True)
-
+        if has_plan:
+            with st.expander("📝 Plan", expanded=False):
+                if result.get("plan"):
+                    st.text(result["plan"])
                 else:
-                    # -----------------------------
-                    # Optional category filter
-                    # -----------------------------
-                    possible_group_cols = []
+                    st.info("No plan available.")
 
-                    for col in non_numeric_cols:
-                        unique_count = chart_df[col].nunique(dropna=True)
+        if not df.empty:
+            with st.expander("📈 Graph", expanded=False):
+                if result.get("waiting_for_user"):
+                    st.info("Graph will be available after the query is completed.")
+                elif result.get("error"):
+                    st.error(result.get("error"))
+                else:
+                    st.markdown("### Graph View")
 
-                        if 1 < unique_count <= 20:
-                            possible_group_cols.append(col)
+                    graph_key = f"{st.session_state.session_id}_{st.session_state.query_count}"
 
-                    filter_col = None
+                    chart_df = prepare_chart_dataframe(df)
 
-                    if possible_group_cols:
-                        filter_col = st.selectbox(
-                            "Optional Filter Column",
-                            options=["None"] + possible_group_cols,
-                            key=f"filter_col_{graph_key}"
-                        )
-
-                        if filter_col != "None":
-                            filter_values = sorted(chart_df[filter_col].dropna().unique())
-
-                            selected_values = st.multiselect(
-                                f"Filter {filter_col}",
-                                options=filter_values,
-                                default=filter_values,
-                                key=f"filter_values_{graph_key}_{filter_col}"
-                            )
-
-                            chart_df = chart_df[chart_df[filter_col].isin(selected_values)]
-
-                    # Recalculate numeric columns after filter
                     numeric_cols = get_chart_numeric_columns(chart_df)
+                    non_numeric_cols = [
+                        col for col in chart_df.columns
+                        if col not in numeric_cols
+                    ]
 
                     if not numeric_cols:
-                        st.warning("No numeric values available after filtering.")
-                        st.dataframe(chart_df, use_container_width=True)
+                        st.warning("No numeric column found for chart.")
+                        st.write("Detected column types:")
+                        st.write(chart_df.dtypes)
+                        st.dataframe(chart_df.head(), use_container_width=True)
                     else:
-                        # -----------------------------
-                        # Default X axis
-                        # -----------------------------
-                        preferred_x_terms = [
-                            "name", "rep", "customer", "outlet", "product",
-                            "route", "brand", "category", "type", "date"
-                        ]
+                        possible_group_cols = []
 
-                        x_default = None
+                        for col in non_numeric_cols:
+                            unique_count = chart_df[col].nunique(dropna=True)
+                            if 1 < unique_count <= 20:
+                                possible_group_cols.append(col)
 
-                        for term in preferred_x_terms:
-                            for col in non_numeric_cols:
-                                if term in col.lower():
-                                    x_default = col
+                        filter_col = None
+
+                        if possible_group_cols:
+                            filter_col = st.selectbox(
+                                "Optional Filter Column",
+                                options=["None"] + possible_group_cols,
+                                key=f"filter_col_{graph_key}"
+                            )
+
+                            if filter_col != "None":
+                                filter_values = sorted(chart_df[filter_col].dropna().unique())
+
+                                selected_values = st.multiselect(
+                                    f"Filter {filter_col}",
+                                    options=filter_values,
+                                    default=filter_values,
+                                    key=f"filter_values_{graph_key}_{filter_col}"
+                                )
+
+                                chart_df = chart_df[chart_df[filter_col].isin(selected_values)]
+
+                        numeric_cols = get_chart_numeric_columns(chart_df)
+
+                        if not numeric_cols:
+                            st.warning("No numeric values available after filtering.")
+                            st.dataframe(chart_df, use_container_width=True)
+                        else:
+                            preferred_x_terms = [
+                                "name", "rep", "customer", "outlet", "product",
+                                "route", "brand", "category", "type", "date"
+                            ]
+
+                            x_default = None
+
+                            for term in preferred_x_terms:
+                                for col in non_numeric_cols:
+                                    if term in col.lower():
+                                        x_default = col
+                                        break
+                                if x_default:
                                     break
-                            if x_default:
-                                break
 
-                        if not x_default:
-                            x_default = non_numeric_cols[0] if non_numeric_cols else chart_df.columns[0]
+                            if not x_default:
+                                x_default = non_numeric_cols[0] if non_numeric_cols else chart_df.columns[0]
 
-                        # -----------------------------
-                        # Default Y metric
-                        # -----------------------------
-                        y_default = numeric_cols[0]
+                            y_default = numeric_cols[0]
 
-                        col_a, col_b, col_c = st.columns(3)
+                            col_a, col_b, col_c = st.columns(3)
 
-                        with col_a:
-                            x_col = st.selectbox(
-                                "X Axis / Label",
-                                options=chart_df.columns.tolist(),
-                                index=chart_df.columns.tolist().index(x_default),
-                                key=f"graph_x_col_{graph_key}"
-                            )
+                            with col_a:
+                                x_col = st.selectbox(
+                                    "X Axis / Label",
+                                    options=chart_df.columns.tolist(),
+                                    index=chart_df.columns.tolist().index(x_default),
+                                    key=f"graph_x_col_{graph_key}"
+                                )
 
-                        with col_b:
-                            y_col = st.selectbox(
-                                "Y Axis / Metric",
-                                options=numeric_cols,
-                                index=numeric_cols.index(y_default),
-                                key=f"graph_y_col_{graph_key}"
-                            )
+                            with col_b:
+                                y_col = st.selectbox(
+                                    "Y Axis / Metric",
+                                    options=numeric_cols,
+                                    index=numeric_cols.index(y_default),
+                                    key=f"graph_y_col_{graph_key}"
+                                )
 
                         with col_c:
-                            chart_options = [
-                                "Auto", "Bar", "Horizontal Bar", "Line", "Pie", "Scatter"
-                            ]
-                            requested_chart = (
-                                result.get("requested_chart_type")
-                                or detect_requested_chart_type(result.get("question") or "")
-                            )
-                            default_chart = _CHART_TYPE_LABELS.get(requested_chart, "Auto")
                             chart_type = st.selectbox(
                                 "Chart Type",
-                                options=chart_options,
-                                index=chart_options.index(default_chart),
+                                options=["Auto", "Bar", "Horizontal Bar", "Line", "Pie", "Scatter"],
                                 key=f"chart_type_{graph_key}"
                             )
 
-                        # -----------------------------
-                        # Remove rows where selected metric is null
-                        # -----------------------------
-                        chart_df = chart_df.dropna(subset=[y_col])
-
-                        if chart_df.empty:
-                            st.warning(f"No values available for selected metric: {y_col}")
-                            st.dataframe(df, use_container_width=True)
-                        else:
-                            # Remove null labels
-                            chart_df = chart_df.dropna(subset=[x_col])
+                            chart_df = chart_df.dropna(subset=[y_col])
 
                             if chart_df.empty:
-                                st.warning(f"No labels available for selected X axis: {x_col}")
+                                st.warning(f"No values available for selected metric: {y_col}")
                                 st.dataframe(df, use_container_width=True)
                             else:
-                                # -----------------------------
-                                # Top N
-                                # -----------------------------
-                                # max_n = min(100, len(chart_df))
+                                chart_df = chart_df.dropna(subset=[x_col])
 
-                                # top_n = st.slider(
-                                #     "Rows to show",
-                                #     min_value=1,
-                                #     max_value=max_n,
-                                #     value=min(20, max_n),
-                                #     step=1,
-                                #     key=f"graph_top_n_{graph_key}"
-                                # )
-
-                                # chart_df = (
-                                #     chart_df
-                                #     .sort_values(by=y_col, ascending=False)
-                                #     .head(top_n)
-                                # )
-                                
-                                row_count = len(chart_df)
-
-                                if row_count == 0:
-                                    st.warning("No rows available for chart after filtering.")
+                                if chart_df.empty:
+                                    st.warning(f"No labels available for selected X axis: {x_col}")
                                     st.dataframe(df, use_container_width=True)
                                 else:
-                                    max_n = min(100, row_count)
+                                    row_count = len(chart_df)
 
-                                    if row_count == 1:
-                                        top_n = 1
-                                        st.info("Only 1 row available for chart.")
+                                    if row_count == 0:
+                                        st.warning("No rows available for chart after filtering.")
+                                        st.dataframe(df, use_container_width=True)
                                     else:
-                                        top_n = st.slider(
-                                            "Rows to show",
-                                            min_value=1,
-                                            max_value=max_n,
-                                            value=min(20, max_n),
-                                            step=1,
-                                            key=f"graph_top_n_{graph_key}"
+                                        max_n = min(100, row_count)
+
+                                        if row_count == 1:
+                                            top_n = 1
+                                            st.info("Only 1 row available for chart.")
+                                        else:
+                                            top_n = st.slider(
+                                                "Rows to show",
+                                                min_value=1,
+                                                max_value=max_n,
+                                                value=min(20, max_n),
+                                                step=1,
+                                                key=f"graph_top_n_{graph_key}"
+                                            )
+
+                                        chart_df = (
+                                            chart_df
+                                            .sort_values(by=y_col, ascending=False)
+                                            .head(top_n)
                                         )
 
-                                    chart_df = (
-                                        chart_df
-                                        .sort_values(by=y_col, ascending=False)
-                                        .head(top_n)
-                                    )
+                                        final_chart_type = chart_type
 
-                                    # continue render chart below this block
+                                        if chart_type == "Auto":
+                                            if len(chart_df) > 15:
+                                                final_chart_type = "Horizontal Bar"
+                                            else:
+                                                final_chart_type = "Bar"
 
-                                # -----------------------------
-                                # Auto chart type
-                                # -----------------------------
-                                final_chart_type = chart_type
+                                        title = f"{y_col} by {x_col}"
 
-                                if chart_type == "Auto":
-                                    if len(chart_df) > 15:
-                                        final_chart_type = "Horizontal Bar"
-                                    else:
-                                        final_chart_type = "Bar"
+                                        if final_chart_type == "Bar":
+                                            fig = px.bar(
+                                                chart_df,
+                                                x=x_col,
+                                                y=y_col,
+                                                text=y_col,
+                                                title=title
+                                            )
+                                            fig.update_traces(
+                                                texttemplate="%{text:.2f}",
+                                                textposition="outside"
+                                            )
+                                            fig.update_layout(xaxis_tickangle=-45)
+                                            st.plotly_chart(fig, use_container_width=True)
 
-                                title = f"{y_col} by {x_col}"
+                                        elif final_chart_type == "Horizontal Bar":
+                                            fig = px.bar(
+                                                chart_df.sort_values(by=y_col, ascending=True),
+                                                x=y_col,
+                                                y=x_col,
+                                                text=y_col,
+                                                orientation="h",
+                                                title=title
+                                            )
+                                            fig.update_traces(
+                                                texttemplate="%{text:.2f}",
+                                                textposition="outside"
+                                            )
+                                            st.plotly_chart(fig, use_container_width=True)
 
-                                # -----------------------------
-                                # Render chart
-                                # -----------------------------
-                                if final_chart_type == "Bar":
-                                    fig = px.bar(
-                                        chart_df,
-                                        x=x_col,
-                                        y=y_col,
-                                        text=y_col,
-                                        title=title
-                                    )
-                                    fig.update_traces(
-                                        texttemplate="%{text:.2f}",
-                                        textposition="outside"
-                                    )
-                                    fig.update_layout(xaxis_tickangle=-45)
-                                    st.plotly_chart(fig, use_container_width=True)
+                                        elif final_chart_type == "Line":
+                                            fig = px.line(
+                                                chart_df,
+                                                x=x_col,
+                                                y=y_col,
+                                                markers=True,
+                                                title=title
+                                            )
+                                            fig.update_layout(xaxis_tickangle=-45)
+                                            st.plotly_chart(fig, use_container_width=True)
 
-                                elif final_chart_type == "Horizontal Bar":
-                                    fig = px.bar(
-                                        chart_df.sort_values(by=y_col, ascending=True),
-                                        x=y_col,
-                                        y=x_col,
-                                        text=y_col,
-                                        orientation="h",
-                                        title=title
-                                    )
-                                    fig.update_traces(
-                                        texttemplate="%{text:.2f}",
-                                        textposition="outside"
-                                    )
-                                    st.plotly_chart(fig, use_container_width=True)
+                                        elif final_chart_type == "Pie":
+                                            fig = px.pie(
+                                                chart_df,
+                                                names=x_col,
+                                                values=y_col,
+                                                title=f"{y_col} share by {x_col}"
+                                            )
+                                            st.plotly_chart(fig, use_container_width=True)
 
-                                elif final_chart_type == "Line":
-                                    fig = px.line(
-                                        chart_df,
-                                        x=x_col,
-                                        y=y_col,
-                                        markers=True,
-                                        title=title
-                                    )
-                                    fig.update_layout(xaxis_tickangle=-45)
-                                    st.plotly_chart(fig, use_container_width=True)
+                                        elif final_chart_type == "Scatter":
+                                            fig = px.scatter(
+                                                chart_df,
+                                                x=x_col,
+                                                y=y_col,
+                                                size=y_col,
+                                                title=title
+                                            )
+                                            st.plotly_chart(fig, use_container_width=True)
 
-                                elif final_chart_type == "Pie":
-                                    fig = px.pie(
-                                        chart_df,
-                                        names=x_col,
-                                        values=y_col,
-                                        title=f"{y_col} share by {x_col}"
-                                    )
-                                    st.plotly_chart(fig, use_container_width=True)
+                                        st.markdown("### Chart Data")
+                                        st.dataframe(chart_df, use_container_width=True)
 
-                                elif final_chart_type == "Scatter":
-                                    fig = px.scatter(
-                                        chart_df,
-                                        x=x_col,
-                                        y=y_col,
-                                        size=y_col,
-                                        title=title
-                                    )
-                                    st.plotly_chart(fig, use_container_width=True)
-
-                                st.markdown("### Chart Data")
-                                st.dataframe(chart_df, use_container_width=True)
-
-                                with st.expander("Detected Columns"):
-                                    st.write({
-                                        "numeric_columns": numeric_cols,
-                                        "non_numeric_columns": non_numeric_cols,
-                                        "selected_x": x_col,
-                                        "selected_y": y_col,
-                                        "rows_after_null_filter": len(chart_df)
-                                    })
-            
-
-        # -----------------------------
-        # SQL TAB
-        # -----------------------------
-        with tab_sql:
-            # if show_sql and result.get("sql_query"):
-            if result.get("sql_query"):
-                st.code(result["sql_query"], language="sql")
-
-                st.download_button(
-                    "⬇️ Download SQL",
-                    data=result["sql_query"],
-                    file_name="query.sql",
-                    mime="text/plain"
-                )
-            else:
-                st.info("No SQL generated yet.")
-
-        # -----------------------------
-        # PLAN TAB
-        # -----------------------------
-        with tab_plan:
-            # if show_plan and result.get("plan"):
-            if result.get("plan"):
-                st.text(result["plan"])
-            else:
-                st.info("No plan available.")
+                                        with st.expander("Detected Columns"):
+                                            st.write({
+                                                "numeric_columns": numeric_cols,
+                                                "non_numeric_columns": non_numeric_cols,
+                                                "selected_x": x_col,
+                                                "selected_y": y_col,
+                                                "rows_after_null_filter": len(chart_df)
+                                            })
