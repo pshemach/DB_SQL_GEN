@@ -10,8 +10,8 @@ import sqlglot
 from loguru import logger
 from ..config import settings
 from pathlib import Path
-import re
-import time 
+import time
+from .sql_safety import assess_sql 
 
 class DatabaseManager:
     """Manages database connections and operations."""
@@ -132,23 +132,21 @@ class DatabaseManager:
         start = time.time()
         
         try:
-            # First validate syntax
-            is_valid, syntax_error = self.validate_sql_syntax(sql)
-            if not is_valid:
-                return None, f"Syntax Error: {syntax_error}", None
+            blocked = self._reject_unless_select(sql)
+            if blocked:
+                return None, blocked, None
             
             # Execute query
             with self.engine.connect() as conn:
                 result = conn.execute(text(sql))
-                
-                # Fetch results for SELECT queries
-                if result.returns_rows:
-                    rows = result.fetchall()
-                    execution_time = (time.time() - start) * 1000
-                    return rows, None, execution_time
-                else:
-                    execution_time = (time.time() - start) * 1000
-                    return f"Query executed successfully. Rows affected: {result.rowcount}", None, execution_time
+                execution_time = (time.time() - start) * 1000
+
+                if not result.returns_rows:
+                    conn.rollback()
+                    return None, "Access denied. Only SELECT queries are allowed.", execution_time
+
+                rows = result.fetchall()
+                return rows, None, execution_time
                     
         except SQLAlchemyError as e:
             execution_time = (time.time() - start) * 1000
@@ -169,10 +167,9 @@ class DatabaseManager:
         start = time.time()
         
         try:
-            # Validate syntax
-            is_valid, syntax_error = self.validate_sql_syntax(sql)
-            if not is_valid:
-                return None, f"Syntax Error: {syntax_error}", None
+            blocked = self._reject_unless_select(sql)
+            if blocked:
+                return None, blocked, None
             
             allowed_nodes = ",".join(allowed_rep_codes)
             
@@ -183,16 +180,15 @@ class DatabaseManager:
                 
                 # Now execute the actual query
                 result = conn.execute(text(sql))
-                
-                # Fetch results for SELECT queries
-                if result.returns_rows:
-                    rows = result.fetchall()
-                    execution_time = (time.time() - start) * 1000
-                    logger.info(f"Query executed: {len(rows)} rows in {execution_time:.2f}ms")
-                    return rows, None, execution_time
-                else:
-                    execution_time = (time.time() - start) * 1000
-                    return f"Query executed successfully. Rows affected: {result.rowcount}", None, execution_time
+                execution_time = (time.time() - start) * 1000
+
+                if not result.returns_rows:
+                    conn.rollback()
+                    return None, "Access denied. Only SELECT queries are allowed.", execution_time
+
+                rows = result.fetchall()
+                logger.info(f"Query executed: {len(rows)} rows in {execution_time:.2f}ms")
+                return rows, None, execution_time
                         
         except SQLAlchemyError as e:
             execution_time = (time.time() - start) * 1000
@@ -204,6 +200,16 @@ class DatabaseManager:
             logger.error(f"Unexpected error executing query: {e}")
             return None, str(e), execution_time
         
+    def _reject_unless_select(self, sql: str) -> Optional[str]:
+        """Return an error message when SQL is not a single read-only SELECT."""
+        kind, message = assess_sql(sql)
+        if kind == "ok":
+            return None
+        if kind == "parse":
+            return f"Syntax Error: {message}"
+        logger.warning(f"Blocked non-SELECT SQL: {message}")
+        return message
+
     def close(self):
         """Close database connections."""
         self.engine.dispose()

@@ -6,6 +6,7 @@ import pytest
 
 from src.utils.error_taxonomy import classify_db_error, is_retryable
 from src.agents.graph.sql_pipeline_nodes import static_validator_node, FORBIDDEN_SQL
+from src.core.sql_safety import assess_sql
 from src.agents.graph.nodes import authz_guardrails_node, DANGEROUS_PATTERNS
 
 
@@ -37,7 +38,28 @@ class TestStaticValidator:
             "sql_query": "SELECT TOP 10 * FROM sales_flat",
             "question": "test",
         })
-        assert out.get("pre_exec_approved") is True or "error" not in out
+        assert out.get("error") is None
+        assert out.get("pre_exec_approved") is True
+
+    def test_rejects_replace_and_stacked_statements(self):
+        replace_out = static_validator_node({
+            "sql_query": "REPLACE INTO sales_flat VALUES (1)",
+            "question": "test",
+        })
+        assert replace_out.get("error_type") == "validation"
+        assert replace_out.get("should_retry") is False
+
+        stacked_out = static_validator_node({
+            "sql_query": "SELECT 1; DELETE FROM sales_flat",
+            "question": "test",
+        })
+        assert stacked_out.get("error_type") == "validation"
+        assert stacked_out.get("should_retry") is False
+
+    def test_read_only_assessment(self):
+        assert assess_sql("WITH c AS (SELECT 1 AS a) SELECT * FROM c")[0] == "ok"
+        assert assess_sql("SELECT * FROM t FOR UPDATE")[0] == "policy"
+        assert assess_sql("CALL update_sales()")[0] == "policy"
 
 
 class TestAuthzGuardrails:

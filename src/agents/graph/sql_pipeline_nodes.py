@@ -7,7 +7,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-import sqlglot
 from langchain_anthropic import ChatAnthropic
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -16,6 +15,7 @@ from loguru import logger
 from ..agent.retriever import SchemaLinkerAgent
 from ...config import settings
 from ..tools import few_shot_retriever
+from ...core.sql_safety import assess_sql
 from ...utils.error_taxonomy import classify_db_error, is_retryable
 from ...utils.metrics import bump_sql_retries, record_node_timing
 from .graph_state import AgentState, SQLSubState
@@ -123,13 +123,16 @@ def static_validator_node(state: SQLSubState) -> dict:
             "should_retry": False,
         }
 
-    try:
-        parsed = sqlglot.parse_one(sql, dialect="tsql")
-        if parsed is None:
-            raise ValueError("Empty parse result")
-    except Exception as e:
+    kind, message = assess_sql(sql)
+    if kind == "policy":
         return {
-            "error": f"SQL parse error: {e}",
+            "error": message,
+            "error_type": "validation",
+            "should_retry": False,
+        }
+    if kind == "parse":
+        return {
+            "error": f"SQL parse error: {message}",
             "error_type": "syntax",
             "should_retry": True,
         }
@@ -138,9 +141,19 @@ def static_validator_node(state: SQLSubState) -> dict:
     if "LIMIT" not in sql_upper and "TOP " not in sql_upper:
         logger.info("Enforcing row cap via TOP clause recommendation in state")
         state_note = f"-- validator: consider TOP {settings.sql_max_rows}"
-        return {"sql_explanation": (state.get("sql_explanation") or "") + f"\n{state_note}"}
+        return {
+            "sql_explanation": (state.get("sql_explanation") or "") + f"\n{state_note}",
+            "error": None,
+            "error_type": None,
+            "should_retry": False,
+        }
 
-    return {"pre_exec_approved": True}
+    return {
+        "pre_exec_approved": True,
+        "error": None,
+        "error_type": None,
+        "should_retry": False,
+    }
 
 
 def pre_exec_critic_node(state: SQLSubState) -> dict:
