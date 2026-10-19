@@ -9,6 +9,7 @@ import duckdb
 from loguru import logger
 from langchain_core.prompts import ChatPromptTemplate
 
+from ...core.sql_safety import assess_sql
 from ...utils.llm_factory import groq_llm
 from ...utils.json_utils import extract_json
 
@@ -87,6 +88,11 @@ class LocalSQLEngine:
 
         # 3. Run local SQL using DuckDB
         local_sql = plan["sql"]
+        kind, message = assess_sql(local_sql)
+        if kind != "ok":
+            logger.warning(f"Blocked local SQL: {message}")
+            return True, [], message or "Only SELECT queries are allowed."
+
         logger.info(f"Executing Local DuckDB SQL: {local_sql}")
         
         try:

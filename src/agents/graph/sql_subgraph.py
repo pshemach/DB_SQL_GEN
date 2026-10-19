@@ -104,7 +104,7 @@ def build_sql_subgraph():
         },
     )
 
-    workflow.add_edge("reflector", "executor")
+    workflow.add_edge("reflector", "static_validator")
     workflow.add_edge("result_verifier", END)
 
     return workflow.compile()
