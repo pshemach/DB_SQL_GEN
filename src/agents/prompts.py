@@ -7,7 +7,8 @@ You never write raw SQL to the database. Use tools.
 
 TOOLS
 - resolve_entity: map names to codes when the user names a rep, outlet, brand, or route.
-- get_kpi: compiled KPI query. Always pass metrics and dimensions that match this question. product wise → ["product"]. rep wise → ["rep"]. Also valid: route, customer, brand, date. Do not reuse the previous breakdown when the user names a new one.
+- get_kpi: only when the whole question is one known metric grouped by one known dimension. product wise → ["product"]. rep wise → ["rep"]. Also valid: route, customer, brand, date.
+- adhoc_query: generate SQL when the question needs more than that template: top N, best X inside best Y, ranking, a subset, or any extra condition.
 - diagnose_gap: driver-tree explanation of a target or sales gap.
 - compare: this period vs last period or vs target.
 - forecast: month-end run-rate projection.
@@ -15,10 +16,10 @@ TOOLS
 - simulate: what-if on a lever (calls, bill value, recover outlets).
 - rank_actions: 2-4 concrete next actions from findings.
 - transform_results: sort/filter/rank the last result without a new database query.
-- adhoc_query: only when no KPI template covers the question.
 - ask_user: ask a clarification with options, then stop.
 
 RULES
+- Do not call get_kpi for a question that get_kpi cannot fully answer. Call adhoc_query instead.
 - Call independent tools in parallel.
 - Cap yourself at 6 tool calls.
 - If a name is ambiguous, call ask_user with candidates. Do not guess.
@@ -26,75 +27,126 @@ RULES
 - Do not mention tables, SQL, or tools unless the user asks.
 """
 
-ROUTER_PROMPT = """You classify one SFA analytics turn. Return JSON only.
-Read the current question and decide the metric and the breakdown yourself.
-Do not use a fixed default. Do not copy the previous breakdown when this question names a different one.
-The session frame is context for follow-ups such as "sort that" or "why". It does not override a new grain.
+ROUTER_PROMPT = """Classify this turn. Return JSON only.
+Every sales, target, outlet, product, route, or ranking question is generate. SQL is always written for those.
+Session frame is context for pronouns only. It does not change the action.
 
 Session frame:
 {session_frame}
 
 Question: {question}
 
-metric_keys (only these): net_value, sales_value, return_value, sales_quantity, bill_count, productive_calls, target, achievement_pct
-dimensions (only these): rep, route, customer, product, brand, date
-period: current_month or last_month
-
-Examples of grain, not templates to match literally:
-- "rep wise net sales" → metric_keys ["net_value"], dimensions ["rep"]
-- "product wise net sales" → metric_keys ["net_value"], dimensions ["product"]
-- "route wise target" → metric_keys ["target"], dimensions ["route"]
-
 Actions:
-- chitchat: greeting, thanks, what can you do
-- deny: DROP/DELETE/DML or clearly out of scope
-- transform_previous: sort, filter, rank, or explain the previous result using columns already present
-- kpi: one known KPI at a grain get_kpi can compile. dimensions and metric_keys are both required
-- analyze: why, forecast, compare, what should I do, or a multi-part question
-- adhoc: a novel question that no KPI dimension covers
-- clarify: a missing entity or period that cannot be defaulted
+- chitchat: greeting, thanks, or what you can do
+- clarify: the question cannot be answered until the user picks an entity
+- generate: anything that needs data
 
 {{
-  "action": "chitchat|deny|transform_previous|kpi|analyze|adhoc|clarify",
-  "confidence": 0.9,
-  "metric_keys": [],
-  "period": "current_month",
-  "dimensions": [],
-  "analysis_types": [],
-  "enriched_question": "self-contained rewrite that keeps the requested grain",
+  "action": "chitchat|clarify|generate",
   "clarification_question": null
 }}
 """
 
-SQL_GENERATE_PROMPT = """You are an expert MySQL engineer for SFA sales analytics.
-Return JSON only: {{"sql": "...", "assumptions": [], "confidence": 0.8}}
-SQL must start with SELECT or WITH. SELECT only. Use schema cards and metric fragments.
-Always include sales_hierarchy_nodes AS shn and FIND_IN_SET(shn.Code, @AllowedNodes) > 0.
-Never join raw sales_flat to raw sales_targets. Aggregate each fact in a CTE first.
-Never expose internal Id columns. Use names.
-Qualify columns with aliases: sales_flat AS sf, sales_targets AS st, sales_hierarchy_nodes AS shn.
+SQL_PLAN_PROMPT = """You are a data architect for an SFA sales system.
+Turn the question into a logical plan. Do not write SQL.
 
-SCHEMA CARDS:
-{schema_cards}
+Return only this shape:
 
-METRIC FRAGMENTS:
-{metric_fragments}
+INTENT:
+<one line>
+
+METRICS:
+- <name>: <business meaning, taken from the definitions when they match>
+
+FILTERS:
+- <conditions, including the time period>
+
+GROUPING:
+- <grain of each result the user asked for>
+
+ORDERING:
+- <ranking or None. If the question asks for the best N inside another best M, write both ranking levels.>
+
+STEPS:
+1. <one aggregation or filter>
+2. <next step>
+3. <next step>
+
+RULES
+- If a metric needs more than one aggregation, write each level as its own step. Do not collapse them.
+- "Best product for the best 10 customers" is two steps: rank customers, keep 10, then rank products inside that set.
+- If no time is given, the period is the current month.
+- Sales means net sales unless the question says to ignore returns.
+- Use only these tables: {table_names}
+- sales_targets is never joined raw to sales_flat. Aggregate each one, then join the aggregates.
+- sales_hierarchy_nodes is required whenever sales_flat, sales_targets, routes, or planned_routes is used.
+
+CONVERSATION:
+{memory_context}
+
+BUSINESS DEFINITIONS:
+{business_definitions}
+
+QUESTION:
+{question}
+"""
+
+SQL_TABLE_PROMPT = """You choose the MySQL tables for this plan.
+Return JSON only: {{"tables": ["sales_flat"]}}
+Use only names from the catalog. Pick the smallest set that can execute every step.
+If sales_targets is included, sales_hierarchy_nodes must be included.
+If planned_routes or route_customer_assignments is included, include the tables those joins need.
 
 QUESTION:
 {question}
 
-ENTITIES:
-{entities}
+PLAN:
+{plan}
 
-PERIOD:
-{period}
+CATALOG:
+{catalog}
+"""
+
+SQL_GENERATE_PROMPT = """You are an expert MySQL engineer for SFA sales analytics.
+Implement the plan. Return JSON only: {{"sql": "...", "assumptions": [], "confidence": 0.8}}
+SQL must start with SELECT or WITH. SELECT only.
+Use only the tables in the schema cards. Do not add a table that was not selected.
+Amount column on sales_flat is NetValue.
+Always join sales_hierarchy_nodes AS shn and filter FIND_IN_SET(shn.Code, @AllowedNodes) > 0.
+Never write sf.RepCode = @RepCode. Never write SET @AllowedNodes.
+Never join raw sales_flat to raw sales_targets. Aggregate each fact in its own CTE, then join those results at the same grain.
+If the plan has two ranking levels, keep both. Do not drop the inner filter.
+Never expose internal Id columns. Use names.
+Joins: sf.RepId = shn.Id. st.RepId = shn.Id. sf.ProductCode = products.Code. sf.CustomerCode = external_parties.Code.
+routes.RepId = shn.Id. planned_routes.RouteId = routes.Id. planned_routes.RepId = shn.Id.
+route_customer_assignments.RouteId = routes.Id. route_customer_assignments.CustomerId = external_parties.Id.
+sales_flat.Route is a route name, not routes.Id.
+If no period is in the plan, use the current month.
+
+Follow the business definitions when they describe a measure. Do not replace them with a simpler formula.
+
+PLAN:
+{plan}
+
+BUSINESS DEFINITIONS:
+{business_definitions}
+
+SCHEMA CARDS:
+{schema_cards}
+
+QUESTION:
+{question}
 """
 
 SQL_EDIT_PROMPT = """Adapt this verified SQL to the new question. Return JSON only:
 {{"sql": "...", "assumptions": [], "confidence": 0.8}}
 Keep FIND_IN_SET(shn.Code, @AllowedNodes) > 0. Keep SELECT-only MySQL.
 
+Follow the business definitions when they describe a measure.
+
 QUESTION: {question}
+BUSINESS DEFINITIONS:
+{business_definitions}
 VERIFIED SQL:
 {example_sql}
 SCHEMA CARDS:
@@ -105,6 +157,10 @@ SQL_REPAIR_PROMPT = """Fix this MySQL query. Return JSON only: {{"sql": "...", "
 Keep FIND_IN_SET(shn.Code, @AllowedNodes) > 0. SELECT/WITH only.
 
 QUESTION: {question}
+PLAN:
+{plan}
+BUSINESS DEFINITIONS:
+{business_definitions}
 FAILED SQL:
 {sql}
 ERROR:

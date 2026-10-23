@@ -131,6 +131,34 @@ class BusinessKnowledgeStore:
 
         return matches
 
+    def relevant_definitions_text(self, question: str, limit: int = 8) -> str:
+        """Return the YAML definitions that match this question. The file is the source of truth."""
+        matches = self.keyword_search(question)
+        seen = {item["name"] for item in matches}
+        tokens = {token for token in question.lower().replace("_", " ").split() if len(token) > 3}
+        scored: list[tuple[int, str, dict]] = []
+        for name, item in self.definitions.items():
+            if name in seen:
+                continue
+            haystack = " ".join([name.replace("_", " ")] + [str(k).lower() for k in item.get("keywords") or []])
+            score = sum(1 for token in tokens if token in haystack)
+            if score:
+                scored.append((score, name, item))
+        for _, name, item in sorted(scored, reverse=True):
+            matches.append({
+                "name": name,
+                "definition": item.get("definition", ""),
+                "keywords": item.get("keywords") or [],
+            })
+            if len(matches) >= limit:
+                break
+        if not matches:
+            return "No matching business definition."
+        blocks = []
+        for item in matches[:limit]:
+            blocks.append(f"{item['name']}:\n{str(item['definition']).strip()}")
+        return "\n\n".join(blocks)
+
     def add_definition(self, name: str, keywords: List[str], definition: str):
         key = self.normalize_key(name)
 

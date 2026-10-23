@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 
 from src.infrastructure.config import settings
+from src.infrastructure.json import extract_json
 
 
 @lru_cache(maxsize=1)
@@ -36,6 +37,50 @@ def schema_cards() -> dict[str, str]:
 def schema_cards_text() -> str:
     cards = schema_cards()
     return "\n".join(f"{name}: {text}" for name, text in cards.items())
+
+
+_RLS_TABLES = {"sales_flat", "sales_targets", "planned_routes", "routes", "route_customer_assignments"}
+
+
+def parse_selected_tables(raw, known: set[str]) -> list[str]:
+    """Keep only catalog tables, then add the join bridges those tables require."""
+    text = getattr(raw, "content", raw)
+    if isinstance(text, list):
+        text = " ".join(str(part) for part in text)
+    text = str(text or "")
+    names: list[str] = []
+    try:
+        payload = extract_json(text)
+        values = payload.get("tables") if isinstance(payload, dict) else None
+        if isinstance(values, list):
+            names = [str(item) for item in values]
+    except Exception:
+        names = []
+    if not names:
+        plain = text.replace("```json", "").replace("```", "")
+        names = [part.strip(" `\"'[]{}") for part in plain.replace("\n", ",").split(",")]
+
+    known_by_lower = {name.lower(): name for name in known}
+    selected: list[str] = []
+    seen: set[str] = set()
+
+    def add(name: str) -> None:
+        canonical = known_by_lower.get(name.strip().lower())
+        if canonical and canonical not in seen:
+            seen.add(canonical)
+            selected.append(canonical)
+
+    for name in names:
+        add(name)
+    if seen & _RLS_TABLES:
+        add("sales_hierarchy_nodes")
+    if "planned_routes" in seen or "route_customer_assignments" in seen:
+        add("routes")
+    if "route_customer_assignments" in seen:
+        add("external_parties")
+    if "sales_targets" in seen:
+        add("sales_hierarchy_nodes")
+    return selected
 
 
 def match_kpi_keys(question: str) -> list[str]:

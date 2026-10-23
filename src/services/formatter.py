@@ -23,7 +23,7 @@ def format_result(state: dict[str, Any]) -> dict[str, Any]:
     if state.get("turn_action") == "chitchat" and state.get("final_answer"):
         return {"result_summary": state["final_answer"], "visualizations": []}
     if state.get("access_denied"):
-        msg = state.get("access_denied_reason") or "Access denied."
+        msg = state.get("error") or "Access denied."
         return {"final_answer": msg, "result_summary": msg, "visualizations": [], "error": msg}
 
     rows = state.get("query_result") or []
@@ -52,7 +52,7 @@ def format_result(state: dict[str, Any]) -> dict[str, Any]:
     try:
         chain = ChatPromptTemplate.from_template(FORMATTER_PROMPT) | openai_llm()
         parsed = extract_json(chain.invoke({
-            "question": state.get("original_question") or state.get("question") or "",
+            "question": state.get("question") or "",
             "facts": json.dumps(facts, default=str),
             "dataset_profile": json.dumps({"rows": len(df), "columns": list(df.columns)}),
             "requested_chart_type": requested or "none",

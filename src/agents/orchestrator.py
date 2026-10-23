@@ -19,6 +19,7 @@ from src.agents.router import next_node, route_turn
 from src.agents.runtime import runtime_ctx
 from src.agents.state import AgentState
 from src.agents.tools import ANALYST_TOOLS
+from src.agents.tools.adhoc_query import adhoc_query
 from src.agents.tools.get_kpi import get_kpi
 from src.agents.tools.transform_results import transform_results
 from src.infrastructure.config import settings
@@ -43,6 +44,7 @@ NODE_STATUS = {
     "authz": "Checking access...",
     "router": "Understanding your question...",
     "analyst": "Analyzing...",
+    "generate": "Writing the query...",
     "kpi": "Loading KPIs...",
     "transform": "Updating the previous result...",
     "formatter": "Writing the answer...",
@@ -121,7 +123,7 @@ def chitchat_node(state: AgentState) -> dict:
 
 
 def safe_response_node(state: AgentState) -> dict:
-    msg = state.get("access_denied_reason") or state.get("error") or "Unable to process your request."
+    msg = state.get("error") or "Unable to process your request."
     return {
         "final_answer": msg,
         "result_summary": msg,
@@ -139,7 +141,6 @@ def hitl_node(state: AgentState) -> dict:
         "final_answer": question_to_user,
         "result_summary": question_to_user,
         "waiting_for_user": True,
-        "needs_clarification": True,
         "query_result": None,
         "sql_query": None,
         "visualizations": [],
@@ -149,11 +150,12 @@ def hitl_node(state: AgentState) -> dict:
 def _bind_runtime(state: AgentState):
     ctx = {
         "session_id": state.get("session_id"),
-        "question": state.get("enriched_question") or state.get("question"),
+        "question": state.get("question"),
         "allowed_rep_codes": state.get("allowed_rep_codes") or [],
         "user_role": state.get("user_role"),
-        "period": state.get("period") or "current_month",
-        "resolved_entities": state.get("resolved_entities") or {},
+        "period": "current_month",
+        "memory_context": state.get("memory_context") or "",
+        "resolved_entities": {},
         "last_rows": None,
         "last_sql": None,
         "waiting_for_user": False,
@@ -174,6 +176,16 @@ def kpi_node(state: AgentState) -> dict:
             "dimensions": list(state.get("dimensions") or []),
         })
         return _from_ctx(ctx, payload, plan="get_kpi")
+    finally:
+        runtime_ctx.reset(token)
+
+
+def generate_node(state: AgentState) -> dict:
+    token, ctx = _bind_runtime(state)
+    try:
+        question = state.get("question") or ""
+        payload = adhoc_query.invoke({"question": question})
+        return _from_ctx(ctx, payload, plan=ctx.get("sql_plan") or "generate_sql")
     finally:
         runtime_ctx.reset(token)
 
@@ -273,7 +285,6 @@ def _from_ctx(ctx: dict, payload: Any, plan: str, reused: bool = False) -> dict:
         "plan": plan,
         "error": error,
         "error_type": "runtime" if error else None,
-        "reused_previous_result": reused,
         "waiting_for_user": False,
     }
 
@@ -289,12 +300,11 @@ def formatter_node(state: AgentState) -> dict:
 def cache_result_node(state: AgentState) -> dict:
     if state.get("error") or not state.get("sql_query"):
         return {}
-    question_key = state.get("enriched_question") or state.get("question") or ""
-    if not state.get("reused_previous_result") and state.get("turn_action") not in ("cache_hit", "transform_previous"):
+    question_key = state.get("question") or ""
+    if state.get("turn_action") != "cache_hit":
         semantic_cache.set(question_key, {
             "sql_query": state.get("sql_query"),
             "query_result": state.get("query_result"),
-            "result_preview": state.get("result_preview"),
         })
     return {}
 
@@ -358,9 +368,7 @@ def build_graph() -> StateGraph:
     workflow.add_node("chitchat", chitchat_node)
     workflow.add_node("safe_response", safe_response_node)
     workflow.add_node("hitl", hitl_node)
-    workflow.add_node("kpi", kpi_node)
-    workflow.add_node("transform", transform_node)
-    workflow.add_node("analyst", analyst_node)
+    workflow.add_node("generate", generate_node)
     workflow.add_node("formatter", formatter_node)
     workflow.add_node("cache_result", cache_result_node)
     workflow.add_node("save_memory", save_memory_node)
@@ -377,14 +385,10 @@ def build_graph() -> StateGraph:
             "safe_response": "safe_response",
             "chitchat": "chitchat",
             "hitl": "hitl",
-            "transform": "transform",
-            "kpi": "kpi",
-            "analyst": "analyst",
+            "generate": "generate",
         },
     )
-    workflow.add_edge("kpi", "formatter")
-    workflow.add_edge("transform", "formatter")
-    workflow.add_edge("analyst", "formatter")
+    workflow.add_edge("generate", "formatter")
     workflow.add_edge("chitchat", "save_memory")
     workflow.add_edge("safe_response", "save_memory")
     workflow.add_edge("hitl", "save_memory")
@@ -401,7 +405,6 @@ def _initial_state(question: str, session_id: str, kwargs: dict) -> AgentState:
     return {
         "session_id": session_id,
         "question": question,
-        "original_question": question,
         "allowed_rep_codes": kwargs.get("allowed_rep_codes") or [],
         "user_role": kwargs.get("user_role"),
         "user_id": kwargs.get("user_id"),
@@ -412,7 +415,6 @@ def _initial_state(question: str, session_id: str, kwargs: dict) -> AgentState:
         "start_time": time.time(),
         "cache_hit": False,
         "waiting_for_user": False,
-        "needs_clarification": False,
     }
 
 

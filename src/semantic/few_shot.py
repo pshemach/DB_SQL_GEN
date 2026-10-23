@@ -160,7 +160,8 @@ def seed_examples():
     SUM(CASE WHEN sf.Type = 'sales' THEN sf.NetValue
              ELSE -sf.NetValue END) AS NetSales
 FROM sales_flat AS sf
-WHERE sf.RepCode = @RepCode
+INNER JOIN sales_hierarchy_nodes AS shn ON shn.Id = sf.RepId
+WHERE FIND_IN_SET(shn.Code, @AllowedNodes) > 0
   AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
   AND sf.Date <  DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)""",
         "explanation": "Net Sales = sales minus returns using CASE WHEN on Type column",
@@ -175,9 +176,10 @@ WHERE sf.RepCode = @RepCode
            CAST(sf.Date AS DATE)           AS visit_date,
            COUNT(DISTINCT sf.CustomerCode) AS daily_calls
     FROM sales_flat AS sf
+    INNER JOIN sales_hierarchy_nodes AS shn ON shn.Id = sf.RepId
     WHERE sf.Type = 'sales'
       AND sf.NetValue > 0
-      AND sf.RepCode = @RepCode
+      AND FIND_IN_SET(shn.Code, @AllowedNodes) > 0
       AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
       AND sf.Date <  DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)
     GROUP BY sf.RepId, CAST(sf.Date AS DATE)
@@ -195,7 +197,7 @@ GROUP BY RepId""",
         "sql": """SELECT shn.Code AS RepCode, SUM(st.Value) AS SalesTarget
 FROM sales_targets AS st
 JOIN sales_hierarchy_nodes AS shn ON shn.Id = st.RepId
-WHERE shn.Code = @RepCode
+WHERE FIND_IN_SET(shn.Code, @AllowedNodes) > 0
   AND st.Type = 1
   AND st.StartDate <= LAST_DAY(CURRENT_DATE)
   AND st.EndDate   >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
@@ -213,7 +215,7 @@ GROUP BY shn.Code""",
                     ELSE -sf.NetValue END) AS NetSales
     FROM sales_flat AS sf
     JOIN sales_hierarchy_nodes AS shn ON shn.Id = sf.RepId
-    WHERE shn.Code = @RepCode
+    WHERE FIND_IN_SET(shn.Code, @AllowedNodes) > 0
       AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
       AND sf.Date <  DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)
     GROUP BY shn.Code
@@ -222,7 +224,7 @@ target AS (
     SELECT shn.Code AS RepCode, SUM(st.Value) AS SalesTarget
     FROM sales_targets AS st
     JOIN sales_hierarchy_nodes AS shn ON shn.Id = st.RepId
-    WHERE shn.Code = @RepCode
+    WHERE FIND_IN_SET(shn.Code, @AllowedNodes) > 0
       AND st.Type = 1
       AND st.StartDate <= LAST_DAY(CURRENT_DATE)
       AND st.EndDate   >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
@@ -245,9 +247,10 @@ JOIN target AS t ON t.RepCode = a.RepCode""",
         "sql": """SELECT COUNT(DISTINCT sf.InvoiceNo)         AS BillCount,
        COUNT(DISTINCT sf.InvoiceNo) / 700.0 AS Productivity
 FROM sales_flat AS sf
+INNER JOIN sales_hierarchy_nodes AS shn ON shn.Id = sf.RepId
 WHERE sf.Type = 'sales'
   AND sf.NetValue > 0
-  AND sf.RepCode = @RepCode
+  AND FIND_IN_SET(shn.Code, @AllowedNodes) > 0
   AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
   AND sf.Date <  DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)""",
         "explanation": "COUNT(DISTINCT InvoiceNo) divided by monthly target (700)",
@@ -261,10 +264,11 @@ WHERE sf.Type = 'sales'
        MAX(sf.Date)                 AS LastBillingDate,
        COUNT(DISTINCT sf.InvoiceNo) AS VisitCount
 FROM sales_flat AS sf
+INNER JOIN sales_hierarchy_nodes AS shn ON shn.Id = sf.RepId
 JOIN external_parties AS ep ON ep.Code = sf.CustomerCode
 WHERE sf.NetValue = 0
   AND ep.Active = 1
-  AND sf.RepCode = @RepCode
+  AND FIND_IN_SET(shn.Code, @AllowedNodes) > 0
   AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
   AND sf.Date <  DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)
   AND sf.CustomerName NOT IN (
@@ -285,7 +289,8 @@ LIMIT 100""",
        SUM(CASE WHEN sf.Type = 'sales' THEN sf.NetValue
                 ELSE -sf.NetValue END) AS NetSales
 FROM sales_flat AS sf
-WHERE sf.RepCode = @RepCode
+INNER JOIN sales_hierarchy_nodes AS shn ON shn.Id = sf.RepId
+WHERE FIND_IN_SET(shn.Code, @AllowedNodes) > 0
   AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
   AND sf.Date <  DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)
 GROUP BY sf.CustomerName
@@ -300,8 +305,9 @@ LIMIT 10""",
         "question": "What is the total return amount this month?",
         "sql": """SELECT SUM(sf.NetValue) AS TotalReturnAmount
 FROM sales_flat AS sf
+INNER JOIN sales_hierarchy_nodes AS shn ON shn.Id = sf.RepId
 WHERE sf.Type = 'return'
-  AND sf.RepCode = @RepCode
+  AND FIND_IN_SET(shn.Code, @AllowedNodes) > 0
   AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
   AND sf.Date <  DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)""",
         "explanation": "Returns = SUM(NetValue) where Type='return'. Financial loss, not quantity.",
@@ -316,9 +322,10 @@ FROM (
     SELECT sf.InvoiceNo,
            COUNT(DISTINCT sf.ProductCode) AS sku_per_bill
     FROM sales_flat AS sf
+    INNER JOIN sales_hierarchy_nodes AS shn ON shn.Id = sf.RepId
     WHERE sf.Type = 'sales'
       AND sf.NetValue > 0
-      AND sf.RepCode = @RepCode
+      AND FIND_IN_SET(shn.Code, @AllowedNodes) > 0
       AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
       AND sf.Date <  DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)
     GROUP BY sf.InvoiceNo

@@ -47,12 +47,12 @@ def save_frame(session_id: str | None, frame: SessionFrame) -> None:
 def frame_from_state(state: dict[str, Any]) -> SessionFrame:
     existing = load_frame(state.get("session_id"))
     return SessionFrame(
-        last_question=state.get("enriched_question") or state.get("question") or existing.last_question,
-        last_metrics=state.get("metric_keys") or existing.last_metrics,
-        last_entities=state.get("resolved_entities") or existing.last_entities,
-        last_period=state.get("period") or existing.last_period,
+        last_question=state.get("question") or existing.last_question,
+        last_metrics=existing.last_metrics,
+        last_entities=existing.last_entities,
+        last_period=existing.last_period,
         last_sql=state.get("sql_query") or existing.last_sql,
-        last_result_id=state.get("cached_result_id") or existing.last_result_id,
+        last_result_id=existing.last_result_id,
         pending_clarification=state.get("question_to_user") or "",
         advice_given=existing.advice_given,
     )

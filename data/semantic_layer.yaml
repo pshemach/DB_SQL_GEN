@@ -22,13 +22,14 @@ entities:
     name_column: Brand
 
 schema_cards:
-  sales_flat: "Fact table of invoice lines. Grain: one product line per invoice. Columns: Date, InvoiceNo, ProductCode, ProductName, Qty, Discount, NetValue, Brand, CustomerCategory, ProductCategory, Route, RepId, RepCode, RepName, CustomerCode, CustomerName, ASM, RSM, Distributor, Type ('sales'|'return'). Join sf.RepId -> sales_hierarchy_nodes.Id."
-  sales_targets: "Fact table of assigned targets. Columns: RepId, Type (1=rep, 0=distributor), Value, Qty, StartDate, EndDate, ProductId, CustomerId. Join st.RepId -> sales_hierarchy_nodes.Id. Never join raw to sales_flat."
-  sales_hierarchy_nodes: "Dimension for reps/territories. Columns: Id, Code, Name, LevelType (2=Territory, 3=Rep). Mandatory RLS table."
-  external_parties: "Customer/distributor master. Columns: Id, Code, Name, Active, Type (0=Customer, 1=Supplier, 2=Distributor)."
-  products: "Product master. Columns: Id, Code, Name, Volume, PackSize. Join via sales_flat.ProductCode = products.Code."
-  planned_routes: "Planned route calendar. Columns: PlannedDate, RouteId, RepId."
-  route_customer_assignments: "Customers assigned to a route. Columns: RouteId, CustomerId."
+  sales_flat: "Invoice lines. Grain: one product line. Columns: Date, InvoiceNo, ProductCode, ProductName, Productid, Qty, Discount, NetValue, Brand, CustomerCategory, ProductCategory, Route, RepId, RepCode, RepName, CustomerCode, CustomerName, ASM, RSM, TerritoryCode, TerritoryName, Distributor, Type ('sales'|'return'), Reason, TownId, TownName, agencyName, agencyCode. Amount column is NetValue. Route here is the route name already on the line, not routes.Id."
+  sales_targets: "Assigned targets. Columns: Id, Value, Qty, Type (1=rep), IsRep, IsProduct, IsCustomer, IsBrand, IsCategory, StartDate, EndDate, Month, Year, RepId, CustomerId, ProductId, BrandId, CategoryId, TerritoryId, PeriodId. Never join this raw table to sales_flat. Aggregate each fact in its own CTE first."
+  sales_hierarchy_nodes: "Rep and territory dimension. Columns: Id, Code, Name, Active, ParentId, LevelType, IsTerritory, DistributorId, CompanyId. RLS is always FIND_IN_SET(shn.Code, @AllowedNodes) > 0. Never filter with sf.RepCode = @RepCode."
+  external_parties: "Customer and distributor master. Columns: Id, Code, Name, Active, Type (0=Customer, 1=Supplier, 2=Distributor), SalesHierarchyNodeId, RepId, RouteId, TerritoryId, TownId, MobileNo, City. Join sf.CustomerCode = ep.Code. Do not join ep.Id to sales_flat.CustomerCode."
+  products: "Product master. Columns: Id, Code, Name, Active, PackSize, Volume, CategoryId, SubCategoryId, BrandId, IsAvailableToSFA. Join sf.ProductCode = p.Code. Productid on sales_flat matches products.Id when it is populated."
+  routes: "Route master. Columns: Id, Code, Name, IsActive, RepId, TerritoryId, SubTerritoryId, BranchId, CompanyId. Join routes.RepId = shn.Id. sales_flat.Route is a name, so match it with routes.Name or routes.Code, not routes.Id."
+  planned_routes: "Planned visits. Columns: Id, PlannedDate, RouteId, RepId, IsDeleted, ApprovalStatus. Join pr.RepId = shn.Id and pr.RouteId = routes.Id. Ignore rows with IsDeleted = 1."
+  route_customer_assignments: "Customers on a route. Columns: Id, SeqNo, RouteId, CustomerId. Join rca.RouteId = routes.Id and rca.CustomerId = external_parties.Id."
 
 time_templates:
   current_month:

@@ -3,7 +3,8 @@
 import re
 
 from src.agents.authz import DANGEROUS_PATTERNS, authz_node
-from src.agents.prompts import ROUTER_PROMPT, SQL_GENERATE_PROMPT
+from src.agents.prompts import ROUTER_PROMPT, SQL_GENERATE_PROMPT, SQL_PLAN_PROMPT, SQL_TABLE_PROMPT
+from src.semantic.layer import parse_selected_tables
 from src.agents.router import next_node, normalize_router_payload, route_turn
 from src.infrastructure.db.sql_safety import assess_sql, verify_sql
 from src.infrastructure.errors import classify_db_error, is_retryable
@@ -120,52 +121,55 @@ class TestRouter:
     def test_dml_is_deny_without_llm(self):
         assert route_turn("DELETE FROM sales_flat")["turn_action"] == "deny"
 
-    def test_product_wise_is_not_forced_to_rep(self, monkeypatch):
-        def fake_llm(question, session_frame, has_cached_result):
-            assert "product wise" in question
-            assert has_cached_result is True
-            return normalize_router_payload({
-                "action": "kpi",
-                "confidence": 0.93,
-                "metric_keys": ["net_value"],
-                "period": "current_month",
-                "dimensions": ["product"],
-                "enriched_question": "Product-wise net sales for the current month",
-            }, question)
+    def test_data_question_generates_sql(self):
+        out = normalize_router_payload({"action": "kpi"}, "give me product wise net sales")
+        assert out["turn_action"] == "generate"
+        assert next_node(out) == "generate"
 
-        monkeypatch.setattr("src.agents.router._llm_route", fake_llm)
-        out = route_turn(
-            "give me product wise net sales",
-            session_frame="Last question: give me rep wise net sales",
-            has_cached_result=True,
-        )
-        assert out["turn_action"] == "kpi"
-        assert out["dimensions"] == ["product"]
-        assert out["metric_keys"] == ["net_value"]
-        assert next_node(out) == "kpi"
+    def test_greeting_stays_chitchat(self):
+        out = normalize_router_payload({"action": "chitchat"}, "hello")
+        assert next_node(out) == "chitchat"
 
-    def test_incomplete_kpi_goes_to_analyst(self):
-        out = normalize_router_payload({"action": "kpi", "metric_keys": ["net_value"], "dimensions": []}, "sales")
-        assert out["turn_action"] == "analyze"
-        assert out["dimensions"] == []
-        assert next_node(out) == "analyst"
-
-    def test_router_prompt_asks_the_model_for_grain(self):
-        assert "product wise net sales" in ROUTER_PROMPT
-        assert "Do not copy the previous breakdown" in ROUTER_PROMPT
+    def test_router_has_three_actions(self):
+        assert "chitchat|clarify|generate" in ROUTER_PROMPT
+        assert "kpi" not in ROUTER_PROMPT
+        assert "analyze" not in ROUTER_PROMPT
 
 
 class TestGeneratorPromptIncludesQuestion:
     def test_prompt_has_question_placeholder(self):
+        assert "{question}" in SQL_PLAN_PROMPT
+        assert "{business_definitions}" in SQL_PLAN_PROMPT
+        assert "{plan}" in SQL_TABLE_PROMPT
         assert "{question}" in SQL_GENERATE_PROMPT
+        assert "{plan}" in SQL_GENERATE_PROMPT
         assert "{schema_cards}" in SQL_GENERATE_PROMPT
+        assert "{business_definitions}" in SQL_GENERATE_PROMPT
 
     def test_formatted_prompt_keeps_the_user_question(self):
         filled = SQL_GENERATE_PROMPT.format(
+            plan="rank customers, then rank products inside the top 10",
             schema_cards="sales_flat: fact",
-            metric_fragments="net_value: SUM(NetValue)",
+            business_definitions="net_value: sales minus returns",
             question="What is my net sales this month?",
-            entities="{}",
-            period="current_month",
         )
         assert "What is my net sales this month?" in filled
+        assert "sales minus returns" in filled
+        assert "rank customers" in filled
+
+    def test_table_selection_keeps_known_tables_and_bridge(self):
+        known = {
+            "sales_flat",
+            "sales_targets",
+            "sales_hierarchy_nodes",
+            "products",
+            "routes",
+            "planned_routes",
+            "external_parties",
+            "route_customer_assignments",
+        }
+        tables = parse_selected_tables('{"tables": ["sales_targets", "pda_invoices"]}', known)
+        assert tables == ["sales_targets", "sales_hierarchy_nodes"]
+
+        nested = parse_selected_tables("sales_flat, products", known)
+        assert nested == ["sales_flat", "products", "sales_hierarchy_nodes"]
