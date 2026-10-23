@@ -1,9 +1,9 @@
 from fastapi import APIRouter
 from loguru import logger
 
-from ...config import settings
-from ...core import db_manager
-from ..data_models import HealthResponse
+from src.infrastructure.config import settings
+from src.infrastructure.db.mysql_client import db_manager
+from ..schemas import HealthResponse
 
 router = APIRouter(tags=["health"])
 

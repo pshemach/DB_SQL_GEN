@@ -2,8 +2,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ...agents.tools.business_knowledge_store import business_knowledge_store
-from ..data_models import KnowledgeDefinitionRequest
+from src.semantic.knowledge_store import business_knowledge_store
+from ..schemas import KnowledgeDefinitionRequest
 from ..dependencies import require_knowledge_admin
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])

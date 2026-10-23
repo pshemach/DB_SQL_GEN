@@ -1,0 +1,120 @@
+entities:
+  rep:
+    table: sales_hierarchy_nodes
+    code_column: Code
+    name_column: Name
+    id_column: Id
+  customer:
+    table: sales_flat
+    code_column: CustomerCode
+    name_column: CustomerName
+  product:
+    table: sales_flat
+    code_column: ProductCode
+    name_column: ProductName
+  route:
+    table: sales_flat
+    code_column: Route
+    name_column: Route
+  brand:
+    table: sales_flat
+    code_column: Brand
+    name_column: Brand
+
+schema_cards:
+  sales_flat: "Fact table of invoice lines. Grain: one product line per invoice. Columns: Date, InvoiceNo, ProductCode, ProductName, Qty, Discount, NetValue, Brand, CustomerCategory, ProductCategory, Route, RepId, RepCode, RepName, CustomerCode, CustomerName, ASM, RSM, Distributor, Type ('sales'|'return'). Join sf.RepId -> sales_hierarchy_nodes.Id."
+  sales_targets: "Fact table of assigned targets. Columns: RepId, Type (1=rep, 0=distributor), Value, Qty, StartDate, EndDate, ProductId, CustomerId. Join st.RepId -> sales_hierarchy_nodes.Id. Never join raw to sales_flat."
+  sales_hierarchy_nodes: "Dimension for reps/territories. Columns: Id, Code, Name, LevelType (2=Territory, 3=Rep). Mandatory RLS table."
+  external_parties: "Customer/distributor master. Columns: Id, Code, Name, Active, Type (0=Customer, 1=Supplier, 2=Distributor)."
+  products: "Product master. Columns: Id, Code, Name, Volume, PackSize. Join via sales_flat.ProductCode = products.Code."
+  planned_routes: "Planned route calendar. Columns: PlannedDate, RouteId, RepId."
+  route_customer_assignments: "Customers assigned to a route. Columns: RouteId, CustomerId."
+
+time_templates:
+  current_month:
+    sales_flat: "sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01') AND sf.Date < DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)"
+    sales_targets: "st.StartDate <= LAST_DAY(CURRENT_DATE) AND st.EndDate >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')"
+  last_month:
+    sales_flat: "sf.Date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE, INTERVAL 1 MONTH), '%Y-%m-01') AND sf.Date < DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')"
+    sales_targets: "st.StartDate <= LAST_DAY(DATE_SUB(CURRENT_DATE, INTERVAL 1 MONTH)) AND st.EndDate >= DATE_FORMAT(DATE_SUB(CURRENT_DATE, INTERVAL 1 MONTH), '%Y-%m-01')"
+
+kpis:
+  net_value:
+    keywords: [net sales, net value, achievement, actual sales, sales]
+    definition: Net sales after deducting returns. Formula uses NetValue with Type sales minus Type return.
+    grain: transaction
+    tables: [sales_flat, sales_hierarchy_nodes]
+    fact_table: sales_flat
+    expression: "SUM(CASE WHEN sf.Type = 'sales' THEN sf.NetValue ELSE -sf.NetValue END)"
+    alias: NetSales
+    rls: true
+  sales_value:
+    keywords: [gross sales, sales amount, sales value]
+    definition: Sales value of Type='sales' rows only.
+    grain: transaction
+    tables: [sales_flat, sales_hierarchy_nodes]
+    fact_table: sales_flat
+    expression: "SUM(CASE WHEN sf.Type = 'sales' THEN sf.NetValue ELSE 0 END)"
+    alias: SalesValue
+    rls: true
+  return_value:
+    keywords: [returns, return amount, return value]
+    definition: Return value reported as a positive amount.
+    grain: transaction
+    tables: [sales_flat, sales_hierarchy_nodes]
+    fact_table: sales_flat
+    expression: "SUM(CASE WHEN sf.Type = 'return' THEN sf.NetValue ELSE 0 END)"
+    alias: ReturnValue
+    rls: true
+  sales_quantity:
+    keywords: [sales quantity, sales qty, sold quantity]
+    definition: Quantity sold excluding returns.
+    grain: transaction
+    tables: [sales_flat, sales_hierarchy_nodes]
+    fact_table: sales_flat
+    expression: "SUM(CASE WHEN sf.Type = 'sales' THEN sf.Qty ELSE 0 END)"
+    alias: SalesQty
+    rls: true
+  bill_count:
+    keywords: [bill count, invoice count, number of bills]
+    definition: Distinct invoices with positive sales.
+    grain: invoice
+    tables: [sales_flat, sales_hierarchy_nodes]
+    fact_table: sales_flat
+    expression: "COUNT(DISTINCT CASE WHEN sf.Type = 'sales' AND sf.NetValue > 0 THEN sf.InvoiceNo END)"
+    alias: BillCount
+    rls: true
+  productive_calls:
+    keywords: [productive calls, productive call, pc]
+    definition: Distinct customers billed with positive sales per rep per day, then summed.
+    grain: rep_day
+    tables: [sales_flat, sales_hierarchy_nodes]
+    fact_table: sales_flat
+    expression: "COUNT(DISTINCT CASE WHEN sf.Type = 'sales' AND sf.NetValue > 0 THEN CONCAT(sf.CustomerCode, '|', CAST(sf.Date AS DATE)) END)"
+    alias: ProductiveCalls
+    rls: true
+  target:
+    keywords: [target, sales target, quota]
+    definition: Rep-level target Type=1 overlapping the period.
+    grain: rep_period
+    tables: [sales_targets, sales_hierarchy_nodes]
+    fact_table: sales_targets
+    expression: "SUM(st.Value)"
+    alias: SalesTarget
+    extra_filter: "st.Type = 1"
+    rls: true
+  achievement_pct:
+    keywords: [achievement percentage, target vs achievement, achievement %]
+    definition: Net sales divided by target.
+    grain: rep_period
+    derived: true
+    components: [net_value, target]
+    alias: AchievementPct
+
+dimensions:
+  rep: {expr: "shn.Code", label: "shn.Name", alias_code: "RepCode", alias_name: "RepName"}
+  route: {expr: "sf.Route", label: "sf.Route", alias_code: "Route", alias_name: "Route"}
+  customer: {expr: "sf.CustomerCode", label: "sf.CustomerName", alias_code: "CustomerCode", alias_name: "CustomerName"}
+  product: {expr: "sf.ProductCode", label: "sf.ProductName", alias_code: "ProductCode", alias_name: "ProductName"}
+  brand: {expr: "sf.Brand", label: "sf.Brand", alias_code: "Brand", alias_name: "Brand"}
+  date: {expr: "CAST(sf.Date AS DATE)", label: "CAST(sf.Date AS DATE)", alias_code: "SaleDate", alias_name: "SaleDate"}

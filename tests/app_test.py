@@ -5,9 +5,9 @@ import pandas as pd
 import plotly.express as px
 from loguru import logger
 
-from src.agents.graph import run_agent_async
-from src.core.database import db_manager
-from src.agents.tools.business_knowledge_store import business_knowledge_store
+from src.agents.orchestrator import run_agent_async
+from src.infrastructure.db.mysql_client import db_manager
+from src.semantic.knowledge_store import business_knowledge_store
 
 
 # =============================

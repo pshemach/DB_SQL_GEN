@@ -1,9 +1,9 @@
-from typing import Optional, Any
+from typing import Optional
 from loguru import logger
 import asyncio
-from src.agents.tools import chat_memory
+from src.memory.chat_store import chat_memory
 from src.guardrails.pipeline import guardrail_pipeline
-from src.agents.graph import run_agent_async
+from src.agents.orchestrator import run_agent_stream
 
 
 async def stream_async_agent(
@@ -44,14 +44,23 @@ async def stream_async_agent(
         }
         return
 
-    async for chunk in run_agent_async(
+    async for event in run_agent_stream(
         question=question,
         session_id=session_id,
         user_role=user_role,
         allowed_rep_codes=allowed_rep_codes,
         user_id=user_id,
     ):
-        yield chunk
+        if event.get("type") == "status":
+            yield {"type": "status", "message": event.get("text") or "Working..."}
+        elif event.get("type") == "complete":
+            result = event.get("state") or {}
+            if result.get("waiting_for_user"):
+                yield {
+                    "type": "clarification",
+                    "question_to_user": result.get("question_to_user"),
+                }
+            yield {"type": "final", "result": result}
 
 
 def run_async_agent(
@@ -61,8 +70,6 @@ def run_async_agent(
     allowed_rep_codes: Optional[list] = None,
     user_id: Optional[str] = None
 ):
-    """Backward-compatible blocking wrapper for existing call sites."""
-
     async def execute_with_guardrails():
         final_result = None
         async for chunk in stream_async_agent(
@@ -74,10 +81,6 @@ def run_async_agent(
         ):
             if chunk.get("type") == "final":
                 final_result = chunk.get("result")
-
-        return final_result or {
-            "error": "No result produced",
-            "should_retry": False,
-        }
+        return final_result or {"error": "No result produced", "should_retry": False}
 
     return asyncio.run(execute_with_guardrails())

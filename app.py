@@ -32,9 +32,9 @@ import plotly.io as pio
 from loguru import logger
 from typing import Optional, Dict, Any
 
-from src.utils.chart_request import detect_requested_chart_type
-from src.agents.tools.business_knowledge_store import business_knowledge_store
-from src.agents.tools.chat_memory import chat_memory
+from src.services.chart_request import detect_requested_chart_type
+from src.semantic.knowledge_store import business_knowledge_store
+from src.memory.chat_store import chat_memory
 from ui.agent_runner import stream_async_agent
 from ui.user_utils import login_with_phone, login_with_system
 

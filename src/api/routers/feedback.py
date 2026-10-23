@@ -2,8 +2,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ...agents.tools.chat_memory import chat_memory
-from ..data_models import FeedbackRequest
+from src.memory.chat_store import chat_memory
+from ..schemas import FeedbackRequest
 from ..dependencies import require_user
 
 router = APIRouter(tags=["feedback"])

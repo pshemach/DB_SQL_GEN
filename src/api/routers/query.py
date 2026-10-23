@@ -4,15 +4,15 @@ from fastapi import APIRouter, HTTPException
 from langsmith import traceable
 from loguru import logger
 
-from ...agents.tools.access_context import (
+from src.services.access_context import (
     extract_allowed_rep_codes_from_phone_auth,
     extract_user_id_from_phone_auth,
     extract_user_role_from_phone_auth,
 )
-from ...agents.tools.chat_memory import chat_memory
-from ...agents.tools.chatbot_auth_client import chatbot_auth_client
-from ..data_models import QueryRequest, QueryResponse
-from ..services.conversation import execute_turn
+from src.memory.chat_store import chat_memory
+from src.services.auth_client import chatbot_auth_client
+from ..schemas import QueryRequest, QueryResponse
+from src.services.conversation import execute_turn
 
 router = APIRouter(tags=["query"])
 
@@ -60,6 +60,8 @@ async def query_database(request: QueryRequest):
             table_title=result.get("table_title"),
             visualizations=result.get("visualizations"),
             requested_chart_type=result.get("requested_chart_type"),
+            final_answer=result.get("final_answer"),
+            assistant_message_id=result.get("assistant_message_id"),
         )
     except Exception as e:
         logger.error(f"Query error: {e}")

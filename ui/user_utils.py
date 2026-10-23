@@ -1,9 +1,9 @@
 import asyncio
 from typing import Optional, Dict, Any
 from sqlalchemy import text
-from src.core.database import db_manager
-from src.agents.tools.chatbot_auth_client import chatbot_auth_client
-from src.agents.tools.access_context import (
+from src.infrastructure.db.mysql_client import db_manager
+from src.services.auth_client import chatbot_auth_client
+from src.services.access_context import (
     extract_allowed_rep_codes_from_phone_auth,
     extract_allowed_node_ids_from_system_login,
     convert_node_ids_to_codes,

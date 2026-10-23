@@ -9,8 +9,7 @@ from loguru import logger
 from langsmith import traceable
 from langchain_core.prompts import ChatPromptTemplate
 
-from ..config import settings
-from ..utils.llm_factory import openai_llm, groq_llm
+from src.infrastructure.llm.llm_provider import openai_llm
 from .base import BaseGuardrail, GuardrailDecision, GuardrailResult
 from .social_messages import is_social_message
 

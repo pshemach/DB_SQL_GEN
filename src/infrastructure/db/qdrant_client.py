@@ -11,7 +11,7 @@ from qdrant_client.http.models import (
     FieldCondition,
     MatchValue,
 )
-from src.config import settings
+from src.infrastructure.config import settings
 
 QDRANT_API_KEY = settings.qdrant_api_key
 QDRANT_URL = settings.qdrant_url

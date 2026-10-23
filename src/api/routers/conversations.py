@@ -9,10 +9,10 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
-from ...agents.tools.chat_memory import chat_memory
-from ..data_models import ConversationFollowUpRequest, ConversationStartRequest
+from src.memory.chat_store import chat_memory
+from ..schemas import ConversationFollowUpRequest, ConversationStartRequest
 from ..dependencies import AUTH_SESSIONS, bearer_token, require_user
-from ..services.conversation import execute_turn, stream_turn
+from src.services.conversation import execute_turn, stream_turn
 
 router = APIRouter(tags=["conversations"])
 

@@ -224,5 +224,17 @@ database
 
 research
 data/sales_flat sql.txt
-data
+data/*
+!data/semantic_layer.yaml
 research
+
+# Retired packages after the SFA analyst cutover
+/src/core/
+/src/config/
+/src/utils/
+/src/agents/prompt/
+/src/agents/agent/
+/src/agents/graph/
+/src/api/services/
+/src/api/endpoints.py
+/src/api/data_models.py
