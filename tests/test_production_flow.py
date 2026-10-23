@@ -3,8 +3,8 @@
 import re
 
 from src.agents.authz import DANGEROUS_PATTERNS, authz_node
-from src.agents.prompts import SQL_GENERATE_PROMPT
-from src.agents.router import route_turn
+from src.agents.prompts import ROUTER_PROMPT, SQL_GENERATE_PROMPT
+from src.agents.router import next_node, normalize_router_payload, route_turn
 from src.infrastructure.db.sql_safety import assess_sql, verify_sql
 from src.infrastructure.errors import classify_db_error, is_retryable
 from src.semantic.compiler import QuerySpec, compile_sql
@@ -77,6 +77,12 @@ class TestCompiler:
         assert "LIMIT" in sql.upper()
         assert "NetValue" in sql
 
+    def test_product_dimension_groups_by_product(self):
+        sql = compile_sql(QuerySpec(metrics=["net_value"], dimensions=["product"]))
+        assert "sf.ProductCode" in sql
+        assert "sf.ProductName" in sql
+        assert "NetValue" in sql
+
     def test_target_vs_achievement_uses_ctes(self):
         sql = compile_sql(QuerySpec(metrics=["net_value", "target", "achievement_pct"], dimensions=["rep"]))
         assert "WITH achievement AS" in sql
@@ -111,20 +117,42 @@ class TestAuthz:
 
 
 class TestRouter:
-    def test_greeting_is_chitchat(self):
-        assert route_turn("hello")["turn_action"] == "chitchat"
-
-    def test_kpi_question(self):
-        out = route_turn("What is my net sales this month?")
-        assert out["turn_action"] == "kpi"
-        assert "net_value" in out["metric_keys"]
-
-    def test_why_question_is_analyze(self):
-        out = route_turn("Why is my achievement only 62% this month?")
-        assert out["turn_action"] == "analyze"
-
-    def test_dml_is_deny(self):
+    def test_dml_is_deny_without_llm(self):
         assert route_turn("DELETE FROM sales_flat")["turn_action"] == "deny"
+
+    def test_product_wise_is_not_forced_to_rep(self, monkeypatch):
+        def fake_llm(question, session_frame, has_cached_result):
+            assert "product wise" in question
+            assert has_cached_result is True
+            return normalize_router_payload({
+                "action": "kpi",
+                "confidence": 0.93,
+                "metric_keys": ["net_value"],
+                "period": "current_month",
+                "dimensions": ["product"],
+                "enriched_question": "Product-wise net sales for the current month",
+            }, question)
+
+        monkeypatch.setattr("src.agents.router._llm_route", fake_llm)
+        out = route_turn(
+            "give me product wise net sales",
+            session_frame="Last question: give me rep wise net sales",
+            has_cached_result=True,
+        )
+        assert out["turn_action"] == "kpi"
+        assert out["dimensions"] == ["product"]
+        assert out["metric_keys"] == ["net_value"]
+        assert next_node(out) == "kpi"
+
+    def test_incomplete_kpi_goes_to_analyst(self):
+        out = normalize_router_payload({"action": "kpi", "metric_keys": ["net_value"], "dimensions": []}, "sales")
+        assert out["turn_action"] == "analyze"
+        assert out["dimensions"] == []
+        assert next_node(out) == "analyst"
+
+    def test_router_prompt_asks_the_model_for_grain(self):
+        assert "product wise net sales" in ROUTER_PROMPT
+        assert "Do not copy the previous breakdown" in ROUTER_PROMPT
 
 
 class TestGeneratorPromptIncludesQuestion:

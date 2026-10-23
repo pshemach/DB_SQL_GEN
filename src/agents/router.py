@@ -1,4 +1,4 @@
-"""Deterministic fast-path plus a small-LLM fallback for turn classification."""
+"""Small-LLM turn classifier. Security denies stay local; grain and metric come from the model."""
 
 from __future__ import annotations
 
@@ -9,96 +9,101 @@ from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 
 from src.agents.prompts import ROUTER_PROMPT
-from src.guardrails.social_messages import is_social_message
 from src.infrastructure.json import extract_json
 from src.infrastructure.llm.llm_provider import openai_llm
-from src.semantic.layer import match_kpi_keys, period_from_question
+from src.semantic.layer import kpis, load_layer
 
 DENY_PATTERN = re.compile(r"(?i)\b(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|ALTER\s+TABLE|INSERT\s+INTO)\b")
-TRANSFORM_HINTS = (
-    "sort", "filter", "top ", "bottom ", "rank", "only show", "chart", "explain this", "what does this mean",
-)
-ANALYZE_HINTS = (
-    "why", "forecast", "predict", "will i hit", "what should", "improve", "compare", "vs last",
-    "gap", "projection", "recommend", "and then", "also tell",
-)
+ACTIONS = {"chitchat", "deny", "transform_previous", "kpi", "analyze", "adhoc", "clarify"}
 
 
 def route_turn(question: str, session_frame: str = "", has_cached_result: bool = False) -> dict[str, Any]:
     q = (question or "").strip()
     if len(q) < 2:
-        return _result("deny", "Question too short.")
+        return _deny("Question too short.")
     if DENY_PATTERN.search(q):
-        return _result("deny", "Suspicious or mutating request.")
-    if is_social_message(q):
-        return _result("chitchat")
-
-    ql = q.lower()
-    metrics = match_kpi_keys(q)
-    period = period_from_question(q)
-    if has_cached_result and any(h in ql for h in TRANSFORM_HINTS) and not any(h in ql for h in ANALYZE_HINTS):
-        return _result("transform_previous", metrics=metrics, period=period, enriched=q)
-    if any(h in ql for h in ANALYZE_HINTS):
-        analysis = []
-        if any(w in ql for w in ("why", "gap")):
-            analysis.append("diagnose")
-        if any(w in ql for w in ("forecast", "predict", "will i hit", "projection")):
-            analysis.append("forecast")
-        if "compare" in ql or "vs last" in ql:
-            analysis.append("compare")
-        if any(w in ql for w in ("what should", "improve", "recommend")):
-            analysis.append("recommend")
-        return _result("analyze", metrics=metrics or ["net_value"], period=period, analysis=analysis or ["diagnose"], enriched=q)
-    if metrics and not any(w in ql for w in ("join", "invoice no", "column")):
-        return _result("kpi", metrics=metrics, period=period, enriched=q)
-
-    return _llm_route(q, session_frame, metrics, period)
+        return _deny("Suspicious or mutating request.")
+    return _llm_route(q, session_frame, has_cached_result)
 
 
-def _llm_route(question: str, session_frame: str, metrics: list[str], period: str) -> dict[str, Any]:
-    try:
-        chain = ChatPromptTemplate.from_template(ROUTER_PROMPT) | openai_llm()
-        parsed = extract_json((chain.invoke({"question": question, "session_frame": session_frame})).content)
-        action = parsed.get("action") or "analyze"
-        return {
-            "turn_action": action,
-            "router_confidence": float(parsed.get("confidence") or 0.6),
-            "metric_keys": parsed.get("metric_keys") or metrics,
-            "period": parsed.get("period") or period,
-            "dimensions": parsed.get("dimensions") or ["rep"],
-            "analysis_types": parsed.get("analysis_types") or [],
-            "enriched_question": parsed.get("enriched_question") or question,
-            "question_to_user": parsed.get("clarification_question"),
-            "needs_clarification": action == "clarify",
-            "waiting_for_user": action == "clarify",
-        }
-    except Exception as e:
-        logger.warning(f"Router LLM fallback failed: {e}")
-        return _result("analyze", metrics=metrics or ["net_value"], period=period, enriched=question)
+def next_node(decision: dict[str, Any]) -> str:
+    action = decision.get("turn_action") or "analyze"
+    if action == "deny":
+        return "safe_response"
+    if action == "chitchat":
+        return "chitchat"
+    if action == "clarify":
+        return "hitl"
+    if action == "transform_previous":
+        return "transform"
+    if action == "kpi" and decision.get("dimensions") and decision.get("metric_keys"):
+        return "kpi"
+    return "analyst"
 
 
-def _result(
-    action: str,
-    reason: str | None = None,
-    metrics: list | None = None,
-    period: str = "current_month",
-    analysis: list | None = None,
-    enriched: str | None = None,
-) -> dict[str, Any]:
-    out = {
+def normalize_router_payload(parsed: dict[str, Any], question: str) -> dict[str, Any]:
+    layer = load_layer()
+    known_metrics = set(kpis())
+    known_dimensions = set((layer.get("dimensions") or {}).keys())
+    known_periods = set((layer.get("time_templates") or {}).keys()) or {"current_month", "last_month"}
+
+    action = parsed.get("action") or "analyze"
+    if action not in ACTIONS:
+        action = "analyze"
+    if action == "adhoc":
+        action = "analyze"
+
+    metrics = [key for key in (parsed.get("metric_keys") or []) if key in known_metrics]
+    dimensions = [key for key in (parsed.get("dimensions") or []) if key in known_dimensions]
+    period = parsed.get("period") if parsed.get("period") in known_periods else "current_month"
+    if action == "kpi" and (not metrics or not dimensions):
+        action = "analyze"
+
+    return {
         "turn_action": action,
-        "router_confidence": 0.95,
-        "metric_keys": metrics or [],
+        "router_confidence": float(parsed.get("confidence") or 0.6),
+        "metric_keys": metrics,
         "period": period,
-        "dimensions": ["rep"],
-        "analysis_types": analysis or [],
-        "enriched_question": enriched,
+        "dimensions": dimensions,
+        "analysis_types": list(parsed.get("analysis_types") or []),
+        "enriched_question": parsed.get("enriched_question") or question,
+        "question_to_user": parsed.get("clarification_question"),
         "needs_clarification": action == "clarify",
         "waiting_for_user": action == "clarify",
         "access_denied": action == "deny",
-        "access_denied_reason": reason if action == "deny" else None,
-        "error": reason if action == "deny" else None,
-        "error_type": "guardrail_rejection" if action == "deny" else None,
-        "question_to_user": reason if action == "clarify" else None,
+        "access_denied_reason": None,
+        "error": None,
+        "error_type": None,
     }
-    return out
+
+
+def _llm_route(question: str, session_frame: str, has_cached_result: bool) -> dict[str, Any]:
+    frame = session_frame or ""
+    if has_cached_result:
+        frame = f"{frame}\nA previous result is cached for this session.".strip()
+    try:
+        chain = ChatPromptTemplate.from_template(ROUTER_PROMPT) | openai_llm()
+        parsed = extract_json(chain.invoke({"question": question, "session_frame": frame}).content)
+        return normalize_router_payload(parsed, question)
+    except Exception as e:
+        logger.warning(f"Router LLM failed: {e}")
+        return normalize_router_payload({"action": "analyze", "enriched_question": question}, question)
+
+
+def _deny(reason: str) -> dict[str, Any]:
+    return {
+        "turn_action": "deny",
+        "router_confidence": 1.0,
+        "metric_keys": [],
+        "period": "current_month",
+        "dimensions": [],
+        "analysis_types": [],
+        "enriched_question": None,
+        "needs_clarification": False,
+        "waiting_for_user": False,
+        "access_denied": True,
+        "access_denied_reason": reason,
+        "error": reason,
+        "error_type": "guardrail_rejection",
+        "question_to_user": None,
+    }

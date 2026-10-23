@@ -52,7 +52,7 @@ def format_result(state: dict[str, Any]) -> dict[str, Any]:
     try:
         chain = ChatPromptTemplate.from_template(FORMATTER_PROMPT) | openai_llm()
         parsed = extract_json(chain.invoke({
-            "question": state.get("enriched_question") or state.get("question") or "",
+            "question": state.get("original_question") or state.get("question") or "",
             "facts": json.dumps(facts, default=str),
             "dataset_profile": json.dumps({"rows": len(df), "columns": list(df.columns)}),
             "requested_chart_type": requested or "none",

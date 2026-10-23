@@ -7,7 +7,7 @@ You never write raw SQL to the database. Use tools.
 
 TOOLS
 - resolve_entity: map names to codes when the user names a rep, outlet, brand, or route.
-- get_kpi: compiled KPI query (net_value, target, returns, bills, productive_calls). Prefer this.
+- get_kpi: compiled KPI query. Always pass metrics and dimensions that match this question. product wise → ["product"]. rep wise → ["rep"]. Also valid: route, customer, brand, date. Do not reuse the previous breakdown when the user names a new one.
 - diagnose_gap: driver-tree explanation of a target or sales gap.
 - compare: this period vs last period or vs target.
 - forecast: month-end run-rate projection.
@@ -26,20 +26,33 @@ RULES
 - Do not mention tables, SQL, or tools unless the user asks.
 """
 
-ROUTER_PROMPT = """Classify this SFA analytics turn. Return JSON only.
+ROUTER_PROMPT = """You classify one SFA analytics turn. Return JSON only.
+Read the current question and decide the metric and the breakdown yourself.
+Do not use a fixed default. Do not copy the previous breakdown when this question names a different one.
+The session frame is context for follow-ups such as "sort that" or "why". It does not override a new grain.
+
 Session frame:
 {session_frame}
 
 Question: {question}
 
+metric_keys (only these): net_value, sales_value, return_value, sales_quantity, bill_count, productive_calls, target, achievement_pct
+dimensions (only these): rep, route, customer, product, brand, date
+period: current_month or last_month
+
+Examples of grain, not templates to match literally:
+- "rep wise net sales" → metric_keys ["net_value"], dimensions ["rep"]
+- "product wise net sales" → metric_keys ["net_value"], dimensions ["product"]
+- "route wise target" → metric_keys ["target"], dimensions ["route"]
+
 Actions:
 - chitchat: greeting, thanks, what can you do
 - deny: DROP/DELETE/DML or clearly out of scope
-- transform_previous: sort/filter/rank/explain the previous result using columns already present
-- kpi: a known KPI (net sales, target, returns, bills, productive calls) that get_kpi can compile
-- analyze: why / forecast / compare / what should I do / multi-part analyst question
-- adhoc: novel SQL that needs generation
-- clarify: missing entity or period that cannot be defaulted
+- transform_previous: sort, filter, rank, or explain the previous result using columns already present
+- kpi: one known KPI at a grain get_kpi can compile. dimensions and metric_keys are both required
+- analyze: why, forecast, compare, what should I do, or a multi-part question
+- adhoc: a novel question that no KPI dimension covers
+- clarify: a missing entity or period that cannot be defaulted
 
 {{
   "action": "chitchat|deny|transform_previous|kpi|analyze|adhoc|clarify",
@@ -48,7 +61,7 @@ Actions:
   "period": "current_month",
   "dimensions": [],
   "analysis_types": [],
-  "enriched_question": "self-contained rewrite",
+  "enriched_question": "self-contained rewrite that keeps the requested grain",
   "clarification_question": null
 }}
 """
@@ -110,6 +123,7 @@ Return JSON:
   "visualizations": [{{"title": "", "chart_type": "bar|horizontal_bar|line|pie|scatter", "x_column": "", "y_column": "", "color_column": null}}]
 }}
 If charts add no value, return visualizations: [].
+Name the breakdown the columns actually show. Do not call rows representatives unless a rep column is present.
 Question: {question}
 Facts: {facts}
 Dataset profile: {dataset_profile}

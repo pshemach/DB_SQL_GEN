@@ -15,7 +15,7 @@ from loguru import logger
 
 from src.agents.authz import authz_node
 from src.agents.prompts import ANALYST_SYSTEM, CHITCHAT_PROMPT
-from src.agents.router import route_turn
+from src.agents.router import next_node, route_turn
 from src.agents.runtime import runtime_ctx
 from src.agents.state import AgentState
 from src.agents.tools import ANALYST_TOOLS
@@ -98,8 +98,6 @@ def semantic_cache_node(state: AgentState) -> dict:
 def router_node(state: AgentState) -> dict:
     cached = bool(state.get("session_id") and result_cache.get_cached_result(state["session_id"]))
     routed = route_turn(state["question"], state.get("session_frame") or "", has_cached_result=cached)
-    if routed.get("enriched_question"):
-        routed["question"] = routed["enriched_question"]
     routed["metrics"] = set_router_action(state.get("metrics"), routed.get("turn_action") or "analyze")
     return routed
 
@@ -171,9 +169,9 @@ def kpi_node(state: AgentState) -> dict:
     token, ctx = _bind_runtime(state)
     try:
         payload = get_kpi.invoke({
-            "metrics": state.get("metric_keys") or ["net_value"],
+            "metrics": list(state.get("metric_keys") or []),
             "period": state.get("period") or "current_month",
-            "dimensions": state.get("dimensions") or ["rep"],
+            "dimensions": list(state.get("dimensions") or []),
         })
         return _from_ctx(ctx, payload, plan="get_kpi")
     finally:
@@ -347,18 +345,7 @@ def route_after_authz(state: AgentState) -> Literal["safe_response", "router"]:
 
 
 def route_after_router(state: AgentState) -> str:
-    action = state.get("turn_action") or "analyze"
-    if action == "deny":
-        return "safe_response"
-    if action == "chitchat":
-        return "chitchat"
-    if action == "clarify":
-        return "hitl"
-    if action == "transform_previous":
-        return "transform"
-    if action == "kpi":
-        return "kpi"
-    return "analyst"
+    return next_node(state)
 
 
 def build_graph() -> StateGraph:

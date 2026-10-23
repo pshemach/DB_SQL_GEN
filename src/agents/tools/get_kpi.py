@@ -14,11 +14,13 @@ def get_kpi(
     dimensions: list[str] | None = None,
     rep_code: str | None = None,
 ) -> str:
-    """Run a compiled KPI query. metrics like net_value, target, return_value, bill_count, productive_calls. dimensions like rep, route, customer, product, brand, date."""
+    """Run a compiled KPI query. Pass the metrics and dimensions the user asked for. dimensions: rep, route, customer, product, brand, date. Do not default to rep when the question names another breakdown."""
+    if not metrics or not dimensions:
+        return '{"error": "metrics and dimensions are required. Match the question, for example product wise net sales uses metrics [net_value] and dimensions [product]."}'
     ctx = runtime_ctx.get()
     spec = QuerySpec(
-        metrics=metrics or ["net_value"],
-        dimensions=dimensions or ["rep"],
+        metrics=metrics,
+        dimensions=dimensions,
         period=period or "current_month",
         filters={"rep_code": rep_code} if rep_code else {},
     )
