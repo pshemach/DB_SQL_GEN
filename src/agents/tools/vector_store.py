@@ -157,8 +157,8 @@ def seed_examples():
     {
         "question": "What is my net sales this month?",
         "sql": """SELECT
-    SUM(CASE WHEN sf.Type = 'sales' THEN sf.in_sales
-             ELSE -sf.in_sales END) AS NetSales
+    SUM(CASE WHEN sf.Type = 'sales' THEN sf.NetValue
+             ELSE -sf.NetValue END) AS NetSales
 FROM sales_flat AS sf
 WHERE sf.RepCode = @RepCode
   AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
@@ -176,7 +176,7 @@ WHERE sf.RepCode = @RepCode
            COUNT(DISTINCT sf.CustomerCode) AS daily_calls
     FROM sales_flat AS sf
     WHERE sf.Type = 'sales'
-      AND sf.in_sales > 0
+      AND sf.NetValue > 0
       AND sf.RepCode = @RepCode
       AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
       AND sf.Date <  DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)
@@ -209,8 +209,8 @@ GROUP BY shn.Code""",
         "question": "What is my sales achievement vs target this month?",
         "sql": """WITH achievement AS (
     SELECT shn.Code AS RepCode,
-           SUM(CASE WHEN sf.Type = 'sales' THEN sf.in_sales
-                    ELSE -sf.in_sales END) AS NetSales
+           SUM(CASE WHEN sf.Type = 'sales' THEN sf.NetValue
+                    ELSE -sf.NetValue END) AS NetSales
     FROM sales_flat AS sf
     JOIN sales_hierarchy_nodes AS shn ON shn.Id = sf.RepId
     WHERE shn.Code = @RepCode
@@ -246,7 +246,7 @@ JOIN target AS t ON t.RepCode = a.RepCode""",
        COUNT(DISTINCT sf.InvoiceNo) / 700.0 AS Productivity
 FROM sales_flat AS sf
 WHERE sf.Type = 'sales'
-  AND sf.in_sales > 0
+  AND sf.NetValue > 0
   AND sf.RepCode = @RepCode
   AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
   AND sf.Date <  DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)""",
@@ -262,7 +262,7 @@ WHERE sf.Type = 'sales'
        COUNT(DISTINCT sf.InvoiceNo) AS VisitCount
 FROM sales_flat AS sf
 JOIN external_parties AS ep ON ep.Code = sf.CustomerCode
-WHERE sf.in_sales = 0
+WHERE sf.NetValue = 0
   AND ep.Active = 1
   AND sf.RepCode = @RepCode
   AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
@@ -274,7 +274,7 @@ WHERE sf.in_sales = 0
   )
 GROUP BY sf.CustomerName
 LIMIT 100""",
-        "explanation": "Zero sales = in_sales=0. Always include LastBillingDate and VisitCount. Always exclude internal names.",
+        "explanation": "Zero sales = NetValue=0. Always include LastBillingDate and VisitCount. Always exclude internal names.",
         "complexity": "medium"
     },
 
@@ -282,8 +282,8 @@ LIMIT 100""",
     {
         "question": "Who are my best performing outlets / top customers?",
         "sql": """SELECT sf.CustomerName,
-       SUM(CASE WHEN sf.Type = 'sales' THEN sf.in_sales
-                ELSE -sf.in_sales END) AS NetSales
+       SUM(CASE WHEN sf.Type = 'sales' THEN sf.NetValue
+                ELSE -sf.NetValue END) AS NetSales
 FROM sales_flat AS sf
 WHERE sf.RepCode = @RepCode
   AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
@@ -298,13 +298,13 @@ LIMIT 10""",
     # ── Total Returns ──────────────────────────────────────────────────────
     {
         "question": "What is the total return amount this month?",
-        "sql": """SELECT SUM(sf.in_sales) AS TotalReturnAmount
+        "sql": """SELECT SUM(sf.NetValue) AS TotalReturnAmount
 FROM sales_flat AS sf
 WHERE sf.Type = 'return'
   AND sf.RepCode = @RepCode
   AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
   AND sf.Date <  DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)""",
-        "explanation": "Returns = SUM(in_sales) where Type='return'. Financial loss, not quantity.",
+        "explanation": "Returns = SUM(NetValue) where Type='return'. Financial loss, not quantity.",
         "complexity": "simple"
     },
 
@@ -317,7 +317,7 @@ FROM (
            COUNT(DISTINCT sf.ProductCode) AS sku_per_bill
     FROM sales_flat AS sf
     WHERE sf.Type = 'sales'
-      AND sf.in_sales > 0
+      AND sf.NetValue > 0
       AND sf.RepCode = @RepCode
       AND sf.Date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
       AND sf.Date <  DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)

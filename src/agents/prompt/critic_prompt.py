@@ -14,7 +14,7 @@ ERROR PATTERNS AND FIXES
 ─────────────────────────
 Column does not exist / Unknown column
   → Check the schema for the exact column name and the table it belongs to.
-  → Qualify every column with its table alias (e.g. sf.in_sales not in_sales).
+  → Qualify every column with its table alias (e.g. sf.NetValue not NetValue).
   → Remember: CustomerName is in sales_flat, NOT in external_parties.
 
 Table does not exist

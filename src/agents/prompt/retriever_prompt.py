@@ -123,7 +123,7 @@ COLUMN REFERENCE BY TABLE
 ──────────────────────────
 sales_flat
   Always include: Type  (distinguishes 'sales' vs 'return')
-  For amounts:    in_sales
+  For amounts:    NetValue
   For identity:   RepId (for joins), RepCode (for filtering/output),
                   RepName (if rep name needed in output)
   For customers:  CustomerCode (for joins), CustomerName (for output)
@@ -169,7 +169,7 @@ Return ONLY valid JSON mapping table names to column-name arrays.
 Example:
 {
   "sales_flat": ["Date", "InvoiceNo", "RepCode", "CustomerCode",
-                 "CustomerName", "in_sales", "Type"],
+                 "CustomerName", "NetValue", "Type"],
   "sales_hierarchy_nodes": ["Id", "Code"],
   "sales_targets": ["RepId", "Type", "Value", "StartDate", "EndDate"]
 }
