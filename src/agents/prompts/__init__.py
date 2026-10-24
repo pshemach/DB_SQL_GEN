@@ -1,4 +1,7 @@
-"""Agent prompt templates."""
+"""Agent prompt templates and builders.
+
+``build_*_prompt`` returns ``(system_prompt, user_prompt)``.
+"""
 
 from src.agents.prompts.agent_prompts import (
     PLANNER_PROMPT,
@@ -17,6 +20,21 @@ from src.agents.prompts.agent_prompts import (
     LOCAL_SQL_PROMPT,
     DOMAIN_CLASSIFIER_PROMPT,
     PRE_EXEC_CRITIC_SYSTEM,
+    build_cache_follow_up_prompt,
+    build_chitchat_prompt,
+    build_column_selection_prompt,
+    build_domain_classifier_prompt,
+    build_follow_up_prompt,
+    build_generator_prompt,
+    build_local_sql_prompt,
+    build_planner_prompt,
+    build_pre_exec_critic_prompt,
+    build_reflection_prompt,
+    build_result_formatter_prompt,
+    build_router_prompt,
+    build_table_analyst_prompt,
+    build_table_selection_prompt,
+    chat_messages,
 )
 
 __all__ = [
@@ -36,4 +54,19 @@ __all__ = [
     "LOCAL_SQL_PROMPT",
     "DOMAIN_CLASSIFIER_PROMPT",
     "PRE_EXEC_CRITIC_SYSTEM",
+    "build_cache_follow_up_prompt",
+    "build_chitchat_prompt",
+    "build_column_selection_prompt",
+    "build_domain_classifier_prompt",
+    "build_follow_up_prompt",
+    "build_generator_prompt",
+    "build_local_sql_prompt",
+    "build_planner_prompt",
+    "build_pre_exec_critic_prompt",
+    "build_reflection_prompt",
+    "build_result_formatter_prompt",
+    "build_router_prompt",
+    "build_table_analyst_prompt",
+    "build_table_selection_prompt",
+    "chat_messages",
 ]

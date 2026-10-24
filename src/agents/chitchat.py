@@ -1,18 +1,11 @@
-from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 from src.agents.state import AgentState
-from src.agents.prompts.agent_prompts import CHITCHAT_SYSTEM_PROMPT
+from src.agents.prompts.agent_prompts import build_chitchat_prompt, chat_messages
 from src.infrastructure.llm import get_chat_llm
 
 class ChitChatAgent:
     def __init__(self):
-        # self.llm = get_fast_chat_llm()
         self.llm = get_chat_llm()
-        self.chitchat_prompt = ChatPromptTemplate.from_messages([
-            ("system", CHITCHAT_SYSTEM_PROMPT),
-            ("user", "{question}")
-        ])
-        self.chitchat_chain = self.chitchat_prompt | self.llm
         
     def chitchat(self, state: AgentState) -> dict:
         """
@@ -23,10 +16,8 @@ class ChitChatAgent:
             question = state.get("question") or ""
             memory_context = state.get("memory_context") or ""
             
-            response = self.chitchat_chain.invoke({
-                "question": question,
-                "memory_context": memory_context
-            })
+            system_prompt, user_prompt = build_chitchat_prompt(question, memory_context)
+            response = self.llm.invoke(chat_messages(system_prompt, user_prompt))
             
             msg = response.content if hasattr(response, "content") else str(response)
             msg = msg.strip()
@@ -56,8 +47,3 @@ class ChitChatAgent:
             "relevant_tables": None,
             "error": None,
         }
-
-chitchat_agent = ChitChatAgent()
-
-def chitchat_node(state: AgentState) -> dict:
-    return chitchat_agent.chitchat(state=state)

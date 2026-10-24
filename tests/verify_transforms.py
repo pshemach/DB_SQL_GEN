@@ -18,9 +18,8 @@ def verify_imports():
         logger.info(f"✓ DuckDB query execution check: {res[0]} (Expected: 42)")
         
         # Test local components
-        from src.agents.tools.local_sql_engine import local_sql_engine
-        from src.agents.transformer import table_analyst
-        from src.agents.transformer import result_transformer
+        from src.agents.tools.local_sql_engine import LocalSQLEngine
+        from src.agents.transformer import TableAnalystAgent, ResultTransformer
         from src.agents.router import TurnRouterAgent
         
         logger.info("✓ Custom agent modules imported successfully.")
@@ -30,7 +29,8 @@ def verify_imports():
         return False
 
 def verify_local_duckdb_execution():
-    from src.agents.tools.local_sql_engine import local_sql_engine
+    from src.agents.tools.local_sql_engine import LocalSQLEngine
+    local_sql_engine = LocalSQLEngine()
     
     mock_data = [
         {"rep_name": "Alice", "region": "East", "sales": 15000},

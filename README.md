@@ -57,11 +57,10 @@ Row scope is `RepCode IN (...)` from the signed-in user's allowed rep codes, app
 | Business metric meanings | `data/business_definitions.yaml` (local only) and `src/agents/tools/business_knowledge_store.py` |
 | HTTP API | `src/api/endpoints.py`, `src/api/routers/` |
 | Request and response models | `src/api/data_models.py` |
-| Streamlit UI | `app.py`, `ui/` |
 | Browser UI served by FastAPI | `web/index.html`, `web/static/` |
 | Settings | `src/config/config_management.py` |
 
-`main.py` is old scratch code. It is not an entry point.
+`python main.py` starts the API and the web UI.
 
 ## API surface
 
@@ -85,15 +84,13 @@ Assembled in `src/api/endpoints.py`.
 ## Layout
 
 ```text
-app.py                  Streamlit UI
-api.py                  FastAPI launcher
+main.py                 API and web UI
 src/agents/             LangGraph nodes, prompts, and tools
 src/api/                FastAPI routers and services
 src/core/               Database access and SQL safety
 src/config/             Settings from .env
 src/guardrails/         Ingress checks
-src/infrastructure/     Qdrant client
-ui/                     Streamlit helpers
+src/infrastructure/     Config, models, database, cache
 web/                    Static UI served at /app
 data/                   Local business definitions (not in git)
 scripts/                Seeding and manual checks

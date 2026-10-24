@@ -1,7 +1,7 @@
 """Prompt templates for the Text-to-SQL agents.
 
-Every prompt string lives in this module. Agent classes only wrap
-these constants in ChatPromptTemplate objects.
+Each agent has a system prompt, a user prompt, and a ``build_*_prompt``
+function that returns ``(system_prompt, user_prompt)``.
 """
 
 # ========================================================================
@@ -1299,3 +1299,239 @@ Important: RESPOND ONLY WITH VALID JSON, NO OTHER TEXT.
 PRE_EXEC_CRITIC_SYSTEM = (
     "Review this SQL for safety and correctness. Reply APPROVE or REJECT: reason."
 )
+
+_PRE_EXEC_CRITIC_USER = """Question:
+{question}
+
+SQL:
+{sql}
+"""
+
+
+def _fill(template: str, **values: object) -> str:
+    """Fill a prompt template. ``None`` becomes an empty string."""
+    safe = {key: "" if value is None else value for key, value in values.items()}
+    return template.format(**safe)
+
+
+def chat_messages(system_prompt: str, user_prompt: str):
+    """LangChain messages for one system prompt and one user prompt."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    return [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt),
+    ]
+
+
+def build_planner_prompt(
+    question: str,
+    business_definitions: str = "",
+    memory_context: str = "",
+) -> tuple[str, str]:
+    """Return (system, user) for the planner."""
+    system = _fill(
+        PLANNER_PROMPT,
+        business_definitions=business_definitions or "(none)",
+        memory_context=memory_context or "(none)",
+    )
+    user = f"Question:\n{question}"
+    return system, user
+
+
+def build_table_selection_prompt(question: str, plan: str = "") -> tuple[str, str]:
+    """Return (system, user) for table selection."""
+    system = _fill(TABLE_SELECTION_TABLE, plan=plan or "(none)")
+    user = f"Question:\n{question}"
+    return system, user
+
+
+def build_column_selection_prompt(
+    question: str,
+    plan: str = "",
+    schema_context: str = "",
+) -> tuple[str, str]:
+    """Return (system, user) for column selection."""
+    user = (
+        f"Question:\n{question}\n\n"
+        f"Logical plan:\n{plan}\n\n"
+        f"Schema:\n{schema_context}"
+    )
+    return COLUMN_SELECTION_TABLE, user
+
+
+def build_generator_prompt(
+    question: str,
+    plan: str = "",
+    schema_context: str = "",
+) -> tuple[str, str]:
+    """Return (system, user) for SQL generation."""
+    system = _fill(GENERATOR_PROMPT, schema_context=schema_context or "(none)")
+    user = f"LOGICAL PLAN:\n{plan}\n\nUSER QUESTION:\n{question}\n\nGenerate the SQL query:"
+    return system, user
+
+
+def build_reflection_prompt(
+    question: str,
+    plan: str = "",
+    schema_context: str = "",
+    sql_query: str = "",
+    error: str = "",
+) -> tuple[str, str]:
+    """Return (system, user) for SQL repair."""
+    system = _fill(
+        REFLECTION_PROMPT,
+        question=question,
+        plan=plan,
+        schema_context=schema_context,
+        sql_query=sql_query,
+        error=error,
+    )
+    user = "Fix the query."
+    return system, user
+
+
+def build_result_formatter_prompt(
+    question: str,
+    dataset_profile: str = "",
+    computed_facts: str = "",
+    chartable_columns: str = "",
+    requested_chart_type: str = "",
+    currency_symbol: str = "",
+    memory_context: str = "",
+) -> tuple[str, str]:
+    """Return (system, user) for the result formatter."""
+    system = _fill(
+        RESULT_FORMATTER_PROMPT,
+        question=question,
+        dataset_profile=dataset_profile,
+        computed_facts=computed_facts,
+        chartable_columns=chartable_columns,
+        requested_chart_type=requested_chart_type or "none",
+        currency_symbol=currency_symbol or "Rs",
+        memory_context=memory_context or "(none)",
+    )
+    user = f"Question:\n{question}"
+    return system, user
+
+
+def build_router_prompt(
+    question: str,
+    memory_context: str = "",
+    retrieved_knowledge: str = "",
+) -> tuple[str, str]:
+    """Return (system, user) for the turn router."""
+    system = _fill(
+        ORCHESTRATOR_SYSTEM_PROMPT,
+        memory_context=memory_context or "(none)",
+        retrieved_knowledge=retrieved_knowledge or "(none)",
+    )
+    user = question
+    return system, user
+
+
+def build_follow_up_prompt(
+    question: str,
+    previous_question: str = "",
+    schema: object = "",
+    memory_context: str = "",
+) -> tuple[str, str]:
+    """Return (system, user) for the follow-up classifier."""
+    system = _fill(
+        FOLLOW_UP_CLASSIFIER_PROMPT,
+        question=question,
+        previous_question=previous_question,
+        schema=schema,
+        memory_context=memory_context or "(none)",
+    )
+    user = question
+    return system, user
+
+
+def build_cache_follow_up_prompt(
+    follow_up_question: str,
+    previous_question: str = "",
+    columns: object = "",
+    row_count: object = 0,
+    sample_rows: str = "",
+) -> tuple[str, str]:
+    """Return (system, user) for a cached-result follow-up plan."""
+    system = _fill(
+        CACHE_FOLLOW_UP_PROMPT,
+        follow_up_question=follow_up_question,
+        previous_question=previous_question,
+        columns=columns,
+        row_count=row_count,
+        sample_rows=sample_rows,
+    )
+    user = follow_up_question
+    return system, user
+
+
+def build_chitchat_prompt(question: str, memory_context: str = "") -> tuple[str, str]:
+    """Return (system, user) for a non-SQL reply."""
+    system = _fill(CHITCHAT_SYSTEM_PROMPT, memory_context=memory_context or "(none)")
+    user = question
+    return system, user
+
+
+def build_table_analyst_prompt(
+    follow_up_question: str,
+    source_question: str = "",
+    total_rows: object = 0,
+    columns: str = "",
+    table_markdown: str = "",
+    memory_context: str = "",
+) -> tuple[str, str]:
+    """Return (system, user) for table analysis."""
+    system = _fill(
+        TABLE_ANALYST_PROMPT,
+        follow_up_question=follow_up_question,
+        source_question=source_question,
+        total_rows=total_rows,
+        columns=columns,
+        table_markdown=table_markdown,
+        memory_context=memory_context or "(none)",
+    )
+    user = follow_up_question
+    return system, user
+
+
+def build_local_sql_prompt(
+    follow_up_question: str,
+    columns_and_types: object = "",
+    sample_rows: str = "",
+) -> tuple[str, str]:
+    """Return (system, user) for in-memory SQL."""
+    system = _fill(
+        LOCAL_SQL_PROMPT,
+        follow_up_question=follow_up_question,
+        columns_and_types=columns_and_types,
+        sample_rows=sample_rows,
+    )
+    user = follow_up_question
+    return system, user
+
+
+def build_domain_classifier_prompt(
+    question: str,
+    previous_topics: str = "",
+    conversation_summary: str = "",
+    user_role: str = "",
+) -> tuple[str, str]:
+    """Return (system, user) for the domain guardrail."""
+    system = _fill(
+        DOMAIN_CLASSIFIER_PROMPT,
+        question=question,
+        previous_topics=previous_topics or "None",
+        conversation_summary=conversation_summary or "No previous conversation",
+        user_role=user_role or "analyst",
+    )
+    user = question
+    return system, user
+
+
+def build_pre_exec_critic_prompt(question: str, sql: str = "") -> tuple[str, str]:
+    """Return (system, user) for the pre-execution SQL review."""
+    user = _fill(_PRE_EXEC_CRITIC_USER, question=question, sql=sql)
+    return PRE_EXEC_CRITIC_SYSTEM, user

@@ -13,11 +13,10 @@ import re
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
-from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 
 from src.infrastructure.llm import get_router_llm
-from src.agents.prompts.agent_prompts import DOMAIN_CLASSIFIER_PROMPT
+from src.agents.prompts.agent_prompts import build_domain_classifier_prompt, chat_messages
 
 GuardrailVerdict = Literal["in_scope", "out_of_scope"]
 
@@ -59,7 +58,6 @@ class Guardrail:
 
     def __init__(self, llm: Any = None) -> None:
         self.llm = llm or get_router_llm()
-        self.chain = ChatPromptTemplate.from_template(DOMAIN_CLASSIFIER_PROMPT) | self.llm
         self._requests: dict[str, list[datetime]] = {}
 
     async def evaluate(self, question: str, context: dict | None = None) -> dict:
@@ -110,12 +108,13 @@ class Guardrail:
     def _classify(self, question: str, context: dict) -> tuple[GuardrailVerdict, str]:
         history = context.get("conversation_history") or []
         try:
-            response = self.chain.invoke({
-                "question": question,
-                "conversation_summary": _summarize(history),
-                "previous_topics": ", ".join(_topics(history)[-5:]) or "None",
-                "user_role": context.get("user_role", "analyst"),
-            })
+            system_prompt, user_prompt = build_domain_classifier_prompt(
+                question,
+                ", ".join(_topics(history)[-5:]) or "None",
+                _summarize(history),
+                context.get("user_role", "analyst"),
+            )
+            response = self.llm.invoke(chat_messages(system_prompt, user_prompt))
         except Exception as exc:
             logger.warning("Guardrail LLM error (failing open): {}", exc)
             return "in_scope", "Classifier error (fail-open)"
@@ -190,7 +189,3 @@ def _extract_json(text: str) -> dict | None:
         except json.JSONDecodeError:
             return None
     return None
-
-
-guardrail = Guardrail()
-guardrail_pipeline = guardrail

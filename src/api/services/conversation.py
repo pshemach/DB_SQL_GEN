@@ -10,7 +10,9 @@ from loguru import logger
 
 from src.agents.orchestrator import run_agent_async, run_agent_stream
 from src.memory import chat_memory
-from src.agents.guardrail import guardrail_pipeline
+from src.agents.guardrail import Guardrail
+
+guardrail_pipeline = Guardrail()
 from src.utils.chart_request import detect_requested_chart_type
 from src.utils.serialization import serialize_query_result
 

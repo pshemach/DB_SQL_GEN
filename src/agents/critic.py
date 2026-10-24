@@ -2,12 +2,11 @@
 Critic Agent (Refiner): Validates, executes, and corrects SQL queries.
 """
 
-from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 from src.infrastructure.db import db_manager
 from src.agents.state import AgentState
 
-from src.agents.prompts.agent_prompts import REFLECTION_PROMPT
+from src.agents.prompts.agent_prompts import build_reflection_prompt, chat_messages
 from src.infrastructure.config import ENABLE_SELF_CORRECTION, MAX_ITERATIONS, QUERY_TIMEOUT_SECONDS
 from src.infrastructure.llm import get_chat_llm
 from src.utils.error_taxonomy import classify_db_error, is_retryable
@@ -20,14 +19,7 @@ class CriticAgent:
     """
     
     def __init__(self):
-
-        # self.llm = get_fast_chat_llm(temperature=0)
         self.llm = get_chat_llm(temperature=0)
-            
-        self.reflection_prompt = ChatPromptTemplate.from_messages([
-            ("system", REFLECTION_PROMPT),
-            ("user", "Fix the query:")
-        ])
     
     def execute_and_validate(self, state: AgentState) -> dict:
         """
@@ -125,15 +117,10 @@ class CriticAgent:
         error = state.get("error", "")
         
         try:
-            chain = self.reflection_prompt | self.llm
-            
-            response = chain.invoke({
-                "question": question,
-                "plan": plan,
-                "schema_context": schema_context,
-                "sql_query": sql_query,
-                "error": error
-            })
+            system_prompt, user_prompt = build_reflection_prompt(
+                question, plan, schema_context, sql_query, error
+            )
+            response = self.llm.invoke(chat_messages(system_prompt, user_prompt))
             
             from src.agents.generator import SQLGeneratorAgent
             generator = SQLGeneratorAgent()
@@ -191,14 +178,3 @@ class CriticAgent:
         except Exception as e:
             logger.warning(f"Could not format result: {e}")
             return str(result)[:500]  # Truncate to 500 chars
-
-# Node functions for LangGraph
-def executor_node(state: AgentState) -> dict:
-    """LangGraph node wrapper for execution."""
-    agent = CriticAgent()
-    return agent.execute_and_validate(state)
-
-def reflector_node(state: AgentState) -> dict:
-    """LangGraph node wrapper for reflection/correction."""
-    agent = CriticAgent()
-    return agent.reflect_and_fix(state)

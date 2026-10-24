@@ -3,12 +3,11 @@ Schema Linker Agent (Selector): Identifies relevant tables and columns.
 """
 
 from typing import List
-from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 from src.infrastructure.db import db_manager
 from src.agents.state import AgentState
 
-from src.agents.prompts.agent_prompts import TABLE_SELECTION_TABLE, COLUMN_SELECTION_TABLE
+from src.agents.prompts.agent_prompts import build_table_selection_prompt, chat_messages
 from src.infrastructure.llm import get_router_llm
 
 class SchemaLinkerAgent:
@@ -18,16 +17,7 @@ class SchemaLinkerAgent:
     """
     
     def __init__(self):
-        # self.llm = get_fast_chat_llm(temperature=0)
         self.llm = get_router_llm()
-        self.table_selection_prompt = ChatPromptTemplate.from_messages([
-                ("system", TABLE_SELECTION_TABLE),
-                 ("human","{question}")
-                 ])
-        
-        self.column_selection_prompt = ChatPromptTemplate.from_messages([
-            ("system", COLUMN_SELECTION_TABLE)
-        ])
     def select_tables(self, question: str, plan: str, all_tables: List[str]) -> List[str]:
         """
         Select relevant tables using LLM reasoning.
@@ -42,12 +32,8 @@ class SchemaLinkerAgent:
         """
         
         try:
-            chain = self.table_selection_prompt | self.llm
-            response = chain.invoke({
-                "question": question,
-                "plan": plan,
-                # "all_tables": ", ".join(all_tables)
-            })
+            system_prompt, user_prompt = build_table_selection_prompt(question, plan)
+            response = self.llm.invoke(chat_messages(system_prompt, user_prompt))
             
             # Parse comma-separated table names
             selected = [t.strip() for t in response.content.split(",")]
@@ -117,9 +103,3 @@ class SchemaLinkerAgent:
                 "error": f"Schema retrieval failed: {str(e)}",
                 "should_retry": False
             }
-
-# Node function for LangGraph
-def schema_linker_node(state: AgentState) -> dict:
-    """LangGraph node wrapper for SchemaLinkerAgent."""
-    agent = SchemaLinkerAgent()
-    return agent.retrieve_schema(state)

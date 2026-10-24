@@ -7,11 +7,9 @@ from typing import List, Dict, Any, Tuple
 import pandas as pd
 import duckdb
 from loguru import logger
-from langchain_core.prompts import ChatPromptTemplate
-
 from src.infrastructure.db.sql_safety import assess_sql
 from src.utils.json_utils import extract_json
-from src.agents.prompts.agent_prompts import LOCAL_SQL_PROMPT
+from src.agents.prompts.agent_prompts import build_local_sql_prompt, chat_messages
 from src.infrastructure.llm import get_fast_chat_llm
 
 class LocalSQLEngine:
@@ -19,8 +17,6 @@ class LocalSQLEngine:
     
     def __init__(self):
         self.llm = get_fast_chat_llm(temperature=0)
-        self.prompt = ChatPromptTemplate.from_template(LOCAL_SQL_PROMPT)
-        self.chain = self.prompt | self.llm
 
     def execute_follow_up(
         self, 
@@ -44,11 +40,10 @@ class LocalSQLEngine:
             sample_rows = df.head(5).to_markdown()
 
             # 2. Ask LLM to generate local SQL
-            resp = self.chain.invoke({
-                "follow_up_question": follow_up_question,
-                "columns_and_types": columns_and_types,
-                "sample_rows": sample_rows
-            })
+            system_prompt, user_prompt = build_local_sql_prompt(
+                follow_up_question, columns_and_types, sample_rows
+            )
+            resp = self.llm.invoke(chat_messages(system_prompt, user_prompt))
             
             text = resp.content if hasattr(resp, "content") else str(resp)
             plan = extract_json(text)
@@ -80,5 +75,3 @@ class LocalSQLEngine:
         except Exception as e:
             logger.error(f"DuckDB local query failed: {e}. Falling back to live DB.")
             return True, [], f"Local SQL error: {e}"
-
-local_sql_engine = LocalSQLEngine()

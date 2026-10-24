@@ -12,7 +12,7 @@ from src.agents.tools.business_knowledge_store import (
     BusinessKnowledgeStore,
     business_knowledge_store,
 )
-from src.agents.tools.local_sql_engine import LocalSQLEngine, local_sql_engine
+from src.agents.tools.local_sql_engine import LocalSQLEngine
 
 __all__ = [
     "BusinessKnowledgeRetriever",
@@ -20,5 +20,4 @@ __all__ = [
     "BusinessKnowledgeStore",
     "business_knowledge_store",
     "LocalSQLEngine",
-    "local_sql_engine",
 ]

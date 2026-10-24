@@ -2,10 +2,10 @@
 SQL Generator Agent: Translates logical plans into SQL queries.
 """
 
-from langchain_core.prompts import ChatPromptTemplate, FewShotChatMessagePromptTemplate
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from loguru import logger
 from src.agents.state import AgentState
-from src.agents.prompts.agent_prompts import GENERATOR_PROMPT
+from src.agents.prompts.agent_prompts import build_generator_prompt
 from src.infrastructure.config import ENABLE_DYNAMIC_FEW_SHOT
 from src.infrastructure.llm import get_reasoning_llm
 
@@ -16,19 +16,6 @@ class SQLGeneratorAgent:
     
     def __init__(self):
         self.llm = get_reasoning_llm(temperature=0.0)
-        # self.llm = get_fast_chat_llm(temperature=0)
-
-        self.system_prompt = GENERATOR_PROMPT
-        
-        self.generation_prompt = ChatPromptTemplate.from_messages([
-            ("system", self.system_prompt),
-            ("user", """LOGICAL PLAN:
-{plan}
-
-USER QUESTION:
-{question}
-""")
-        ])
     
     def generate(self, state: AgentState, few_shot_examples=None) -> dict:
         """
@@ -55,41 +42,14 @@ USER QUESTION:
             }
         
         try:
-            # Build prompt with or without few-shot examples
+            system_prompt, user_prompt = build_generator_prompt(question, plan, schema_context)
+            messages = [SystemMessage(content=system_prompt)]
             if few_shot_examples and ENABLE_DYNAMIC_FEW_SHOT:
-                # Create few-shot prompt with examples
-                examples = [
-                    {"question": ex.get("question", ""), "sql": ex.get("sql", "")}
-                    for ex in few_shot_examples
-                ]
-                
-                example_prompt = ChatPromptTemplate.from_messages([
-                    ("human", "{question}"),
-                    ("ai", "{sql}")
-                ])
-                
-                few_shot_prompt = FewShotChatMessagePromptTemplate(
-                    example_prompt=example_prompt,
-                    examples=examples
-                )
-                
-                # Combine with main prompt
-                full_prompt = ChatPromptTemplate.from_messages([
-                    ("system", self.system_prompt),
-                    few_shot_prompt,
-                    ("user", "Generate the SQL query:")
-                ])
-                
-                chain = full_prompt | self.llm
-            else:
-                chain = self.generation_prompt | self.llm
-            
-            # Generate SQL
-            response = chain.invoke({
-                "question": question,
-                "plan": plan,
-                "schema_context": schema_context
-            })
+                for example in few_shot_examples:
+                    messages.append(HumanMessage(content=example.get("question", "")))
+                    messages.append(AIMessage(content=example.get("sql", "")))
+            messages.append(HumanMessage(content=user_prompt))
+            response = self.llm.invoke(messages)
             
             # Clean the SQL output
             sql = self._clean_sql(response.content)
@@ -137,13 +97,3 @@ USER QUESTION:
             sql = "\n".join(lines[sql_start_idx:])
         
         return sql.strip()
-
-# Node function for LangGraph
-def generator_node(state: AgentState) -> dict:
-    """LangGraph node wrapper for SQLGeneratorAgent."""
-    agent = SQLGeneratorAgent()
-    
-    # Get few-shot examples from state (retrieved in previous step)
-    few_shot = state.get("few_shot_examples", None)
-    
-    return agent.generate(state, few_shot_examples=few_shot)

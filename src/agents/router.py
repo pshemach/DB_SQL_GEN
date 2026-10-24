@@ -6,7 +6,6 @@ Performs stateless turn classification and history-based context enrichment.
 from __future__ import annotations
 import json
 from typing import Any
-from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 from langgraph.types import interrupt
 
@@ -17,7 +16,7 @@ from src.memory import chat_memory
 from src.utils.json_utils import extract_json
 from src.utils.metrics import set_router_action
 from src.agents.guardrail import is_social_message
-from src.agents.prompts.agent_prompts import ORCHESTRATOR_SYSTEM_PROMPT
+from src.agents.prompts.agent_prompts import build_router_prompt, chat_messages
 from src.infrastructure.llm import get_router_llm
 
 # ==========================================
@@ -30,13 +29,7 @@ from src.infrastructure.llm import get_router_llm
 
 class TurnRouterAgent:
     def __init__(self):
-        # self.llm = get_fast_chat_llm(temperature=0)
         self.llm = get_router_llm()
-        self.orchestration_prompt = ChatPromptTemplate.from_messages([
-            ("system", ORCHESTRATOR_SYSTEM_PROMPT),
-            ("human", "{question}"),
-        ])
-        self.orchestrator_chain = self.orchestration_prompt | self.llm
 
     def route(self, state: AgentState) -> dict[str, Any]:
         logger.info("Route orchestrator running...")
@@ -52,11 +45,10 @@ class TurnRouterAgent:
         
         # 3. Invoke Dialogue Orchestration LLM
         try:
-            resp = self.orchestrator_chain.invoke({
-                "question": question,
-                "memory_context": memory_context,
-                "retrieved_knowledge": retrieved_knowledge
-            })
+            system_prompt, user_prompt = build_router_prompt(
+                question, memory_context, retrieved_knowledge
+            )
+            resp = self.llm.invoke(chat_messages(system_prompt, user_prompt))
             text = resp.content if hasattr(resp, "content") else str(resp)
             result = extract_json(text)
         except Exception as e:
@@ -115,8 +107,3 @@ class TurnRouterAgent:
             except Exception:
                 pass
         return "\n\n".join(x for x in [keyword_knowledge, vector_knowledge] if x)
-
-# Node wrapper for LangGraph
-def turn_router_node(state: AgentState) -> dict:
-    orchestrator = TurnRouterAgent()
-    return orchestrator.route(state)

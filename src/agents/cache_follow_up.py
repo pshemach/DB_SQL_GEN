@@ -7,25 +7,17 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 
 from src.memory.result_cache import CachedQueryResult
 from src.utils.json_utils import extract_json
 from src.utils.transform_spec_postprocess import normalize_and_validate_spec
-from src.agents.prompts.agent_prompts import CACHE_FOLLOW_UP_PROMPT
+from src.agents.prompts.agent_prompts import build_cache_follow_up_prompt, chat_messages
 from src.infrastructure.llm import get_chat_llm
 
 class CacheFollowUpAgent:
     def __init__(self):
         self.llm = get_chat_llm(temperature=0)
-        # self.llm = get_fast_chat_llm(temperature=0)
-        
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", CACHE_FOLLOW_UP_PROMPT),
-            ("human", "{follow_up_question}"),
-        ])
-        self.chain = self.prompt | self.llm
 
     def plan(
         self,
@@ -41,13 +33,14 @@ class CacheFollowUpAgent:
         columns = [str(c) for c in columns]
 
         try:
-            response = self.chain.invoke({
-                "follow_up_question": follow_up_question,
-                "previous_question": cached.original_question,
-                "columns": columns,
-                "row_count": len(rows),
-                "sample_rows": json.dumps(sample, default=str),
-            })
+            system_prompt, user_prompt = build_cache_follow_up_prompt(
+                follow_up_question,
+                cached.original_question,
+                columns,
+                len(rows),
+                json.dumps(sample, default=str),
+            )
+            response = self.llm.invoke(chat_messages(system_prompt, user_prompt))
             text = response.content if hasattr(response, "content") else str(response)
             raw = extract_json(text)
         except Exception as e:
@@ -65,5 +58,3 @@ class CacheFollowUpAgent:
             row_count=len(rows),
             explanation=raw.get("explanation") or "",
         )
-
-cache_follow_up_agent = CacheFollowUpAgent()

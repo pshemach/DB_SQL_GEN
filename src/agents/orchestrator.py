@@ -13,32 +13,40 @@ Flow:
 from __future__ import annotations
 
 import os
+import re
 import time
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
-from langgraph.graph import END, StateGraph
+from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 from langsmith import traceable
 from loguru import logger
 
-from src.agents.chitchat import chitchat_node
-from src.agents.nodes import (
-    authz_guardrails_node,
-    cache_result_node,
-    formatter_node,
-    hitl_clarify_node,
-    memory_loader_node,
-    safe_response_node,
-    save_memory_node,
-    semantic_cache_lookup_node,
+from src.agents.chitchat import ChitChatAgent
+from src.agents.critic import CriticAgent
+from src.agents.formatter import ResultFormatterAgent
+from src.agents.generator import SQLGeneratorAgent
+from src.agents.planner import PlannerAgent
+from src.agents.router import TurnRouterAgent
+from src.agents.sql_pipeline import (
+    _parent_to_sub,
+    _sub_to_parent,
+    parallel_retrieval_node,
+    pre_exec_critic_node,
+    result_verifier_node,
+    route_after_pre_exec,
+    route_after_static_validator,
+    route_sql_subgraph_executor,
+    security_policy_node,
+    static_validator_node,
 )
-from src.agents.router import turn_router_node
-from src.agents.sql_pipeline import _parent_to_sub, _sub_to_parent, get_sql_subgraph
-from src.agents.state import AgentState
-from src.agents.transformer import transform_result_node
+from src.agents.state import AgentState, SQLSubState
+from src.agents.transformer import ResultTransformer
 from src.infrastructure.config import (
+    ENABLE_PRE_EXEC_CRITIC,
     ENABLE_PRODUCTION_GRAPH,
+    ENABLE_SEMANTIC_CACHE,
     ENABLE_TRANSFORM_PREVIOUS,
     LANGCHAIN_API_KEY,
     LANGCHAIN_ENDPOINT,
@@ -47,9 +55,10 @@ from src.infrastructure.config import (
 )
 from src.memory import chat_memory
 from src.memory.result_cache import result_cache
+from src.infrastructure.cache import semantic_cache
 from src.utils.graph_config import build_invoke_config
-from src.utils.metrics import finalize_metrics, init_metrics
-from src.utils.serialization import sanitize_state
+from src.utils.metrics import finalize_metrics, init_metrics, record_node_timing
+from src.utils.serialization import sanitize_state, serialize_query_result
 
 NODE_STATUS = {
     "init": "Starting...",
@@ -128,6 +137,456 @@ def route_after_transform(state: AgentState) -> Literal["formatter", "sql_pipeli
     if state.get("query_result") is None and state.get("current_phase") == "error":
         return "sql_pipeline"
     return "formatter"
+
+
+DANGEROUS_PATTERNS = [
+    r"(?i)(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|ALTER\s+TABLE)",
+    r"(?i)(UNION\s+SELECT|OR\s+1\s*=\s*1)",
+    r"(?i)(--\s*$|;\s*DROP)",
+]
+
+def save_memory_node(state: AgentState) -> dict:
+    session_id = state.get("session_id")
+
+    if not session_id:
+        return {}
+
+    assistant_content = None
+    message_type = None
+
+    if state.get("waiting_for_user"):
+        assistant_content = state.get("question_to_user")
+        message_type = "clarification"
+
+    elif state.get("error"):
+        assistant_content = state.get("error")
+        message_type = "error"
+
+    elif state.get("result_summary"):
+        assistant_content = state.get("result_summary")
+        message_type = "answer"
+
+    elif state.get("final_answer"):
+        assistant_content = state.get("final_answer")
+        message_type = "answer"
+
+    assistant_message_id = state.get("assistant_message_id")
+
+    if assistant_content and not state.get("assistant_message_saved"):
+        assistant_message_id = chat_memory.add_message(
+            session_id=session_id,
+            role="assistant",
+            content=assistant_content,
+            message_type=message_type,
+            user_id=state.get("user_id"),
+            user_role=state.get("user_role"),
+        )
+
+    # Save SQL execution once, after successful SQL run
+    sql_execution_saved = state.get("sql_execution_saved", False)
+
+    if (
+        state.get("sql_query")
+        and state.get("query_result") is not None
+        and not state.get("error")
+        and not sql_execution_saved
+        and state.get("turn_action") not in ("cache_hit", "transform_previous")
+    ):
+        execution_time_ms = state.get("execution_time_ms") or 0
+
+        chat_memory.save_sql_execution(
+            session_id=session_id,
+            user_id=state.get("user_id"),
+            sql=state.get("sql_query"),
+            result=state.get("query_result"),
+            execution_time_ms=execution_time_ms,
+        )
+
+        sql_execution_saved = True
+
+    state_to_save = {
+        **state,
+        "assistant_message_id": assistant_message_id,
+        "assistant_message_saved": bool(assistant_content),
+        "sql_execution_saved": sql_execution_saved,
+    }
+
+    chat_memory.set_last_state(session_id, state_to_save)
+
+    return {
+        "messages": chat_memory.get_session(session_id).get("messages", []),
+        "memory_context": chat_memory.build_memory_context(session_id),
+        "assistant_message_id": assistant_message_id,
+        "assistant_message_saved": bool(assistant_content),
+        "sql_execution_saved": sql_execution_saved,
+    }
+    
+
+def cache_result_node(state: AgentState) -> dict:
+    """
+    Stores successful query results in semantic cache for future use.
+    Also caches the last result set per session for follow-up lookups (no re-SQL).
+    """
+    if state.get("error") is not None:
+        return {}
+
+    question_key = state.get("enriched_question") or state.get("question") or ""
+
+    if state.get("sql_query") and not state.get("reused_previous_result"):
+        result_to_cache = {
+            "sql_query": state["sql_query"],
+            "query_result": state.get("query_result"),
+            "result_preview": state.get("result_preview"),
+            "plan": state.get("plan"),
+            "relevant_tables": state.get("relevant_tables"),
+        }
+        semantic_cache.set(question_key, result_to_cache)
+
+    # Session result cache: only after a fresh SQL run (not transform / semantic hit)
+    if state.get("reused_previous_result") or state.get("turn_action") in (
+        "transform_previous",
+        "cache_hit",
+    ):
+        return {}
+
+    session_id = state.get("session_id")
+    rows = serialize_query_result(state.get("query_result"))
+    if session_id and isinstance(rows, list) and rows:
+        tables = state.get("relevant_tables") or []
+        if isinstance(tables, str):
+            tables = [tables]
+        schema = {str(k): type(v).__name__ for k, v in rows[0].items()}
+        result_cache.cache_result(
+            session_id=session_id,
+            question=question_key,
+            sql=state.get("sql_query") or "",
+            data=rows,
+            tables=list(tables),
+            schema=schema,
+        )
+
+    return {}
+
+def memory_loader_node(state: dict) -> dict:
+    """Load session memory and prior turn state."""
+    t0 = time.time()
+    session_id = state["session_id"]
+    previous_state = chat_memory.get_last_state(session_id)
+
+    user_message_id = None
+
+    # Save user question only once per graph run
+    if not state.get("user_message_saved"):
+        user_message_id = chat_memory.add_message(
+            session_id=session_id,
+            role="user",
+            content=state["question"],
+            message_type="question",
+            user_id=state.get("user_id"),
+            user_role=state.get("user_role"),
+        )
+
+    metrics = record_node_timing(
+        state.get("metrics") or init_metrics(),
+        "memory_loader",
+        (time.time() - t0) * 1000,
+    )
+
+    return {
+        "previous_state": previous_state,
+        "messages": chat_memory.get_session(session_id).get("messages", []),
+        "memory_context": chat_memory.build_memory_context(session_id),
+        "waiting_for_user": bool(previous_state and previous_state.get("waiting_for_user")),
+        "user_message_id": user_message_id,
+        "user_message_saved": True,
+        "metrics": metrics,
+    }
+
+def semantic_cache_lookup_node(state: AgentState) -> dict:
+    """Early semantic cache exit before any schema-bearing LLM call."""
+    t0 = time.time()
+    if not ENABLE_SEMANTIC_CACHE:
+        return {"cache_hit": False}
+
+    cached = semantic_cache.get(state["question"])
+    metrics = record_node_timing(
+        state.get("metrics") or init_metrics(),
+        "semantic_cache_lookup",
+        (time.time() - t0) * 1000,
+    )
+
+    if not cached:
+        return {"cache_hit": False, "metrics": metrics}
+
+    logger.info("Semantic cache HIT — skipping SQL subgraph")
+    metrics["cache_hit"] = True
+    from src.utils.serialization import sanitize_state
+
+    return sanitize_state({
+        "cache_hit": True,
+        "turn_action": "cache_hit",
+        "sql_query": cached.get("sql_query"),
+        "query_result": cached.get("query_result"),
+        "result_preview": cached.get("result_preview"),
+        "plan": cached.get("plan"),
+        "relevant_tables": cached.get("relevant_tables"),
+        "error": None,
+        "metrics": metrics,
+    })
+
+def authz_guardrails_node(state: AgentState) -> dict:
+    """Fail-closed authz and input guardrails before schema exposure."""
+    t0 = time.time()
+    question = (state.get("question") or "").strip()
+    metrics = state.get("metrics") or init_metrics()
+
+    if len(question) < 2:
+        return _deny("Question too short.", metrics, t0, "validation")
+    if len(question) > 2000:
+        return _deny("Question exceeds maximum length.", metrics, t0, "validation")
+
+    for pattern in DANGEROUS_PATTERNS:
+        if re.search(pattern, question):
+            return _deny("Suspicious pattern detected in question.", metrics, t0, "guardrail_rejection")
+
+    allowed = state.get("allowed_rep_codes") or []
+    if not allowed:
+        return _deny(
+            "Access denied. No allowed rep codes were provided.",
+            metrics,
+            t0,
+            "access_denied",
+        )
+
+    metrics = record_node_timing(metrics, "authz_guardrails", (time.time() - t0) * 1000)
+    return {"access_denied": False, "metrics": metrics}
+
+def _deny(reason: str, metrics: dict, t0: float, error_type: str) -> dict:
+    metrics = record_node_timing(metrics, "authz_guardrails", (time.time() - t0) * 1000)
+    return {
+        "turn_action": "deny",
+        "access_denied": True,
+        "access_denied_reason": reason,
+        "error": reason,
+        "error_type": error_type,
+        "should_retry": False,
+        "final_answer": reason,
+        "metrics": metrics,
+    }
+
+def safe_response_node(state: AgentState) -> dict:
+    """Terminal responses for deny/chitchat without SQL."""
+    if state.get("access_denied"):
+        msg = state.get("access_denied_reason") or state.get("error") or "Access denied."
+    elif state.get("turn_action") == "chitchat":
+        msg = (
+            "Hello! I'm your sales analytics assistant. "
+            "Ask me about net sales, customers, products, rep performance, KPIs, "
+            "or targets for the current period."
+        )
+    else:
+        msg = state.get("error") or "Unable to process your request."
+
+    # Clear prior query artifacts so UI/history do not show last SQL table or charts
+    return {
+        "final_answer": msg,
+        "result_summary": msg,
+        "waiting_for_user": False,
+        "query_result": None,
+        "result_preview": None,
+        "visualizations": [],
+        "sql_query": None,
+        "sql_explanation": None,
+        "plan": None,
+        "plan_steps": None,
+        "table_title": None,
+        "relevant_tables": None,
+        "error": None if state.get("turn_action") == "chitchat" else state.get("error"),
+    }
+
+def hitl_clarify_node(state: AgentState) -> dict:
+    question_to_user = (
+        state.get("clarification_question")
+        or state.get("question_to_user")
+        or "Could you provide more details?"
+    )
+
+    return {
+        "turn_action": "clarify",
+        "final_answer": question_to_user,
+        "result_summary": question_to_user,
+        "question_to_user": question_to_user,
+        "waiting_for_user": True,
+        "needs_clarification": True,
+
+        # clear SQL artifacts
+        "query_result": None,
+        "result_preview": None,
+        "sql_query": None,
+        "sql_explanation": None,
+        "plan": None,
+        "plan_steps": None,
+        "relevant_tables": None,
+        "table_title": None,
+        "error": None,
+    }
+    
+def formatter_node(state: AgentState) -> dict:
+    """Format results and sanitize for checkpointer (plotly/numpy/date)."""
+    return sanitize_state(ResultFormatterAgent().format(state))
+
+def transform_result_node(state: dict) -> dict:
+    """Graph node wrapper for result transformation."""
+    result = ResultTransformer().transform(state)
+
+    cached = result_cache.get_cached_result(state.get("session_id"))
+    question = state.get("original_question") or state.get("question") or ""
+
+    if cached and cached.original_question:
+        enriched = (
+            f"Previous question: {cached.original_question}\n"
+            f"Follow-up: {question}"
+        )
+    else:
+        enriched = question
+
+    needs_new_sql = result.get("needs_new_sql", False)
+    formatter_mode = result.get("formatter_mode")
+
+    out = {
+        **state,
+
+        "question": enriched,
+        "enriched_question": result.get("enriched_question") or enriched,
+
+        "query_result": result.get("query_result"),
+        "needs_new_sql": needs_new_sql,
+        "transformation_applied": result.get("transformation_applied", {}),
+        "current_phase": result.get("current_phase", "analyze"),
+
+        "turn_action": "run_sql" if needs_new_sql else "transform_previous",
+        "reused_previous_result": result.get("reused_previous_result", False),
+
+        "visualizations": [],
+        "plan": None,
+        "plan_steps": None,
+
+        "formatter_mode": formatter_mode,
+        "rows_returned": result.get("rows_returned", 0),
+    }
+
+    if result.get("sql_query"):
+        out["sql_query"] = result["sql_query"]
+
+    if result.get("local_sql_query"):
+        out["local_sql_query"] = result["local_sql_query"]
+
+    # Only semantic explanation should directly become final answer.
+    if formatter_mode == "semantic_answer":
+        explanation = result.get("explanation") or ""
+        out["result_preview"] = explanation
+        out["final_answer"] = explanation
+        out["result_summary"] = explanation
+        out["table_title"] = "Analysis of Previous Result"
+
+    # For DuckDB transformed data, DO NOT set final_answer/result_summary.
+    # Let formatter_node dynamically summarize the transformed query_result.
+    elif formatter_mode == "dynamic_result":
+        out["result_preview"] = result.get("explanation")
+        out["final_answer"] = None
+        out["result_summary"] = None
+        out["table_title"] = None
+
+    # If local result cannot answer and live SQL is needed.
+    elif needs_new_sql:
+        out["query_result"] = None
+        out["final_answer"] = None
+        out["result_summary"] = None
+        out["result_preview"] = result.get("explanation")
+
+    return out
+
+def chitchat_node(state: AgentState) -> dict:
+    return ChitChatAgent().chitchat(state)
+
+
+def turn_router_node(state: AgentState) -> dict:
+    return TurnRouterAgent().route(state)
+
+
+def planner_node(state: AgentState) -> dict:
+    return PlannerAgent().plan(state)
+
+
+def generator_node(state: AgentState) -> dict:
+    few_shot = state.get('few_shot_examples')
+    return SQLGeneratorAgent().generate(state, few_shot_examples=few_shot)
+
+
+def executor_node(state: AgentState) -> dict:
+    return CriticAgent().execute_and_validate(state)
+
+
+def reflector_node(state: AgentState) -> dict:
+    return CriticAgent().reflect_and_fix(state)
+
+
+_sql_subgraph = None
+
+
+def build_sql_subgraph():
+    """Planner, schema link, SQL generation, and execution."""
+    workflow = StateGraph(SQLSubState)
+    workflow.add_node('security_policy', security_policy_node)
+    workflow.add_node('planner', planner_node)
+    workflow.add_node('parallel_retrieval', parallel_retrieval_node)
+    workflow.add_node('generator', generator_node)
+    workflow.add_node('static_validator', static_validator_node)
+    workflow.add_node('pre_exec_critic', pre_exec_critic_node)
+    workflow.add_node('executor', executor_node)
+    workflow.add_node('reflector', reflector_node)
+    workflow.add_node('result_verifier', result_verifier_node)
+    workflow.add_edge(START, 'security_policy')
+    workflow.add_conditional_edges(
+        'security_policy',
+        lambda s: 'complete' if s.get('error') else 'planner',
+        {'planner': 'planner', 'complete': END},
+    )
+    workflow.add_edge('planner', 'parallel_retrieval')
+    workflow.add_edge('parallel_retrieval', 'generator')
+    workflow.add_edge('generator', 'static_validator')
+    workflow.add_conditional_edges(
+        'static_validator',
+        route_after_static_validator,
+        {
+            'pre_exec_critic': 'pre_exec_critic',
+            'executor': 'executor',
+            'reflect': 'reflector',
+            'complete': END,
+        },
+    )
+    if ENABLE_PRE_EXEC_CRITIC:
+        workflow.add_conditional_edges(
+            'pre_exec_critic',
+            route_after_pre_exec,
+            {'executor': 'executor', 'reflect': 'reflector', 'complete': END},
+        )
+    workflow.add_conditional_edges(
+        'executor',
+        route_sql_subgraph_executor,
+        {'reflect': 'reflector', 'result_verifier': 'result_verifier', 'complete': END},
+    )
+    workflow.add_edge('reflector', 'static_validator')
+    workflow.add_edge('result_verifier', END)
+    return workflow.compile()
+
+
+def get_sql_subgraph():
+    global _sql_subgraph
+    if _sql_subgraph is None:
+        logger.info('Compiling SQL subgraph...')
+        _sql_subgraph = build_sql_subgraph()
+    return _sql_subgraph
 
 
 def sql_pipeline_node(state: AgentState) -> dict:

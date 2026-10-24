@@ -3,25 +3,16 @@ import base64
 import pandas as pd
 import plotly.express as px
 from loguru import logger
-from langchain_core.prompts import ChatPromptTemplate
 
 from src.utils.chart_request import detect_requested_chart_type
 from src.utils.json_utils import extract_json
-from src.agents.prompts.agent_prompts import RESULT_FORMATTER_PROMPT
+from src.agents.prompts.agent_prompts import build_result_formatter_prompt, chat_messages
 from src.infrastructure.config import CURRENCY_SYMBOL
 from src.infrastructure.llm import get_chat_llm
 
 class ResultFormatterAgent:
     def __init__(self):
-        # self.llm = get_fast_chat_llm(temperature=0)
         self.llm = get_chat_llm()
-
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", RESULT_FORMATTER_PROMPT),
-            ("human", "{question}")
-        ])
-
-        self.chain = self.prompt | self.llm
 
     def format(self, state: dict) -> dict:
         rows = state.get("query_result") or []
@@ -76,16 +67,16 @@ class ResultFormatterAgent:
         memory_context = state.get("memory_context") or ""
 
         try:
-            response = self.chain.invoke({
-                "question": state.get("question", ""),
-                # "sql_query": state.get("sql_query", ""),
-                "dataset_profile": json.dumps(dataset_profile, default=str),
-                "computed_facts": json.dumps(computed_facts, default=str),
-                "chartable_columns": json.dumps(chartable_columns, default=str),
-                "requested_chart_type": requested_chart_type or "none",
-                "currency_symbol": CURRENCY_SYMBOL or "Rs",
-                "memory_context": memory_context or "",
-            })
+            system_prompt, user_prompt = build_result_formatter_prompt(
+                question=state.get("question", ""),
+                dataset_profile=json.dumps(dataset_profile, default=str),
+                computed_facts=json.dumps(computed_facts, default=str),
+                chartable_columns=json.dumps(chartable_columns, default=str),
+                requested_chart_type=requested_chart_type or "none",
+                currency_symbol=CURRENCY_SYMBOL or "Rs",
+                memory_context=memory_context or "",
+            )
+            response = self.llm.invoke(chat_messages(system_prompt, user_prompt))
 
             result = extract_json(response.content)
             currency_columns = self._currency_columns_from_model(result, numeric_columns)
@@ -939,6 +930,3 @@ class ResultFormatterAgent:
         )
 
         return fig
-
-def result_formatter_node(state: dict) -> dict:
-    return ResultFormatterAgent().format(state)
