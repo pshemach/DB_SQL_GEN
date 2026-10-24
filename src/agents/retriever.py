@@ -8,7 +8,7 @@ from src.infrastructure.db import db_manager
 from src.agents.state import AgentState
 
 from src.agents.prompts.agent_prompts import build_table_selection_prompt, chat_messages
-from src.infrastructure.llm import get_router_llm
+from src.infrastructure.llm import get_schema_selection_llm
 
 class SchemaLinkerAgent:
     """
@@ -16,8 +16,8 @@ class SchemaLinkerAgent:
     Identifies only the relevant tables and columns needed for the query.
     """
     
-    def __init__(self):
-        self.llm = get_router_llm()
+    def __init__(self, llm=None):
+        self.llm = llm or get_schema_selection_llm()
     def select_tables(self, question: str, plan: str, all_tables: List[str]) -> List[str]:
         """
         Select relevant tables using LLM reasoning.
@@ -82,19 +82,10 @@ class SchemaLinkerAgent:
             
             # Step 3: Retrieve DDL schema for selected tables
             schema_context = db_manager.get_schema_for_tables(selected_tables)
-            
-            # Step 4: Get metadata (keys, indexes, etc.)
-            schema_metadata = {}
-            for table in selected_tables:
-                metadata = db_manager.get_table_metadata(table)
-                schema_metadata[table] = metadata
-            
             logger.info(f"Selected {len(selected_tables)} tables: {', '.join(selected_tables)}")
-            
             return {
                 "relevant_tables": selected_tables,
                 "schema_context": schema_context,
-                "schema_metadata": schema_metadata
             }
             
         except Exception as e:

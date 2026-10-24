@@ -131,15 +131,25 @@ EMBEDDING_DIM = 3072 if "large" in str(EMBEDDING_MODEL).lower() else 1536
 ROUTER_MODEL = OPENAI_MODEL_FAST
 ROUTER_PROVIDER = "openai"
 
-CHAT_MODEL = OPENAI_MODEL_FAST
-CHAT_PROVIDER = "openai"
+PLANNER_MODEL = ANTHROPIC_MODEL_FAST
+PLANNER_PROVIDER = "anthropic"
 
-REASONING_MODEL = ANTHROPIC_MODEL_FAST
-REASONING_PROVIDER = "anthropic"
+SCHEMA_SELECTION_MODEL = OPENAI_MODEL_FAST
+SCHEMA_SELECTION_PROVIDER = "openai"
 
+GENERATOR_MODEL = ANTHROPIC_MODEL_FAST
+GENERATOR_PROVIDER = "anthropic"
+
+DIRECT_MODEL = OPENAI_MODEL_FAST
+DIRECT_PROVIDER = "openai"
+
+# Older role names still used by a few call sites.
+CHAT_MODEL = DIRECT_MODEL
+CHAT_PROVIDER = DIRECT_PROVIDER
+REASONING_MODEL = PLANNER_MODEL
+REASONING_PROVIDER = PLANNER_PROVIDER
 FAST_CHAT_MODEL = OPENAI_MODEL_FAST
 FAST_CHAT_PROVIDER = "openai"
-
 EXTRACTOR_MODEL = OPENAI_MODEL_FAST
 EXTRACTOR_PROVIDER = "openai"
 
@@ -320,10 +330,10 @@ def dump() -> None:
     logger.info("CONFIGURATION (NON-SECRETS ONLY)")
     logger.info("=" * 60)
     logger.info(f"Router model: {ROUTER_PROVIDER} / {ROUTER_MODEL}")
-    logger.info(f"Chat model: {CHAT_PROVIDER} / {CHAT_MODEL}")
-    logger.info(f"Reasoning model: {REASONING_PROVIDER} / {REASONING_MODEL}")
-    logger.info(f"Fast chat model: {FAST_CHAT_PROVIDER} / {FAST_CHAT_MODEL}")
-    logger.info(f"Extractor model: {EXTRACTOR_PROVIDER} / {EXTRACTOR_MODEL}")
+    logger.info(f"Planner model: {PLANNER_PROVIDER} / {PLANNER_MODEL}")
+    logger.info(f"Schema selection model: {SCHEMA_SELECTION_PROVIDER} / {SCHEMA_SELECTION_MODEL}")
+    logger.info(f"Generator model: {GENERATOR_PROVIDER} / {GENERATOR_MODEL}")
+    logger.info(f"Direct model: {DIRECT_PROVIDER} / {DIRECT_MODEL}")
     logger.info(f"Embedding model: {EMBEDDING_MODEL} ({EMBEDDING_DIM} dims)")
     logger.info(f"Vector store: {VECTOR_STORE_PATH}")
     logger.info(f"Semantic cache: {ENABLE_SEMANTIC_CACHE}")

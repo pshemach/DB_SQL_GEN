@@ -8,7 +8,7 @@ from src.agents.state import AgentState
 
 from src.agents.prompts.agent_prompts import build_reflection_prompt, chat_messages
 from src.infrastructure.config import ENABLE_SELF_CORRECTION, MAX_ITERATIONS, QUERY_TIMEOUT_SECONDS
-from src.infrastructure.llm import get_chat_llm
+from src.infrastructure.llm import get_direct_llm
 from src.utils.error_taxonomy import classify_db_error, is_retryable
 from src.utils.serialization import sanitize_state, serialize_query_result
 
@@ -18,8 +18,8 @@ class CriticAgent:
     Implements closed-loop error correction with execution feedback.
     """
     
-    def __init__(self):
-        self.llm = get_chat_llm(temperature=0)
+    def __init__(self, llm=None):
+        self.llm = llm or get_direct_llm(temperature=0)
     
     def execute_and_validate(self, state: AgentState) -> dict:
         """
@@ -123,8 +123,7 @@ class CriticAgent:
             response = self.llm.invoke(chat_messages(system_prompt, user_prompt))
             
             from src.agents.generator import SQLGeneratorAgent
-            generator = SQLGeneratorAgent()
-            fixed_sql = generator._clean_sql(response.content)
+            fixed_sql = SQLGeneratorAgent._clean_sql(response.content)
             
             logger.info(f"Generated corrected SQL (iteration {iterations + 1})")
             logger.debug(f"Fixed SQL: {fixed_sql}")

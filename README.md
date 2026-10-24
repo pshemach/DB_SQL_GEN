@@ -35,12 +35,12 @@ The workflow is `src/agents/orchestrator.py` (`AgentOrchestrator`). It is on whe
 1. Load session memory and check the semantic cache.
 2. Authorization guardrails. A user with no allowed rep codes is denied.
 3. `turn_router` chooses the next step: clarify, chitchat, reuse the previous result, or run SQL.
-4. The SQL subgraph in `src/agents/graph/sql_subgraph.py` plans, retrieves schema and examples, generates SQL, validates it, executes it, and can reflect once.
+4. On the same graph, SQL planning, schema retrieval, generation, validation, execution, and reflection run as their own nodes.
 5. The formatter builds the answer. The result is cached and the turn is saved to memory.
 
 Follow-up questions that only filter, sort, or aggregate the last result run against an in-memory DuckDB table named `last_result` (`src/agents/tools/local_sql_engine.py`). They go back to MySQL when the cached rows are not enough.
 
-Every statement is checked by `src/core/sql_safety.py` before it reaches a database. One `SELECT` is allowed. Writes, DDL, and multi-statement scripts are rejected and must not be retried into a write.
+Every statement is checked by `src/infrastructure/db/sql_safety.py` before it reaches a database. One `SELECT` is allowed. Writes, DDL, and multi-statement scripts are rejected and must not be retried into a write.
 
 Row scope is `RepCode IN (...)` from the signed-in user's allowed rep codes, applied in `security_policy_node`.
 
@@ -48,12 +48,12 @@ Row scope is `RepCode IN (...)` from the signed-in user's allowed rep codes, app
 
 | Change | Start here |
 | --- | --- |
-| Dialog routing (clarify, chitchat, follow-up, new SQL) | `src/agents/agent/turn_router.py`, `src/agents/graph/production_conditional.py` |
-| SQL plan, generation, execution, retry | `src/agents/graph/sql_subgraph.py`, `src/agents/graph/sql_pipeline_nodes.py`, `src/agents/agent/` |
-| Prompts | `src/agents/prompt/` |
-| Shared graph state | `src/agents/graph/graph_state.py` |
-| SELECT-only policy | `src/core/sql_safety.py` |
-| Database connection and schema reads | `src/core/database.py` |
+| Dialog routing (clarify, chitchat, follow-up, new SQL) | `src/agents/router.py`, `src/agents/orchestrator.py` |
+| SQL plan, generation, execution, retry | `src/agents/orchestrator.py`, `src/agents/planner.py`, `src/agents/generator.py`, `src/agents/critic.py` |
+| Prompts | `src/agents/prompts/agent_prompts.py` |
+| Shared graph state | `src/agents/state.py` |
+| SELECT-only policy | `src/infrastructure/db/sql_safety.py` |
+| Database connection and schema reads | `src/infrastructure/db/database.py` |
 | Business metric meanings | `data/business_definitions.yaml` (local only) and `src/agents/tools/business_knowledge_store.py` |
 | HTTP API | `src/api/endpoints.py`, `src/api/routers/` |
 | Request and response models | `src/api/data_models.py` |

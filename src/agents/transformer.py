@@ -13,17 +13,15 @@ from src.agents.prompts.agent_prompts import (
     chat_messages,
 )
 from src.agents.tools.local_sql_engine import LocalSQLEngine
-from src.infrastructure.llm import get_chat_llm, get_router_llm
+from src.infrastructure.llm import get_direct_llm, get_router_llm
 from src.memory.result_cache import result_cache
 from src.utils.json_utils import extract_json
 
 class TableAnalystAgent:
     """Performs business analysis and explains trends over cached query results."""
     
-    def __init__(self):
-        # Using the reasoning model for deep analysis
-        # self.llm = get_fast_chat_llm(temperature=0, model=GROQ_MODEL_REASONING)
-        self.llm = get_chat_llm()
+    def __init__(self, llm=None):
+        self.llm = llm or get_direct_llm()
 
     def analyze_table(
         self,
@@ -65,8 +63,9 @@ class TableAnalystAgent:
 class ResultTransformer:
     """Dynamic follow-up via LLM classifier + DuckDB local SQL + Table Analyst."""
 
-    def __init__(self):
-        self.llm = get_router_llm(temperature=0)
+    def __init__(self, llm=None, analyst_llm=None):
+        self.llm = llm or get_router_llm(temperature=0)
+        self.analyst = TableAnalystAgent(analyst_llm)
 
     def transform(self, state: dict) -> dict:
         session_id = state.get("session_id")
@@ -101,7 +100,7 @@ class ResultTransformer:
         logger.info(f"Follow-up classified as {action}: {decision.get('reason')}")
 
         if action == "semantic_analysis":
-            analysis_text = TableAnalystAgent().analyze_table(
+            analysis_text = self.analyst.analyze_table(
                 follow_up_question=question,
                 cached_data=cached.result_data,
                 source_question=cached.original_question,

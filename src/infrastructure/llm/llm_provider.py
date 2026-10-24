@@ -1,14 +1,12 @@
 """
-Chat LLM providers.
+Chat LLM providers. One constructor per agent role:
 
-Role-sized constructors, same shape as a class-based service layer:
-    get_router_llm()      — intent and schema classification (OpenAI)
-    get_chat_llm()        — formatting, critique, and conversation (OpenAI)
-    get_reasoning_llm()   — planner and SQL generation (Anthropic)
-    get_fast_chat_llm()   — Groq path used by the in-memory SQL planner
-    get_extractor_llm()   — short structured extraction (Groq fast model)
-
-Which agent calls which function is unchanged from the previous factory.
+    get_router_llm()            — turn routing
+    get_planner_llm()           — logical plan
+    get_schema_selection_llm()  — table selection
+    get_generator_llm()         — SQL generation
+    get_direct_llm()            — answers, critique, and chitchat
+    get_fast_chat_llm()         — in-memory SQL planner
 """
 
 from typing import Any, Optional
@@ -18,16 +16,18 @@ from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 
 from src.infrastructure.config import (
-    CHAT_MODEL,
-    CHAT_PROVIDER,
-    EXTRACTOR_MODEL,
-    EXTRACTOR_PROVIDER,
+    DIRECT_MODEL,
+    DIRECT_PROVIDER,
     FAST_CHAT_MODEL,
     FAST_CHAT_PROVIDER,
-    REASONING_MODEL,
-    REASONING_PROVIDER,
+    GENERATOR_MODEL,
+    GENERATOR_PROVIDER,
+    PLANNER_MODEL,
+    PLANNER_PROVIDER,
     ROUTER_MODEL,
     ROUTER_PROVIDER,
+    SCHEMA_SELECTION_MODEL,
+    SCHEMA_SELECTION_PROVIDER,
     get_api_key,
 )
 
@@ -56,19 +56,41 @@ def _build_llm(
     raise ValueError(f"Unsupported LLM provider: {provider}")
 
 
-def get_router_llm(temperature: Optional[float] = 0.0, **kwargs: Any) -> ChatOpenAI:
-    """LLM for routing, schema linking, and other classification steps."""
+def get_router_llm(temperature: Optional[float] = 0.0, **kwargs: Any):
+    """LLM for turn routing."""
     return _build_llm(ROUTER_MODEL, ROUTER_PROVIDER, temperature=temperature, **kwargs)
 
 
-def get_chat_llm(temperature: Optional[float] = 0.0, **kwargs: Any) -> ChatOpenAI:
-    """LLM for user-facing synthesis: formatting, critique, and chit-chat."""
-    return _build_llm(CHAT_MODEL, CHAT_PROVIDER, temperature=temperature, **kwargs)
+def get_planner_llm(temperature: Optional[float] = 0.0, **kwargs: Any):
+    """LLM for the logical plan."""
+    return _build_llm(PLANNER_MODEL, PLANNER_PROVIDER, temperature=temperature, **kwargs)
 
 
-def get_reasoning_llm(temperature: Optional[float] = 0.0, **kwargs: Any) -> ChatAnthropic:
-    """LLM for the planner and the SQL generator."""
-    return _build_llm(REASONING_MODEL, REASONING_PROVIDER, temperature=temperature, **kwargs)
+def get_schema_selection_llm(temperature: Optional[float] = 0.0, **kwargs: Any):
+    """LLM for choosing tables and columns."""
+    return _build_llm(
+        SCHEMA_SELECTION_MODEL, SCHEMA_SELECTION_PROVIDER, temperature=temperature, **kwargs
+    )
+
+
+def get_generator_llm(temperature: Optional[float] = 0.0, **kwargs: Any):
+    """LLM for SQL generation."""
+    return _build_llm(GENERATOR_MODEL, GENERATOR_PROVIDER, temperature=temperature, **kwargs)
+
+
+def get_direct_llm(temperature: Optional[float] = 0.0, **kwargs: Any):
+    """LLM for answers, critique, and chitchat."""
+    return _build_llm(DIRECT_MODEL, DIRECT_PROVIDER, temperature=temperature, **kwargs)
+
+
+def get_chat_llm(temperature: Optional[float] = 0.0, **kwargs: Any):
+    """Alias of get_direct_llm."""
+    return get_direct_llm(temperature=temperature, **kwargs)
+
+
+def get_reasoning_llm(temperature: Optional[float] = 0.0, **kwargs: Any):
+    """Alias of get_planner_llm."""
+    return get_planner_llm(temperature=temperature, **kwargs)
 
 
 def get_fast_chat_llm(
@@ -85,6 +107,6 @@ def get_fast_chat_llm(
     )
 
 
-def get_extractor_llm(temperature: Optional[float] = 0.0, **kwargs: Any) -> ChatGroq:
-    """Groq fast model for short structured extraction."""
-    return _build_llm(EXTRACTOR_MODEL, EXTRACTOR_PROVIDER, temperature=temperature, **kwargs)
+def get_extractor_llm(temperature: Optional[float] = 0.0, **kwargs: Any):
+    """Short structured extraction. Uses the fast chat model."""
+    return get_fast_chat_llm(temperature=temperature, **kwargs)

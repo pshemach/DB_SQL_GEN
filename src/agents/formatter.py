@@ -8,11 +8,11 @@ from src.utils.chart_request import detect_requested_chart_type
 from src.utils.json_utils import extract_json
 from src.agents.prompts.agent_prompts import build_result_formatter_prompt, chat_messages
 from src.infrastructure.config import CURRENCY_SYMBOL
-from src.infrastructure.llm import get_chat_llm
+from src.infrastructure.llm import get_direct_llm
 
 class ResultFormatterAgent:
-    def __init__(self):
-        self.llm = get_chat_llm()
+    def __init__(self, llm=None):
+        self.llm = llm or get_direct_llm()
 
     def format(self, state: dict) -> dict:
         rows = state.get("query_result") or []

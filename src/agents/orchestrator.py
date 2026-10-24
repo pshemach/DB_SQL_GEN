@@ -1,12 +1,14 @@
 """
 Sales SQL orchestrator.
 
-One class owns the LangGraph. Specialist steps stay in their own modules
-(router, planner, SQL generator, critic, formatter) and are wired here.
+One class owns one LangGraph. Large specialists stay in their own modules
+(router, planner, schema linker, SQL generator, critic, formatter).
+SQL generation is a path on this graph, not a nested subgraph.
 
 Flow:
     recall memory → cache → access check → router
-        → SQL pipeline | transform previous | chitchat | clarify | deny
+        → security → plan → schema → SQL → validate → execute
+        | transform previous | chitchat | clarify | deny
         → format → save memory
 """
 
@@ -16,43 +18,52 @@ import os
 import re
 import time
 from collections.abc import AsyncIterator
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Literal
 
-from langgraph.graph import END, START, StateGraph
+from langgraph.graph import END, StateGraph
 from langgraph.types import Command
 from langsmith import traceable
 from loguru import logger
 
-from src.agents.chitchat import ChitChatAgent
 from src.agents.critic import CriticAgent
 from src.agents.formatter import ResultFormatterAgent
 from src.agents.generator import SQLGeneratorAgent
 from src.agents.planner import PlannerAgent
-from src.agents.router import TurnRouterAgent
-from src.agents.sql_pipeline import (
-    _parent_to_sub,
-    _sub_to_parent,
-    parallel_retrieval_node,
-    pre_exec_critic_node,
-    result_verifier_node,
-    route_after_pre_exec,
-    route_after_static_validator,
-    route_sql_subgraph_executor,
-    security_policy_node,
-    static_validator_node,
+from src.agents.prompts.agent_prompts import (
+    build_chitchat_prompt,
+    build_pre_exec_critic_prompt,
+    chat_messages,
 )
-from src.agents.state import AgentState, SQLSubState
+from src.agents.retriever import SchemaLinkerAgent
+from src.agents.router import TurnRouterAgent
+from src.agents.state import AgentState
 from src.agents.transformer import ResultTransformer
 from src.infrastructure.config import (
+    ENABLE_DYNAMIC_FEW_SHOT,
     ENABLE_PRE_EXEC_CRITIC,
     ENABLE_PRODUCTION_GRAPH,
+    ENABLE_RESULT_VERIFIER,
     ENABLE_SEMANTIC_CACHE,
     ENABLE_TRANSFORM_PREVIOUS,
+    FEW_SHOT_EXAMPLES_COUNT,
     LANGCHAIN_API_KEY,
     LANGCHAIN_ENDPOINT,
     LANGCHAIN_PROJECT,
     LANGCHAIN_TRACING_V2,
+    MAX_ITERATIONS,
+    SQL_MAX_ROWS,
 )
+from src.infrastructure.db.sql_safety import assess_sql
+from src.infrastructure.llm import (
+    get_direct_llm,
+    get_generator_llm,
+    get_planner_llm,
+    get_router_llm,
+    get_schema_selection_llm,
+)
+from src.infrastructure.vector_store import few_shot_retriever
+from src.utils.error_taxonomy import is_retryable
 from src.memory import chat_memory
 from src.memory.result_cache import result_cache
 from src.infrastructure.cache import semantic_cache
@@ -66,7 +77,15 @@ NODE_STATUS = {
     "semantic_cache": "Checking previous answers...",
     "authz": "Checking access...",
     "turn_router": "Understanding your question...",
-    "sql_pipeline": "Generating and running SQL...",
+    "security_policy": "Checking row access...",
+    "planner": "Planning the query...",
+    "parallel_retrieval": "Selecting tables...",
+    "generator": "Writing SQL...",
+    "static_validator": "Checking the SQL...",
+    "pre_exec_critic": "Reviewing the SQL...",
+    "executor": "Running the query...",
+    "reflector": "Fixing the query...",
+    "result_verifier": "Checking the result...",
     "transform_result": "Updating the previous result...",
     "formatter": "Writing the answer...",
     "chitchat": "Writing a reply...",
@@ -75,6 +94,10 @@ NODE_STATUS = {
     "cache_result": "Saving the result...",
     "save_memory": "Saving the conversation...",
 }
+
+FORBIDDEN_SQL = re.compile(
+    r"(?i)\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b"
+)
 
 
 def _setup_langsmith() -> None:
@@ -105,7 +128,7 @@ def route_after_authz(state: AgentState) -> Literal["safe_response", "turn_route
 
 def route_after_turn_router(
     state: AgentState,
-) -> Literal["transform_result", "sql_pipeline", "safe_response", "formatter", "hitl_clarify", "chitchat"]:
+) -> Literal["transform_result", "security_policy", "safe_response", "formatter", "hitl_clarify", "chitchat"]:
     """Route the turn. Clarification is a normal node, not a graph interrupt."""
     action = state.get("turn_action", "run_sql")
 
@@ -114,9 +137,9 @@ def route_after_turn_router(
         if sid and result_cache.get_cached_result(sid):
             return "transform_result"
         logger.warning(
-            "transform_previous requested but no session cache found - falling back to sql_pipeline"
+            "transform_previous requested but no session cache found - falling back to SQL"
         )
-        return "sql_pipeline"
+        return "security_policy"
 
     if action == "clarify":
         return "hitl_clarify"
@@ -126,16 +149,16 @@ def route_after_turn_router(
         return "formatter"
     if action == "chitchat":
         return "chitchat"
-    return "sql_pipeline"
+    return "security_policy"
 
 
-def route_after_transform(state: AgentState) -> Literal["formatter", "sql_pipeline"]:
+def route_after_transform(state: AgentState) -> Literal["formatter", "security_policy"]:
     """LLM planner may decide cached rows are insufficient → new SQL."""
     if state.get("needs_new_sql"):
-        logger.info("Follow-up planner requested new SQL — routing to sql_pipeline")
-        return "sql_pipeline"
+        logger.info("Follow-up planner requested new SQL")
+        return "security_policy"
     if state.get("query_result") is None and state.get("current_phase") == "error":
-        return "sql_pipeline"
+        return "security_policy"
     return "formatter"
 
 
@@ -318,7 +341,7 @@ def semantic_cache_lookup_node(state: AgentState) -> dict:
     if not cached:
         return {"cache_hit": False, "metrics": metrics}
 
-    logger.info("Semantic cache HIT — skipping SQL subgraph")
+    logger.info("Semantic cache HIT — skipping SQL generation")
     metrics["cache_hit"] = True
     from src.utils.serialization import sanitize_state
 
@@ -417,7 +440,6 @@ def hitl_clarify_node(state: AgentState) -> dict:
         "result_summary": question_to_user,
         "question_to_user": question_to_user,
         "waiting_for_user": True,
-        "needs_clarification": True,
 
         # clear SQL artifacts
         "query_result": None,
@@ -431,13 +453,13 @@ def hitl_clarify_node(state: AgentState) -> dict:
         "error": None,
     }
     
-def formatter_node(state: AgentState) -> dict:
+def _format_state(state: AgentState, formatter: ResultFormatterAgent) -> dict:
     """Format results and sanitize for checkpointer (plotly/numpy/date)."""
-    return sanitize_state(ResultFormatterAgent().format(state))
+    return sanitize_state(formatter.format(state))
 
-def transform_result_node(state: dict) -> dict:
+def _transform_state(state: dict, transformer: ResultTransformer) -> dict:
     """Graph node wrapper for result transformation."""
-    result = ResultTransformer().transform(state)
+    result = transformer.transform(state)
 
     cached = result_cache.get_cached_result(state.get("session_id"))
     question = state.get("original_question") or state.get("question") or ""
@@ -506,101 +528,151 @@ def transform_result_node(state: dict) -> dict:
 
     return out
 
-def chitchat_node(state: AgentState) -> dict:
-    return ChitChatAgent().chitchat(state)
+_CHITCHAT_FALLBACK = (
+    "I can help with sales analytics, KPIs, reps, customers, products, targets, and outlet performance."
+)
 
 
-def turn_router_node(state: AgentState) -> dict:
-    return TurnRouterAgent().route(state)
+def _sql_question(state: AgentState) -> str:
+    """Question the SQL path should answer. Follow-ups use the enriched form."""
+    return state.get("enriched_question") or state.get("question") or ""
 
 
-def planner_node(state: AgentState) -> dict:
-    return PlannerAgent().plan(state)
+def _with_sql_question(state: AgentState) -> dict:
+    payload = dict(state)
+    payload["question"] = _sql_question(state)
+    return payload
 
 
-def generator_node(state: AgentState) -> dict:
-    few_shot = state.get('few_shot_examples')
-    return SQLGeneratorAgent().generate(state, few_shot_examples=few_shot)
+def security_policy_node(state: AgentState) -> dict:
+    """Inject row-level security context. Fail closed without rep codes."""
+    allowed = state.get("allowed_rep_codes") or []
+    if not allowed:
+        return {
+            "error": "Access denied. No allowed rep codes were provided.",
+            "error_type": "access_denied",
+            "should_retry": False,
+        }
+    codes_sql = ", ".join(f"'{c}'" for c in allowed)
+    return {
+        "security_filter_sql": f"RepCode IN ({codes_sql})",
+        "access_denied": False,
+        "error": None,
+        "error_type": None,
+    }
 
 
-def executor_node(state: AgentState) -> dict:
-    return CriticAgent().execute_and_validate(state)
+def static_validator_node(state: AgentState) -> dict:
+    """Deterministic SQL validation before execution."""
+    sql = (state.get("sql_query") or "").strip()
+    if not sql:
+        return {
+            "error": "No SQL query generated",
+            "error_type": "validation",
+            "should_retry": True,
+        }
+
+    if FORBIDDEN_SQL.search(sql):
+        return {
+            "error": "Query contains forbidden DDL/DML statements",
+            "error_type": "validation",
+            "should_retry": False,
+        }
+
+    kind, message = assess_sql(sql)
+    if kind == "policy":
+        return {
+            "error": message,
+            "error_type": "validation",
+            "should_retry": False,
+        }
+    if kind == "parse":
+        return {
+            "error": f"SQL parse error: {message}",
+            "error_type": "syntax",
+            "should_retry": True,
+        }
+
+    update = {
+        "error": None,
+        "error_type": None,
+        "should_retry": False,
+    }
+    sql_upper = sql.upper()
+    if "LIMIT" not in sql_upper and "TOP " not in sql_upper:
+        logger.info("Enforcing row cap via TOP clause recommendation in state")
+        note = f"-- validator: consider TOP {SQL_MAX_ROWS}"
+        update["sql_explanation"] = (state.get("sql_explanation") or "") + f"\n{note}"
+    return update
 
 
-def reflector_node(state: AgentState) -> dict:
-    return CriticAgent().reflect_and_fix(state)
+def result_verifier_node(state: AgentState) -> dict:
+    """Sanity-check execution results before formatting."""
+    if not ENABLE_RESULT_VERIFIER or state.get("error"):
+        return {}
+    result = state.get("query_result")
+    if result is None:
+        return {}
+    if isinstance(result, list) and len(result) == 0:
+        preview = state.get("result_preview") or "Query returned no rows."
+        return {"result_preview": preview}
+    return {}
 
 
-_sql_subgraph = None
+def route_after_security(state: AgentState) -> Literal["planner", "formatter"]:
+    if state.get("error"):
+        return "formatter"
+    return "planner"
 
 
-def build_sql_subgraph():
-    """Planner, schema link, SQL generation, and execution."""
-    workflow = StateGraph(SQLSubState)
-    workflow.add_node('security_policy', security_policy_node)
-    workflow.add_node('planner', planner_node)
-    workflow.add_node('parallel_retrieval', parallel_retrieval_node)
-    workflow.add_node('generator', generator_node)
-    workflow.add_node('static_validator', static_validator_node)
-    workflow.add_node('pre_exec_critic', pre_exec_critic_node)
-    workflow.add_node('executor', executor_node)
-    workflow.add_node('reflector', reflector_node)
-    workflow.add_node('result_verifier', result_verifier_node)
-    workflow.add_edge(START, 'security_policy')
-    workflow.add_conditional_edges(
-        'security_policy',
-        lambda s: 'complete' if s.get('error') else 'planner',
-        {'planner': 'planner', 'complete': END},
-    )
-    workflow.add_edge('planner', 'parallel_retrieval')
-    workflow.add_edge('parallel_retrieval', 'generator')
-    workflow.add_edge('generator', 'static_validator')
-    workflow.add_conditional_edges(
-        'static_validator',
-        route_after_static_validator,
-        {
-            'pre_exec_critic': 'pre_exec_critic',
-            'executor': 'executor',
-            'reflect': 'reflector',
-            'complete': END,
-        },
-    )
-    if ENABLE_PRE_EXEC_CRITIC:
-        workflow.add_conditional_edges(
-            'pre_exec_critic',
-            route_after_pre_exec,
-            {'executor': 'executor', 'reflect': 'reflector', 'complete': END},
-        )
-    workflow.add_conditional_edges(
-        'executor',
-        route_sql_subgraph_executor,
-        {'reflect': 'reflector', 'result_verifier': 'result_verifier', 'complete': END},
-    )
-    workflow.add_edge('reflector', 'static_validator')
-    workflow.add_edge('result_verifier', END)
-    return workflow.compile()
+def route_after_static_validator(state: AgentState) -> str:
+    if state.get("error"):
+        if is_retryable(state.get("error_type"), state.get("should_retry", True)):
+            if state.get("iterations", 0) < MAX_ITERATIONS:
+                return "reflect"
+        return "formatter"
+    return "pre_exec_critic" if ENABLE_PRE_EXEC_CRITIC else "executor"
 
 
-def get_sql_subgraph():
-    global _sql_subgraph
-    if _sql_subgraph is None:
-        logger.info('Compiling SQL subgraph...')
-        _sql_subgraph = build_sql_subgraph()
-    return _sql_subgraph
+def route_after_pre_exec(state: AgentState) -> str:
+    if state.get("error"):
+        if is_retryable(state.get("error_type"), state.get("should_retry", True)):
+            if state.get("iterations", 0) < MAX_ITERATIONS:
+                return "reflect"
+        return "formatter"
+    return "executor"
 
 
-def sql_pipeline_node(state: AgentState) -> dict:
-    """Run planner → schema link → SQL generation → execute."""
-    sub_out = get_sql_subgraph().invoke(_parent_to_sub(state))
-    merged = _sub_to_parent(sub_out)
-    return sanitize_state(merged) if merged else {}
+def route_after_executor(state: AgentState) -> str:
+    if state.get("error") is None:
+        return "result_verifier"
+    if not is_retryable(state.get("error_type"), state.get("should_retry", True)):
+        return "formatter"
+    if state.get("iterations", 0) >= MAX_ITERATIONS:
+        return "formatter"
+    return "reflect"
 
 
 class AgentOrchestrator:
-    """Builds and runs the sales Text-to-SQL graph."""
+    """One class owns the graph and the specialist agents."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        llm_router: Any,
+        llm_planner: Any,
+        llm_schema_selection: Any,
+        llm_generator: Any,
+        llm_direct: Any,
+    ) -> None:
         _setup_langsmith()
+        self.llm_direct = llm_direct
+        self.router = TurnRouterAgent(llm_router)
+        self.planner = PlannerAgent(llm_planner)
+        self.schema_linker = SchemaLinkerAgent(llm_schema_selection)
+        self.generator = SQLGeneratorAgent(llm_generator)
+        self.critic = CriticAgent(llm_direct)
+        self.formatter = ResultFormatterAgent(llm_direct)
+        self.transformer = ResultTransformer(llm_router, analyst_llm=llm_direct)
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -611,13 +683,21 @@ class AgentOrchestrator:
         workflow.add_node("memory_loader", memory_loader_node)
         workflow.add_node("semantic_cache", semantic_cache_lookup_node)
         workflow.add_node("authz", authz_guardrails_node)
-        workflow.add_node("turn_router", turn_router_node)
-        workflow.add_node("transform_result", transform_result_node)
+        workflow.add_node("turn_router", self.turn_router_node)
+        workflow.add_node("transform_result", self.transform_result_node)
         workflow.add_node("safe_response", safe_response_node)
-        workflow.add_node("chitchat", chitchat_node)
+        workflow.add_node("chitchat", self.chitchat_node)
         workflow.add_node("hitl_clarify", hitl_clarify_node)
-        workflow.add_node("sql_pipeline", sql_pipeline_node)
-        workflow.add_node("formatter", formatter_node)
+        workflow.add_node("security_policy", security_policy_node)
+        workflow.add_node("planner", self.planner_node)
+        workflow.add_node("parallel_retrieval", self.parallel_retrieval_node)
+        workflow.add_node("generator", self.generator_node)
+        workflow.add_node("static_validator", static_validator_node)
+        workflow.add_node("pre_exec_critic", self.pre_exec_critic_node)
+        workflow.add_node("executor", self.executor_node)
+        workflow.add_node("reflector", self.reflector_node)
+        workflow.add_node("result_verifier", result_verifier_node)
+        workflow.add_node("formatter", self.formatter_node)
         workflow.add_node("cache_result", cache_result_node)
         workflow.add_node("save_memory", save_memory_node)
 
@@ -640,7 +720,7 @@ class AgentOrchestrator:
             {
                 "hitl_clarify": "hitl_clarify",
                 "transform_result": "transform_result",
-                "sql_pipeline": "sql_pipeline",
+                "security_policy": "security_policy",
                 "safe_response": "safe_response",
                 "formatter": "formatter",
                 "chitchat": "chitchat",
@@ -649,9 +729,42 @@ class AgentOrchestrator:
         workflow.add_conditional_edges(
             "transform_result",
             route_after_transform,
-            {"formatter": "formatter", "sql_pipeline": "sql_pipeline"},
+            {"formatter": "formatter", "security_policy": "security_policy"},
         )
-        workflow.add_edge("sql_pipeline", "formatter")
+        workflow.add_conditional_edges(
+            "security_policy",
+            route_after_security,
+            {"planner": "planner", "formatter": "formatter"},
+        )
+        workflow.add_edge("planner", "parallel_retrieval")
+        workflow.add_edge("parallel_retrieval", "generator")
+        workflow.add_edge("generator", "static_validator")
+        workflow.add_conditional_edges(
+            "static_validator",
+            route_after_static_validator,
+            {
+                "pre_exec_critic": "pre_exec_critic",
+                "executor": "executor",
+                "reflect": "reflector",
+                "formatter": "formatter",
+            },
+        )
+        workflow.add_conditional_edges(
+            "pre_exec_critic",
+            route_after_pre_exec,
+            {"executor": "executor", "reflect": "reflector", "formatter": "formatter"},
+        )
+        workflow.add_conditional_edges(
+            "executor",
+            route_after_executor,
+            {
+                "reflect": "reflector",
+                "result_verifier": "result_verifier",
+                "formatter": "formatter",
+            },
+        )
+        workflow.add_edge("reflector", "static_validator")
+        workflow.add_edge("result_verifier", "formatter")
         workflow.add_edge("safe_response", "save_memory")
         workflow.add_edge("formatter", "cache_result")
         workflow.add_edge("cache_result", "save_memory")
@@ -660,13 +773,119 @@ class AgentOrchestrator:
         workflow.add_edge("chitchat", "save_memory")
         return workflow.compile()
 
+    def turn_router_node(self, state: AgentState) -> dict:
+        return self.router.route(state)
+
+    def planner_node(self, state: AgentState) -> dict:
+        return self.planner.plan(_with_sql_question(state))
+
+    def parallel_retrieval_node(self, state: AgentState) -> dict:
+        """Fetch schema context and few-shot examples in parallel."""
+        t0 = time.time()
+        question = _sql_question(state)
+        payload = _with_sql_question(state)
+        linker = self.schema_linker
+
+        def _schema():
+            return linker.retrieve_schema(payload)
+
+        def _few_shot():
+            if not ENABLE_DYNAMIC_FEW_SHOT:
+                return {"few_shot_examples": []}
+            try:
+                examples = few_shot_retriever.retrieve(question, k=FEW_SHOT_EXAMPLES_COUNT)
+                return {"few_shot_examples": examples}
+            except Exception as exc:
+                logger.warning(f"Few-shot retrieval failed: {exc}")
+                return {"few_shot_examples": []}
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            schema_out = pool.submit(_schema).result()
+            few_out = pool.submit(_few_shot).result()
+
+        logger.info(f"Parallel retrieval completed in {(time.time() - t0) * 1000:.0f}ms")
+        return {**schema_out, **few_out}
+
+    def generator_node(self, state: AgentState) -> dict:
+        return self.generator.generate(
+            _with_sql_question(state),
+            few_shot_examples=state.get("few_shot_examples"),
+        )
+
+    def pre_exec_critic_node(self, state: AgentState) -> dict:
+        """Optional LLM review of SQL before execution."""
+        if not ENABLE_PRE_EXEC_CRITIC:
+            return {}
+        try:
+            system_prompt, user_prompt = build_pre_exec_critic_prompt(
+                _sql_question(state), state.get("sql_query", "")
+            )
+            resp = self.llm_direct.invoke(chat_messages(system_prompt, user_prompt))
+            content = (resp.content or "").strip()
+            if content.upper().startswith("REJECT"):
+                return {
+                    "error": content,
+                    "error_type": "validation",
+                    "should_retry": True,
+                }
+        except Exception as exc:
+            logger.warning(f"Pre-exec critic failed: {exc}")
+        return {}
+
+    def executor_node(self, state: AgentState) -> dict:
+        return self.critic.execute_and_validate(state)
+
+    def reflector_node(self, state: AgentState) -> dict:
+        return self.critic.reflect_and_fix(state)
+
+    def formatter_node(self, state: AgentState) -> dict:
+        return _format_state(state, self.formatter)
+
+    def transform_result_node(self, state: AgentState) -> dict:
+        return _transform_state(state, self.transformer)
+
+    def chitchat_node(self, state: AgentState) -> dict:
+        try:
+            system_prompt, user_prompt = build_chitchat_prompt(
+                state.get("question") or "",
+                state.get("memory_context") or "",
+            )
+            response = self.llm_direct.invoke(chat_messages(system_prompt, user_prompt))
+            msg = response.content if hasattr(response, "content") else str(response)
+            msg = (msg or "").strip() or _CHITCHAT_FALLBACK
+        except Exception as exc:
+            logger.error(f"Chitchat node failed: {exc}")
+            msg = _CHITCHAT_FALLBACK
+        return {
+            "turn_action": "chitchat",
+            "final_answer": msg,
+            "result_summary": msg,
+            "waiting_for_user": False,
+            "query_result": None,
+            "result_preview": None,
+            "visualizations": [],
+            "sql_query": None,
+            "sql_explanation": None,
+            "plan": None,
+            "plan_steps": None,
+            "table_title": None,
+            "relevant_tables": None,
+            "error": None,
+        }
+
     def run(self, question: str, **kwargs) -> dict:
         return run_agent(question, **kwargs)
 
 
 def build_agent() -> AgentOrchestrator:
-    """Return the process-wide orchestrator."""
-    return orchestrator
+    """Build the orchestrator with one LLM client per role."""
+    return AgentOrchestrator(
+        llm_router=get_router_llm(),
+        llm_planner=get_planner_llm(temperature=0),
+        llm_schema_selection=get_schema_selection_llm(),
+        llm_generator=get_generator_llm(temperature=0.0),
+        llm_direct=get_direct_llm(),
+    )
 
 
 def _initial_state(
@@ -688,26 +907,15 @@ def _initial_state(
         "previous_state": None,
         "messages": [],
         "memory_context": "",
-        "conversation_route": None,
         "turn_action": None,
-        "router_confidence": None,
         "enriched_question": None,
-        "follow_up_type": None,
-        "is_follow_up": False,
-        "can_reuse_cached_result": False,
-        "cached_result_id": None,
-        "required_transformations": [],
         "metrics": init_metrics(),
-        "needs_clarification": False,
         "question_to_user": None,
         "waiting_for_user": False,
-        "business_definitions": "",
-        "matched_knowledge": [],
         "plan": None,
         "plan_steps": None,
         "relevant_tables": None,
         "schema_context": None,
-        "schema_metadata": None,
         "sql_query": None,
         "sql_explanation": None,
         "few_shot_examples": None,
@@ -781,12 +989,11 @@ def _prepare_turn(
         if last_state.get("waiting_for_user"):
             clarification_answer = question
     initial_state = _initial_state(question, session_id, allowed_rep_codes, user_role, user_id)
-    initial_state["is_follow_up"] = resolved_turn == "follow_up"
     stream_input = _graph_input(resolved_turn, clarification_answer, initial_state)
     return session_id, resolved_turn, initial_state, stream_input
 
 
-orchestrator = AgentOrchestrator()
+orchestrator = build_agent()
 graph = orchestrator.graph
 
 

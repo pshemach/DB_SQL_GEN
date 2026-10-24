@@ -7,15 +7,15 @@ from loguru import logger
 from src.agents.state import AgentState
 from src.agents.prompts.agent_prompts import build_generator_prompt
 from src.infrastructure.config import ENABLE_DYNAMIC_FEW_SHOT
-from src.infrastructure.llm import get_reasoning_llm
+from src.infrastructure.llm import get_generator_llm
 
 class SQLGeneratorAgent:
     """
     Translates logical plans into valid SQL queries using Chain-of-Thought reasoning.
     """
     
-    def __init__(self):
-        self.llm = get_reasoning_llm(temperature=0.0)
+    def __init__(self, llm=None):
+        self.llm = llm or get_generator_llm(temperature=0.0)
     
     def generate(self, state: AgentState, few_shot_examples=None) -> dict:
         """
@@ -69,7 +69,8 @@ class SQLGeneratorAgent:
                 "should_retry": False
             }
     
-    def _clean_sql(self, raw_sql: str) -> str:
+    @staticmethod
+    def _clean_sql(raw_sql: str) -> str:
         """
         Clean SQL output from LLM response.
         Removes markdown formatting and extracts SQL query.

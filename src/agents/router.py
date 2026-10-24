@@ -28,8 +28,8 @@ from src.infrastructure.llm import get_router_llm
 # ==========================================
 
 class TurnRouterAgent:
-    def __init__(self):
-        self.llm = get_router_llm()
+    def __init__(self, llm=None):
+        self.llm = llm or get_router_llm()
 
     def route(self, state: AgentState) -> dict[str, Any]:
         logger.info("Route orchestrator running...")
@@ -79,11 +79,8 @@ class TurnRouterAgent:
         out = {
             **cleaned_state_updates,
             "turn_action": action,
-            "router_confidence": float(result.get("confidence", 1.0)),
             "enriched_question": result.get("enriched_question") or question,
             "question_to_user": result.get("clarification_question"),
-
-            "needs_clarification": action == "clarify",
             "waiting_for_user": action == "clarify",
 
             "metrics": set_router_action(metrics, action)

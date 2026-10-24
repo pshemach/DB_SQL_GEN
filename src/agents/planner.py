@@ -2,13 +2,13 @@ from loguru import logger
 from src.agents.state import AgentState
 from src.agents.prompts.agent_prompts import build_planner_prompt, chat_messages
 from src.agents.tools.business_knowledge_retriever import business_knowledge_retriever as doc_retriever
-from src.infrastructure.llm import get_reasoning_llm
+from src.infrastructure.llm import get_planner_llm
 
 class PlannerAgent:
     """Decomposes natural language questions into structured logical plans."""
     
-    def __init__(self):
-        self.llm = get_reasoning_llm(temperature=0)
+    def __init__(self, llm=None):
+        self.llm = llm or get_planner_llm(temperature=0)
         
     def plan(self, state: AgentState) -> dict:
         """Generate a logical plan for the question."""

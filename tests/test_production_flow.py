@@ -5,7 +5,7 @@ import re
 import pytest
 
 from src.utils.error_taxonomy import classify_db_error, is_retryable
-from src.agents.sql_pipeline import static_validator_node, FORBIDDEN_SQL
+from src.agents.orchestrator import FORBIDDEN_SQL, static_validator_node
 from src.infrastructure.db.sql_safety import assess_sql
 from src.agents.orchestrator import authz_guardrails_node, DANGEROUS_PATTERNS
 
