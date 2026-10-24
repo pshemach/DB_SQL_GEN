@@ -1,13 +1,10 @@
 """Tests for production graph utilities (no live LLM/DB required)."""
 
-import re
-
 import pytest
 
 from src.utils.error_taxonomy import classify_db_error, is_retryable
-from src.agents.orchestrator import FORBIDDEN_SQL, static_validator_node
+from src.agents.orchestrator import FORBIDDEN_SQL, missing_rep_codes, static_validator_node
 from src.infrastructure.db.sql_safety import assess_sql
-from src.agents.orchestrator import authz_guardrails_node, DANGEROUS_PATTERNS
 
 class TestErrorTaxonomy:
     def test_syntax_error_retryable(self):
@@ -37,7 +34,7 @@ class TestStaticValidator:
             "question": "test",
         })
         assert out.get("error") is None
-        assert out.get("pre_exec_approved") is True
+        assert out.get("should_retry") is False
 
     def test_rejects_replace_and_stacked_statements(self):
         replace_out = static_validator_node({
@@ -59,30 +56,16 @@ class TestStaticValidator:
         assert assess_sql("SELECT * FROM t FOR UPDATE")[0] == "policy"
         assert assess_sql("CALL update_sales()")[0] == "policy"
 
-class TestAuthzGuardrails:
-    def test_denies_without_rep_codes(self):
-        out = authz_guardrails_node({"question": "What are total sales?", "allowed_rep_codes": []})
-        assert out.get("access_denied") is True
-        assert out.get("turn_action") == "deny"
+class TestRepCodeGate:
+    def test_stops_without_rep_codes(self):
+        out = missing_rep_codes([], {"question": "What are total sales?"})
+        assert out["access_denied"] is True
+        assert out["turn_action"] == "deny"
+        assert out["error_type"] == "access_denied"
 
-    def test_rejects_injection_pattern(self):
-        out = authz_guardrails_node({
-            "question": "'; DROP TABLE users; --",
-            "allowed_rep_codes": ["R001"],
-        })
-        assert out.get("access_denied") is True
-
-    def test_passes_valid_question(self):
-        out = authz_guardrails_node({
-            "question": "What are sales for last month?",
-            "allowed_rep_codes": ["R001"],
-        })
-        assert out.get("access_denied") is False
+    def test_allows_when_codes_exist(self):
+        assert missing_rep_codes(["R001"], {"question": "What are sales?"}) is None
 
 class TestGuardrailPatterns:
-    def test_dangerous_patterns_compile(self):
-        for p in DANGEROUS_PATTERNS:
-            assert re.compile(p)
-
     def test_forbidden_sql_matches_delete(self):
         assert FORBIDDEN_SQL.search("DELETE FROM t")

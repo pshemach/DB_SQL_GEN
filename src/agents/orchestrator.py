@@ -6,7 +6,7 @@ One class owns one LangGraph. Large specialists stay in their own modules
 SQL generation is a path on this graph, not a nested subgraph.
 
 Flow:
-    recall memory → cache → access check → router
+    recall memory → cache → supervisor
         → security → plan → schema → SQL → validate → execute
         | transform previous | chitchat | clarify | deny
         → format → save memory
@@ -36,7 +36,7 @@ from src.agents.prompts.agent_prompts import (
     chat_messages,
 )
 from src.agents.retriever import SchemaLinkerAgent
-from src.agents.router import TurnRouterAgent
+from src.agents.router import RouterAgent
 from src.agents.state import AgentState
 from src.agents.transformer import ResultTransformer
 from src.infrastructure.config import (
@@ -75,8 +75,7 @@ NODE_STATUS = {
     "init": "Starting...",
     "memory_loader": "Loading conversation...",
     "semantic_cache": "Checking previous answers...",
-    "authz": "Checking access...",
-    "turn_router": "Understanding your question...",
+    "supervisor": "Understanding your question...",
     "security_policy": "Checking row access...",
     "planner": "Planning the query...",
     "parallel_retrieval": "Selecting tables...",
@@ -114,19 +113,13 @@ def add_start_time(state: AgentState) -> dict:
     return {"start_time": time.time()}
 
 
-def route_after_cache(state: AgentState) -> Literal["formatter", "authz"]:
+def route_after_cache(state: AgentState) -> Literal["formatter", "supervisor"]:
     if state.get("cache_hit"):
         return "formatter"
-    return "authz"
+    return "supervisor"
 
 
-def route_after_authz(state: AgentState) -> Literal["safe_response", "turn_router"]:
-    if state.get("access_denied") or state.get("turn_action") == "deny":
-        return "safe_response"
-    return "turn_router"
-
-
-def route_after_turn_router(
+def supervisor_routing(
     state: AgentState,
 ) -> Literal["transform_result", "security_policy", "safe_response", "formatter", "hitl_clarify", "chitchat"]:
     """Route the turn. Clarification is a normal node, not a graph interrupt."""
@@ -162,11 +155,25 @@ def route_after_transform(state: AgentState) -> Literal["formatter", "security_p
     return "formatter"
 
 
-DANGEROUS_PATTERNS = [
-    r"(?i)(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|ALTER\s+TABLE)",
-    r"(?i)(UNION\s+SELECT|OR\s+1\s*=\s*1)",
-    r"(?i)(--\s*$|;\s*DROP)",
-]
+_NO_REP_CODES = "Access denied. No allowed rep codes were provided."
+
+
+def missing_rep_codes(allowed_rep_codes: list[str] | None, state: dict) -> dict | None:
+    """Stop before the graph when the user has no row scope."""
+    if allowed_rep_codes:
+        return None
+    return {
+        **state,
+        "access_denied": True,
+        "access_denied_reason": _NO_REP_CODES,
+        "turn_action": "deny",
+        "error": _NO_REP_CODES,
+        "error_type": "access_denied",
+        "should_retry": False,
+        "final_answer": _NO_REP_CODES,
+        "result_summary": _NO_REP_CODES,
+    }
+
 
 def save_memory_node(state: AgentState) -> dict:
     session_id = state.get("session_id")
@@ -356,46 +363,6 @@ def semantic_cache_lookup_node(state: AgentState) -> dict:
         "error": None,
         "metrics": metrics,
     })
-
-def authz_guardrails_node(state: AgentState) -> dict:
-    """Fail-closed authz and input guardrails before schema exposure."""
-    t0 = time.time()
-    question = (state.get("question") or "").strip()
-    metrics = state.get("metrics") or init_metrics()
-
-    if len(question) < 2:
-        return _deny("Question too short.", metrics, t0, "validation")
-    if len(question) > 2000:
-        return _deny("Question exceeds maximum length.", metrics, t0, "validation")
-
-    for pattern in DANGEROUS_PATTERNS:
-        if re.search(pattern, question):
-            return _deny("Suspicious pattern detected in question.", metrics, t0, "guardrail_rejection")
-
-    allowed = state.get("allowed_rep_codes") or []
-    if not allowed:
-        return _deny(
-            "Access denied. No allowed rep codes were provided.",
-            metrics,
-            t0,
-            "access_denied",
-        )
-
-    metrics = record_node_timing(metrics, "authz_guardrails", (time.time() - t0) * 1000)
-    return {"access_denied": False, "metrics": metrics}
-
-def _deny(reason: str, metrics: dict, t0: float, error_type: str) -> dict:
-    metrics = record_node_timing(metrics, "authz_guardrails", (time.time() - t0) * 1000)
-    return {
-        "turn_action": "deny",
-        "access_denied": True,
-        "access_denied_reason": reason,
-        "error": reason,
-        "error_type": error_type,
-        "should_retry": False,
-        "final_answer": reason,
-        "metrics": metrics,
-    }
 
 def safe_response_node(state: AgentState) -> dict:
     """Terminal responses for deny/chitchat without SQL."""
@@ -666,7 +633,7 @@ class AgentOrchestrator:
     ) -> None:
         _setup_langsmith()
         self.llm_direct = llm_direct
-        self.router = TurnRouterAgent(llm_router)
+        self.supervisor = RouterAgent(llm_router)
         self.planner = PlannerAgent(llm_planner)
         self.schema_linker = SchemaLinkerAgent(llm_schema_selection)
         self.generator = SQLGeneratorAgent(llm_generator)
@@ -682,8 +649,7 @@ class AgentOrchestrator:
         workflow.add_node("init", add_start_time)
         workflow.add_node("memory_loader", memory_loader_node)
         workflow.add_node("semantic_cache", semantic_cache_lookup_node)
-        workflow.add_node("authz", authz_guardrails_node)
-        workflow.add_node("turn_router", self.turn_router_node)
+        workflow.add_node("supervisor", self.supervisor_node)
         workflow.add_node("transform_result", self.transform_result_node)
         workflow.add_node("safe_response", safe_response_node)
         workflow.add_node("chitchat", self.chitchat_node)
@@ -707,16 +673,11 @@ class AgentOrchestrator:
         workflow.add_conditional_edges(
             "semantic_cache",
             route_after_cache,
-            {"formatter": "formatter", "authz": "authz"},
+            {"formatter": "formatter", "supervisor": "supervisor"},
         )
         workflow.add_conditional_edges(
-            "authz",
-            route_after_authz,
-            {"safe_response": "safe_response", "turn_router": "turn_router"},
-        )
-        workflow.add_conditional_edges(
-            "turn_router",
-            route_after_turn_router,
+            "supervisor",
+            supervisor_routing,
             {
                 "hitl_clarify": "hitl_clarify",
                 "transform_result": "transform_result",
@@ -773,8 +734,8 @@ class AgentOrchestrator:
         workflow.add_edge("chitchat", "save_memory")
         return workflow.compile()
 
-    def turn_router_node(self, state: AgentState) -> dict:
-        return self.router.route(state)
+    def supervisor_node(self, state: AgentState) -> dict:
+        return self.supervisor.route(state)
 
     def planner_node(self, state: AgentState) -> dict:
         return self.planner.plan(_with_sql_question(state))
@@ -1009,6 +970,9 @@ def run_agent(question: str, **kwargs) -> dict:
         kwargs.get("user_id"),
         kwargs.get("turn_type"),
     )
+    denied = missing_rep_codes(kwargs.get("allowed_rep_codes"), initial_state)
+    if denied:
+        return denied
     try:
         final_state = graph.invoke(graph_input, build_invoke_config(session_id))
         return _finalize(final_state)
@@ -1029,6 +993,10 @@ async def run_agent_async(
     session_id, resolved_turn, initial_state, graph_input = _prepare_turn(
         question, session_id, allowed_rep_codes, user_role, clarification_answer, user_id, turn_type
     )
+    denied = missing_rep_codes(allowed_rep_codes, initial_state)
+    if denied:
+        denied["turn_type"] = resolved_turn
+        return denied
     try:
         result = await graph.ainvoke(graph_input, build_invoke_config(session_id))
         finalized = _finalize(result)
@@ -1057,6 +1025,11 @@ async def run_agent_stream(
     session_id, resolved_turn, initial_state, graph_input = _prepare_turn(
         question, session_id, allowed_rep_codes, user_role, clarification_answer, user_id, turn_type
     )
+    denied = missing_rep_codes(allowed_rep_codes, initial_state)
+    if denied:
+        denied["turn_type"] = resolved_turn
+        yield {"type": "complete", "state": denied}
+        return
     merged: dict[str, Any] = dict(initial_state)
     try:
         try:

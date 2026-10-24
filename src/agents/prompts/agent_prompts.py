@@ -1420,7 +1420,7 @@ def build_router_prompt(
     memory_context: str = "",
     retrieved_knowledge: str = "",
 ) -> tuple[str, str]:
-    """Return (system, user) for the turn router."""
+    """Return (system, user) for the supervisor."""
     system = _fill(
         ORCHESTRATOR_SYSTEM_PROMPT,
         memory_context=memory_context or "(none)",

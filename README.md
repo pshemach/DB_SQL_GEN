@@ -34,7 +34,7 @@ The workflow is `src/agents/orchestrator.py` (`AgentOrchestrator`). It is on whe
 
 1. Load session memory and check the semantic cache.
 2. Authorization guardrails. A user with no allowed rep codes is denied.
-3. `turn_router` chooses the next step: clarify, chitchat, reuse the previous result, or run SQL.
+3. `supervisor` chooses the next step: clarify, chitchat, reuse the previous result, or run SQL.
 4. On the same graph, SQL planning, schema retrieval, generation, validation, execution, and reflection run as their own nodes.
 5. The formatter builds the answer. The result is cached and the turn is saved to memory.
 
