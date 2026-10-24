@@ -2,7 +2,7 @@
 
 Text-to-SQL assistant for SFA sales data. A user asks a question in plain language. A LangGraph agent turns it into one read-only `SELECT`, runs it against the sales database, and returns a table or chart.
 
-The product name in the Streamlit UI is **SFA SmartAnalyst**.
+The product name in the web UI is **SFA SmartAnalyst**.
 
 Python 3.11. Dependencies are locked in `pyproject.toml` and `uv.lock`.
 
@@ -14,19 +14,13 @@ Copy `.env` into the repo root before starting either app. Required names are li
 uv sync
 ```
 
-Streamlit UI:
+API and web UI (docs at `/docs`, UI at `/app`, health at `/health`):
 
 ```bash
-streamlit run app.py --server.port 8582 --server.address 0.0.0.0
+python main.py
 ```
 
-FastAPI (docs at `/docs`, web UI at `/app`, health at `/health`):
-
-```bash
-uvicorn src.api:app --host 0.0.0.0 --port 8688
-```
-
-`api.py` starts the same FastAPI app on port `8688`. Deployed units live in `deploy/`. Server setup is in `HOSTING_GUIDE.md`.
+The server listens on port `8688`. The systemd unit is `deploy/textsql-api.service`. Server setup is in `HOSTING_GUIDE.md`.
 
 Tests:
 
@@ -36,7 +30,7 @@ pytest
 
 ## How a question moves
 
-Production graph: `src/agents/graph/production_graph.py`. It is on when `ENABLE_PRODUCTION_GRAPH` is true (the default).
+The workflow is `src/agents/orchestrator.py` (`AgentOrchestrator`). It is on when `ENABLE_PRODUCTION_GRAPH` is true (the default).
 
 1. Load session memory and check the semantic cache.
 2. Authorization guardrails. A user with no allowed rep codes is denied.

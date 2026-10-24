@@ -20,7 +20,6 @@ NON_RETRYABLE_ERRORS = frozenset({
     "validation",
 })
 
-
 def classify_db_error(error_msg: str) -> str:
     """Map database error text to a normalized error_type."""
     error_lower = (error_msg or "").lower()
@@ -38,7 +37,6 @@ def classify_db_error(error_msg: str) -> str:
     if "permission" in error_lower or "denied" in error_lower:
         return "permission"
     return "runtime_error"
-
 
 def is_retryable(error_type: str | None, should_retry: bool = True) -> bool:
     if not should_retry:

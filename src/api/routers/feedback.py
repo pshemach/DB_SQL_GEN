@@ -2,12 +2,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ...agents.tools.chat_memory import chat_memory
-from ..data_models import FeedbackRequest
-from ..dependencies import require_user
+from src.memory import chat_memory
+from src.api.data_models import FeedbackRequest
+from src.api.dependencies import require_user
 
 router = APIRouter(tags=["feedback"])
-
 
 @router.post("/feedback")
 async def save_feedback(request: FeedbackRequest, user: dict[str, Any] = Depends(require_user)):

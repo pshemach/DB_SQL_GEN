@@ -6,7 +6,6 @@ from typing import Optional, List, Dict, Any
 class PhoneLoginRequest(BaseModel):
     phone_no: str
 
-
 class SystemLoginRequest(BaseModel):
     username: str
     password: str
@@ -39,12 +38,10 @@ class FeedbackRequest(BaseModel):
     feedback_type: str
     feedback_reason: Optional[str] = None
 
-
 class FeedbackStatsResponse(BaseModel):
     likes: int = 0
     dislikes: int = 0
     satisfaction: float = 0
-
 
 class KBDefinitionRequest(BaseModel):
     key: str
@@ -65,7 +62,6 @@ class KBDefinitionRequest(BaseModel):
 #         default=None,
 #         description="User answer when resuming from a clarification interrupt (HITL)",
 #     )
-
 
 class QueryResponse(BaseModel):
     # =============================
@@ -136,13 +132,11 @@ class QueryResponse(BaseModel):
     visualizations: Optional[List[Dict[str, Any]]] = None
     requested_chart_type: Optional[str] = None
 
-
 class ExampleRequest(BaseModel):
     question: str
     sql: str
     explanation: Optional[str] = None
     complexity: str = Field(default="medium", pattern="^(simple|medium|complex)$")
-
 
 class HealthResponse(BaseModel):
     status: str
@@ -151,25 +145,20 @@ class HealthResponse(BaseModel):
     cache_enabled: bool
     few_shot_enabled: bool
 
-
 class PhoneLoginRequest(BaseModel):
     phone_no: str = Field(..., description="Phone number used for chatbot auth")
-
 
 class SystemLoginRequest(BaseModel):
     username: str
     password: str
 
-
 class ConversationStartRequest(BaseModel):
     question: Optional[str] = None
     session_id: Optional[str] = None
 
-
 class ConversationFollowUpRequest(BaseModel):
     question: str
     clarification_answer: Optional[str] = None
-
 
 class FeedbackRequest(BaseModel):
     session_id: str
@@ -177,7 +166,6 @@ class FeedbackRequest(BaseModel):
     message_type: str
     message_content: str
     feedback_type: str = Field(..., pattern="^(like|dislike)$")
-
 
 class KnowledgeDefinitionRequest(BaseModel):
     key: str

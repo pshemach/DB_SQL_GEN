@@ -13,7 +13,6 @@ _REQUESTED_CHART_PATTERNS = (
     (r"\bas\s+an?\s+pie\b", "pie"),
 )
 
-
 def detect_requested_chart_type(question: str) -> str | None:
     """Return a chart type when the user explicitly asks for one."""
     q = (question or "").lower()

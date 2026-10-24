@@ -1,0 +1,44 @@
+# Text-to-SQL agent configuration.
+# Non-secret values live here. API keys and URIs live only in .env.
+# Environment variables override these values when they are set.
+
+llm:
+  temperature: 0.0
+
+embedding:
+  tier: small
+
+paths:
+  business_doc_yaml: data/business_definitions.yaml
+  vector_store: ./database/vector_store
+
+vector_store:
+  chroma_collection_name: sql_examples
+  business_definition_collection_name: business_definition
+
+cache:
+  enable_semantic_cache: true
+  similarity_threshold: 0.99
+
+agent:
+  max_iterations: 1
+  enable_self_correction: true
+  enable_dynamic_few_shot: true
+  few_shot_examples_count: 3
+  query_timeout_seconds: 60
+
+graph:
+  enable_production_graph: true
+  enable_clarify: true
+  enable_transform_previous: true
+  enable_pre_exec_critic: false
+  enable_result_verifier: true
+  recursion_limit: 50
+  timeout_seconds: 120
+  sql_max_rows: 1000
+  currency_symbol: Rs
+
+langsmith:
+  tracing_v2: false
+  project: sales-text-to-sql
+  endpoint: https://api.smith.langchain.com

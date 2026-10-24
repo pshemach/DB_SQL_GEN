@@ -11,7 +11,6 @@ ROWS = [
 ]
 COLS = ["RepCode", "ProductName", "NetSales"]
 
-
 def test_compound_operation_string():
     """LLM returns 'use_all | sort | row_at_rank' — postprocess still works."""
     raw = {
@@ -29,7 +28,6 @@ def test_compound_operation_string():
     assert len(data) == 1
     assert data[0]["NetSales"] == 500.0
     print("OK compound op + column resolve")
-
 
 def test_group_top_per():
     raw = {
@@ -54,7 +52,6 @@ def test_group_top_per():
     assert {r["ProductName"] for r in data} == {"B", "C"}
     print("OK group_top_per")
 
-
 def test_per_group_without_columns_needs_sql():
     raw = {
         "can_answer_from_cache": True,
@@ -72,7 +69,6 @@ def test_per_group_without_columns_needs_sql():
     assert spec["needs_new_sql"] is True
     print("OK per-group infeasible -> needs_new_sql")
 
-
 def test_sort_column_missing_needs_sql():
     raw = {
         "can_answer_from_cache": True,
@@ -83,7 +79,6 @@ def test_sort_column_missing_needs_sql():
     spec = normalize_and_validate_spec(raw, COLS, len(ROWS))
     assert spec["needs_new_sql"] is True
     print("OK missing sort column -> needs_new_sql")
-
 
 if __name__ == "__main__":
     test_compound_operation_string()

@@ -2,7 +2,7 @@ import re
 import yaml
 from pathlib import Path
 from typing import Dict, List, Tuple
-from ..config import settings
+from src.infrastructure.config import BUSINESS_DOC_YAML_PATH
 
 _definitions: Dict = {}          # raw loaded data
 _keyword_index: List[Tuple] = [] # [(compiled_pattern, def_name, definition_text)]
@@ -12,7 +12,7 @@ def _load():
     
     global _definitions, _keyword_index
     
-    _YAML_PATH = Path(settings.business_doc_yaml_path)
+    _YAML_PATH = Path(BUSINESS_DOC_YAML_PATH)
  
     if not _YAML_PATH.exists():
         raise FileNotFoundError(
@@ -45,7 +45,6 @@ def reload_definitions():
     _keyword_index  = []
     _load()
     return f"Reloaded {len(_keyword_index)} definitions"
-
 
 def get_relevant_definitions(question: str) -> Tuple[str, List[str]]:
     """

@@ -1,11 +1,10 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from loguru import logger
 
-from ...agents.tools import few_shot_retriever, seed_examples
-from ..data_models import ExampleRequest
+from src.infrastructure.vector_store import few_shot_retriever, seed_examples
+from src.api.data_models import ExampleRequest
 
 router = APIRouter(tags=["examples"])
-
 
 @router.post("/examples")
 async def add_example(request: ExampleRequest):
@@ -21,7 +20,6 @@ async def add_example(request: ExampleRequest):
         logger.error(f"Error adding example: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.post("/examples/seed")
 async def seed_default_examples(background_tasks: BackgroundTasks):
     try:
@@ -30,7 +28,6 @@ async def seed_default_examples(background_tasks: BackgroundTasks):
     except Exception as e:
         logger.error(f"Error seeding examples: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/examples/search")
 async def search_examples(query: str, k: int = 3):

@@ -5,10 +5,9 @@ import re
 import pytest
 
 from src.utils.error_taxonomy import classify_db_error, is_retryable
-from src.agents.graph.sql_pipeline_nodes import static_validator_node, FORBIDDEN_SQL
-from src.core.sql_safety import assess_sql
-from src.agents.graph.nodes import authz_guardrails_node, DANGEROUS_PATTERNS
-
+from src.agents.sql_pipeline import static_validator_node, FORBIDDEN_SQL
+from src.infrastructure.db.sql_safety import assess_sql
+from src.agents.nodes import authz_guardrails_node, DANGEROUS_PATTERNS
 
 class TestErrorTaxonomy:
     def test_syntax_error_retryable(self):
@@ -22,7 +21,6 @@ class TestErrorTaxonomy:
     def test_permission_not_retryable(self):
         assert not is_retryable("permission", True)
         assert not is_retryable("access_denied", True)
-
 
 class TestStaticValidator:
     def test_rejects_ddl(self):
@@ -61,7 +59,6 @@ class TestStaticValidator:
         assert assess_sql("SELECT * FROM t FOR UPDATE")[0] == "policy"
         assert assess_sql("CALL update_sales()")[0] == "policy"
 
-
 class TestAuthzGuardrails:
     def test_denies_without_rep_codes(self):
         out = authz_guardrails_node({"question": "What are total sales?", "allowed_rep_codes": []})
@@ -81,7 +78,6 @@ class TestAuthzGuardrails:
             "allowed_rep_codes": ["R001"],
         })
         assert out.get("access_denied") is False
-
 
 class TestGuardrailPatterns:
     def test_dangerous_patterns_compile(self):

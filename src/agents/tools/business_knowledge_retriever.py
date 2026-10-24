@@ -1,11 +1,11 @@
 from pathlib import Path
 import yaml
 from langchain_core.documents import Document
-from .embeddings import get_embeddings
+from src.infrastructure.llm.embeddings import get_default_embeddings as get_embeddings
 from langchain_chroma import Chroma
 import os
 from typing import List, Dict
-from ...config import settings
+from src.infrastructure.config import BUSINESS_DEFINITION_COLLECTION_NAME, BUSINESS_DOC_YAML_PATH, VECTOR_STORE_PATH
 
 class BusinessKnowledgeRetriever:
     """
@@ -13,17 +13,17 @@ class BusinessKnowledgeRetriever:
     """
     def __init__(self, yaml_path: str = None):
         
-        self.yaml_path = yaml_path or settings.business_doc_yaml_path
+        self.yaml_path = yaml_path or BUSINESS_DOC_YAML_PATH
         self.business_info_dict = self._load_yaml()
         
         self.embeddings = get_embeddings()
         
         # Initialize vector store
-        persist_directory = settings.vector_store_path
+        persist_directory = VECTOR_STORE_PATH
         os.makedirs(persist_directory, exist_ok=True)
         
         self.vectorstore = Chroma(
-            collection_name=settings.business_definition_collection_name,
+            collection_name=BUSINESS_DEFINITION_COLLECTION_NAME,
             embedding_function=self.embeddings,
             persist_directory=persist_directory
         )

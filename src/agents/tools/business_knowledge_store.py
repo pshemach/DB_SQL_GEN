@@ -1,12 +1,12 @@
 import yaml
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from ...config import settings
-from .business_knowledge_retriever import business_knowledge_retriever
+
+from src.agents.tools.business_knowledge_retriever import business_knowledge_retriever
+from src.infrastructure.config import BUSINESS_DOC_YAML_PATH
 
 class LiteralString(str):
     pass
-
 
 def literal_str_representer(dumper, data):
     return dumper.represent_scalar(
@@ -15,16 +15,14 @@ def literal_str_representer(dumper, data):
         style="|"
     )
 
-
 class CustomYamlDumper(yaml.SafeDumper):
     pass
-
 
 CustomYamlDumper.add_representer(LiteralString, literal_str_representer)
 
 class BusinessKnowledgeStore:
     def __init__(self, yaml_path: str = None):
-        yaml_path = yaml_path or settings.business_doc_yaml_path
+        yaml_path = yaml_path or BUSINESS_DOC_YAML_PATH
         self.yaml_path = Path(yaml_path)
         self.definitions = self._load()
         
@@ -171,7 +169,6 @@ class BusinessKnowledgeStore:
             .replace(" ", "_")
             .replace("-", "_")
         )
-
 
 business_knowledge_store = BusinessKnowledgeStore(
     # yaml_path="data/business_definitions.yaml"

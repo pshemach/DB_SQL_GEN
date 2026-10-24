@@ -1,4 +1,4 @@
-from .endpoints import app
+from src.api.endpoints import app
 
 __all__ = [
     "app"

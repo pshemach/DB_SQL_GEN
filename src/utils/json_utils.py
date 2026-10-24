@@ -1,7 +1,6 @@
 import json
 import re
 
-
 def extract_json(text: str) -> dict:
     text = text.strip()
     text = text.replace("```json", "").replace("```", "").strip()

@@ -8,7 +8,6 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any
 
-
 def _is_sqlalchemy_type(value: Any) -> bool:
     """Detect SQLAlchemy TypeEngine / dialect type objects (e.g. DATE())."""
     try:
@@ -35,7 +34,6 @@ def _is_sqlalchemy_type(value: Any) -> bool:
         "DECIMAL",
         "NUMERIC",
     )
-
 
 def json_safe_value(value: Any) -> Any:
     """Convert a single value to a checkpoint/JSON-safe type."""
@@ -76,7 +74,6 @@ def json_safe_value(value: Any) -> Any:
 
     return str(value)
 
-
 def serialize_query_result(query_result: Any) -> list[dict] | str | None:
     """
     Convert SQLAlchemy rows into plain dicts with JSON/msgpack-safe values.
@@ -107,7 +104,6 @@ def serialize_query_result(query_result: Any) -> list[dict] | str | None:
         serialized.append({str(k): json_safe_value(v) for k, v in raw.items()})
 
     return serialized
-
 
 def sanitize_state(data: Any) -> Any:
     """

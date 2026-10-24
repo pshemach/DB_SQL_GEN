@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from typing import Any
 
-
 def init_metrics() -> dict[str, Any]:
     return {
         "cache_hit": False,
@@ -15,25 +14,21 @@ def init_metrics() -> dict[str, Any]:
         "started_at": time.time(),
     }
 
-
 def record_node_timing(metrics: dict | None, node_name: str, elapsed_ms: float) -> dict:
     m = metrics or init_metrics()
     timings = m.setdefault("node_timings_ms", {})
     timings[node_name] = round(elapsed_ms, 2)
     return m
 
-
 def bump_sql_retries(metrics: dict | None) -> dict:
     m = metrics or init_metrics()
     m["sql_retries"] = m.get("sql_retries", 0) + 1
     return m
 
-
 def set_router_action(metrics: dict | None, action: str) -> dict:
     m = metrics or init_metrics()
     m["router_action"] = action
     return m
-
 
 def finalize_metrics(metrics: dict | None, total_latency_ms: float | None = None) -> dict:
     m = metrics or init_metrics()

@@ -7,10 +7,9 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
-from .transform_spec_postprocess import resolve_column
+from src.utils.transform_spec_postprocess import resolve_column
 
 _FILTER_OPS = {"gt", "gte", "lt", "lte", "eq", "ne", "contains"}
-
 
 def execute_transform_spec(
     data: list[dict[str, Any]],
@@ -125,7 +124,6 @@ def execute_transform_spec(
     meta["rows_after"] = len(df)
     return df.to_dict("records"), meta
 
-
 def _apply_group_top_per(
     df: pd.DataFrame, cfg: dict, columns: list[str]
 ) -> tuple[pd.DataFrame, dict]:
@@ -147,7 +145,6 @@ def _apply_group_top_per(
     out = work.groupby(gb, as_index=False, sort=False).head(take)
     out = out.drop(columns=["_sort_val"], errors="ignore")
     return out, {"group_top_per": gb, "value_column": vc, "take": take}
-
 
 def _coerce_numeric(series: pd.Series) -> pd.Series:
     return pd.to_numeric(

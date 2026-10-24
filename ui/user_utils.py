@@ -1,9 +1,9 @@
 import asyncio
 from typing import Optional, Dict, Any
 from sqlalchemy import text
-from src.core.database import db_manager
-from src.agents.tools.chatbot_auth_client import chatbot_auth_client
-from src.agents.tools.access_context import (
+from src.infrastructure.db import db_manager
+from src.infrastructure.chatbot_auth import chatbot_auth_client
+from src.infrastructure.access_context import (
     extract_allowed_rep_codes_from_phone_auth,
     extract_allowed_node_ids_from_system_login,
     convert_node_ids_to_codes,
@@ -37,7 +37,6 @@ def login_with_phone(phone_no: str) -> dict:
         }
     return asyncio.run(_login())
 
-
 def login_with_system(username: str, password: str) -> dict:
     async def _login():
         login_result = await chatbot_auth_client.system_login(username, password)
@@ -64,7 +63,6 @@ def login_with_system(username: str, password: str) -> dict:
         }
 
     return asyncio.run(_login())
-
 
 def get_node_codes_by_ids(node_ids: list[str]) -> list[str]:
     if not node_ids:

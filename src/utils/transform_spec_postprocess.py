@@ -12,7 +12,6 @@ from loguru import logger
 
 _ALLOWED_OPS = frozenset({"use_all", "filter", "sort", "head", "row_at_rank", "group_top_per"})
 
-
 def resolve_column(name: str | None, columns: list[str]) -> str | None:
     """Map LLM column name to an actual result column (case/snake insensitive)."""
     if not name or not columns:
@@ -31,10 +30,8 @@ def resolve_column(name: str | None, columns: list[str]) -> str | None:
             return original
     return None
 
-
 def _col_key(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (name or "").lower())
-
 
 def parse_operation(raw: str | None) -> str:
     """
@@ -51,7 +48,6 @@ def parse_operation(raw: str | None) -> str:
             return op
     first = parts[0] if parts else "use_all"
     return first if first in _ALLOWED_OPS else "use_all"
-
 
 def normalize_and_validate_spec(
     spec: dict[str, Any],
@@ -151,7 +147,6 @@ def normalize_and_validate_spec(
 
     return out
 
-
 def _normalize_group_top(raw: dict, columns: list[str]) -> dict[str, Any] | None:
     gb = resolve_column(raw.get("group_by") or raw.get("group_column"), columns)
     vc = resolve_column(
@@ -167,7 +162,6 @@ def _normalize_group_top(raw: dict, columns: list[str]) -> dict[str, Any] | None
         "direction": "asc" if direction == "asc" else "desc",
         "take_per_group": max(1, _safe_int(raw.get("take_per_group") or raw.get("take") or 1) or 1),
     }
-
 
 def _infer_group_top(columns: list[str], explanation: str) -> dict[str, Any] | None:
     """Infer group_by + value from column names only (no fixed business terms)."""
@@ -200,7 +194,6 @@ def _infer_group_top(columns: list[str], explanation: str) -> dict[str, Any] | N
         "take_per_group": 1,
     }
 
-
 def _implies_per_group(text: str) -> bool:
     if not text:
         return False
@@ -211,7 +204,6 @@ def _implies_per_group(text: str) -> bool:
             re.I,
         )
     )
-
 
 def _safe_int(value: Any) -> int | None:
     if value is None:
