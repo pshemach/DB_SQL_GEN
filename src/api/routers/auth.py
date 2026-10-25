@@ -7,7 +7,7 @@ import secrets
 from fastapi import APIRouter, Depends, Header, HTTPException
 from loguru import logger
 
-from src.infrastructure.access_context import (
+from src.services.auth.access_context import (
     convert_node_ids_to_codes,
     extract_allowed_node_ids_from_system_login,
     extract_allowed_rep_codes_from_phone_auth,
@@ -19,7 +19,7 @@ from src.infrastructure.access_context import (
     extract_user_role_from_system_login,
 )
 from src.memory import chat_memory
-from src.infrastructure.chatbot_auth import chatbot_auth_client
+from src.services.auth.chatbot_auth import chatbot_auth_client
 from src.api.data_models import PhoneLoginRequest, SystemLoginRequest
 from src.api.dependencies import AUTH_SESSIONS, bearer_token, public_user, require_user
 

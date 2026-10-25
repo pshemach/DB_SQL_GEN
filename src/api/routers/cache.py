@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
-from src.infrastructure.cache import semantic_cache
+from src.services.cache.semantic_cache import semantic_cache
 
 router = APIRouter(tags=["cache"])
 

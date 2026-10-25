@@ -4,13 +4,13 @@ from fastapi import APIRouter, HTTPException
 from langsmith import traceable
 from loguru import logger
 
-from src.infrastructure.access_context import (
+from src.services.auth.access_context import (
     extract_allowed_rep_codes_from_phone_auth,
     extract_user_id_from_phone_auth,
     extract_user_role_from_phone_auth,
 )
 from src.memory import chat_memory
-from src.infrastructure.chatbot_auth import chatbot_auth_client
+from src.services.auth.chatbot_auth import chatbot_auth_client
 from src.api.data_models import QueryRequest, QueryResponse
 from src.api.services.conversation import execute_turn
 

@@ -1,5 +1,5 @@
 """
-Vector store for dynamic few-shot example retrieval.
+Few-shot example store. Retrieves similar question-and-SQL pairs for the generator.
 """
 
 from typing import List, Dict

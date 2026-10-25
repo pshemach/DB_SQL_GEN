@@ -62,11 +62,11 @@ from src.infrastructure.llm import (
     get_router_llm,
     get_schema_selection_llm,
 )
-from src.infrastructure.vector_store import few_shot_retriever
+from src.services.few_shot.retriever import few_shot_retriever
 from src.utils.error_taxonomy import is_retryable
 from src.memory import chat_memory
 from src.memory.result_cache import result_cache
-from src.infrastructure.cache import semantic_cache
+from src.services.cache.semantic_cache import semantic_cache
 from src.utils.graph_config import build_invoke_config
 from src.utils.metrics import finalize_metrics, init_metrics, record_node_timing
 from src.utils.serialization import sanitize_state, serialize_query_result
