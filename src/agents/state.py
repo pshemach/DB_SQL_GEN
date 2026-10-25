@@ -14,15 +14,13 @@ class AgentState(TypedDict, total=False):
     user_role: Optional[str]
     question: str
     original_question: Optional[str]
-    enriched_question: Optional[str]
+    question_description: Optional[str]
     messages: List[Dict[str, Any]]
     memory_context: Optional[str]
     previous_state: Optional[Dict[str, Any]]
 
     # What this turn should do
     turn_action: Optional[str]
-    waiting_for_user: bool
-    question_to_user: Optional[str]
     metrics: Optional[Dict[str, Any]]
 
     # Row access

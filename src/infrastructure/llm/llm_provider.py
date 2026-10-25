@@ -5,7 +5,7 @@ Chat LLM providers. One constructor per agent role:
     get_planner_llm()           — logical plan
     get_schema_selection_llm()  — table selection
     get_generator_llm()         — SQL generation
-    get_direct_llm()            — answers, critique, and chitchat
+    get_direct_llm()            — answers, critique, and direct replies
     get_fast_chat_llm()         — in-memory SQL planner
 """
 
@@ -79,7 +79,7 @@ def get_generator_llm(temperature: Optional[float] = 0.0, **kwargs: Any):
 
 
 def get_direct_llm(temperature: Optional[float] = 0.0, **kwargs: Any):
-    """LLM for answers, critique, and chitchat."""
+    """LLM for answers, critique, and direct replies."""
     return _build_llm(DIRECT_MODEL, DIRECT_PROVIDER, temperature=temperature, **kwargs)
 
 

@@ -42,7 +42,6 @@ async def query_database(request: QueryRequest):
             user_role=user_role,
             allowed_rep_codes=allowed_rep_codes,
             turn_type=turn_type,
-            clarification_answer=request.clarification_answer,
         )
 
         return QueryResponse(

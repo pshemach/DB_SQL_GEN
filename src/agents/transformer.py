@@ -86,7 +86,7 @@ class ResultTransformer:
                 "rows_returned": 0,
                 "explanation": "Cached result expired or unavailable.",
                 "current_phase": "error",
-                "enriched_question": question,
+                "question_description": question,
                 "formatter_mode": "new_sql_required",
             }
 
@@ -135,7 +135,7 @@ class ResultTransformer:
                 "rows_returned": 0,
                 "explanation": decision.get("reason"),
                 "current_phase": "needs_new_sql",
-                "enriched_question": question,
+                "question_description": question,
                 "formatter_mode": "new_sql_required",
             }
 
@@ -164,7 +164,7 @@ class ResultTransformer:
                 "rows_returned": 0,
                 "explanation": explanation,
                 "current_phase": "needs_new_sql",
-                "enriched_question": question,
+                "question_description": question,
                 "formatter_mode": "new_sql_required",
             }
 

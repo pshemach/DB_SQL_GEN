@@ -120,7 +120,6 @@ async def follow_up_conversation(
             user_role=user.get("user_role"),
             allowed_rep_codes=user.get("allowed_rep_codes") or [],
             turn_type="follow_up",
-            clarification_answer=request.clarification_answer,
         )
     except Exception as e:
         logger.error(f"Conversation follow-up error: {e}")
@@ -148,7 +147,6 @@ async def follow_up_conversation_stream(
             user_role=user.get("user_role"),
             allowed_rep_codes=user.get("allowed_rep_codes") or [],
             turn_type="follow_up",
-            clarification_answer=request.clarification_answer,
         ),
         media_type="text/event-stream",
         headers=SSE_HEADERS,

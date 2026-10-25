@@ -92,7 +92,6 @@ async def execute_turn(
     user_role: Optional[str] = None,
     allowed_rep_codes: Optional[list] = None,
     turn_type: str,
-    clarification_answer: Optional[str] = None,
 ) -> dict[str, Any]:
     guardrail_context = {
         "conversation_history": [],
@@ -114,7 +113,6 @@ async def execute_turn(
         session_id=session_id,
         user_role=user_role,
         allowed_rep_codes=allowed_rep_codes or [],
-        clarification_answer=clarification_answer,
         user_id=user_id,
         turn_type=turn_type,
     )
@@ -158,7 +156,6 @@ async def stream_turn(
     user_role: Optional[str] = None,
     allowed_rep_codes: Optional[list] = None,
     turn_type: str,
-    clarification_answer: Optional[str] = None,
 ) -> AsyncIterator[dict[str, Any]]:
     yield {"type": "status", "text": "Thinking..."}
 
@@ -188,7 +185,6 @@ async def stream_turn(
         session_id=session_id,
         user_role=user_role,
         allowed_rep_codes=allowed_rep_codes or [],
-        clarification_answer=clarification_answer,
         user_id=user_id,
         turn_type=turn_type,
     ):

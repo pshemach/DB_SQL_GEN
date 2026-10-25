@@ -1,6 +1,6 @@
 """
 RouterAgent. Classifies the turn and chooses the next step:
-clarify, chitchat, reuse the previous result, or run SQL.
+a direct text reply, reuse the previous result, deny, or run SQL.
 """
 
 from __future__ import annotations
@@ -41,10 +41,12 @@ class RouterAgent:
             result = {"action": "run_sql", "confidence": 0.5}
 
         action = result.get("action", "run_sql")
+        if action in ("clarify", "chitchat"):
+            action = "direct"
         logger.info(f"Supervisor classified action: {action}")
 
         cleaned_state_updates = {}
-        if action in ["run_sql", "clarify"]:
+        if action in ("run_sql", "direct"):
             cleaned_state_updates = {
                 "query_result": None,
                 "result_preview": None,
@@ -63,14 +65,12 @@ class RouterAgent:
         out = {
             **cleaned_state_updates,
             "turn_action": action,
-            "enriched_question": result.get("enriched_question") or question,
-            "question_to_user": result.get("clarification_question"),
-            "waiting_for_user": action == "clarify",
+            "question_description": result.get("question_description") or question,
             "metrics": set_router_action(metrics, action),
         }
 
-        if result.get("enriched_question"):
-            out["question"] = result["enriched_question"]
+        if result.get("question_description"):
+            out["question"] = result["question_description"]
 
         return out
 

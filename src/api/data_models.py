@@ -27,8 +27,6 @@ class QueryRequest(BaseModel):
     # optional fallback for old phone-based flow
     phone_no: Optional[str] = None
 
-    clarification_answer: Optional[str] = None
-    
 class FeedbackRequest(BaseModel):
     session_id: str
     user_id: str
@@ -58,10 +56,6 @@ class KBDefinitionRequest(BaseModel):
 
 #     use_cache: bool = Field(default=True, description="Whether to use semantic cache")
 #     max_iterations: int = Field(default=2, description="Max correction attempts")
-#     clarification_answer: Optional[str] = Field(
-#         default=None,
-#         description="User answer when resuming from a clarification interrupt (HITL)",
-#     )
 
 class QueryResponse(BaseModel):
     # =============================
@@ -158,7 +152,6 @@ class ConversationStartRequest(BaseModel):
 
 class ConversationFollowUpRequest(BaseModel):
     question: str
-    clarification_answer: Optional[str] = None
 
 class FeedbackRequest(BaseModel):
     session_id: str

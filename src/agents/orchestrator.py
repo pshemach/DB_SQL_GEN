@@ -8,7 +8,7 @@ SQL generation is a path on this graph, not a nested subgraph.
 Flow:
     recall memory → cache → supervisor
         → security → plan → schema → SQL → validate → execute
-        | transform previous | chitchat | clarify | deny
+        | transform previous | direct reply | deny
         → format → save memory
 """
 
@@ -22,7 +22,6 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
-from langgraph.types import Command
 from langsmith import traceable
 from loguru import logger
 
@@ -31,7 +30,7 @@ from src.agents.formatter import ResultFormatterAgent
 from src.agents.generator import SQLGeneratorAgent
 from src.agents.planner import PlannerAgent
 from src.agents.prompts.agent_prompts import (
-    build_chitchat_prompt,
+    build_direct_prompt,
     build_pre_exec_critic_prompt,
     chat_messages,
 )
@@ -42,7 +41,6 @@ from src.agents.transformer import ResultTransformer
 from src.infrastructure.config import (
     ENABLE_DYNAMIC_FEW_SHOT,
     ENABLE_PRE_EXEC_CRITIC,
-    ENABLE_PRODUCTION_GRAPH,
     ENABLE_RESULT_VERIFIER,
     ENABLE_SEMANTIC_CACHE,
     ENABLE_TRANSFORM_PREVIOUS,
@@ -91,8 +89,7 @@ NODE_STATUS = {
     "result_verifier": "Checking the result...",
     "transform_result": "Updating the previous result...",
     "formatter": "Writing the answer...",
-    "chitchat": "Writing a reply...",
-    "hitl_clarify": "Need a bit more detail...",
+    "direct": "Writing a reply...",
     "safe_response": "Preparing a response...",
     "cache_result": "Saving the result...",
     "save_memory": "Saving the conversation...",
@@ -158,8 +155,8 @@ class AgentOrchestrator:
     def supervisor_routing(
         self,
         state: AgentState,
-    ) -> Literal["transform_result", "security_policy", "safe_response", "formatter", "hitl_clarify", "chitchat"]:
-        """Route the turn. Clarification is a normal node, not a graph interrupt."""
+    ) -> Literal["transform_result", "security_policy", "safe_response", "formatter", "direct"]:
+        """Route the turn. A direct reply is text only, with no SQL."""
         action = state.get("turn_action", "run_sql")
 
         if action == "transform_previous" and ENABLE_TRANSFORM_PREVIOUS:
@@ -171,14 +168,12 @@ class AgentOrchestrator:
             )
             return "security_policy"
 
-        if action == "clarify":
-            return "hitl_clarify"
+        if action == "direct":
+            return "direct"
         if action in ("deny", "cancel"):
             return "safe_response"
         if action == "cache_hit":
             return "formatter"
-        if action == "chitchat":
-            return "chitchat"
         return "security_policy"
 
 
@@ -219,11 +214,7 @@ class AgentOrchestrator:
         assistant_content = None
         message_type = None
 
-        if state.get("waiting_for_user"):
-            assistant_content = state.get("question_to_user")
-            message_type = "clarification"
-
-        elif state.get("error"):
+        if state.get("error"):
             assistant_content = state.get("error")
             message_type = "error"
 
@@ -295,7 +286,7 @@ class AgentOrchestrator:
         if state.get("error") is not None:
             return {}
 
-        question_key = state.get("enriched_question") or state.get("question") or ""
+        question_key = state.get("question_description") or state.get("question") or ""
 
         if state.get("sql_query") and not state.get("reused_previous_result"):
             result_to_cache = {
@@ -361,7 +352,6 @@ class AgentOrchestrator:
             "previous_state": previous_state,
             "messages": chat_memory.get_session(session_id).get("messages", []),
             "memory_context": chat_memory.build_memory_context(session_id),
-            "waiting_for_user": bool(previous_state and previous_state.get("waiting_for_user")),
             "user_message_id": user_message_id,
             "user_message_saved": True,
             "metrics": metrics,
@@ -398,15 +388,9 @@ class AgentOrchestrator:
         })
 
     def safe_response_node(self, state: AgentState) -> dict:
-        """Terminal responses for deny/chitchat without SQL."""
+        """Text reply when the turn is denied and no SQL should run."""
         if state.get("access_denied"):
             msg = state.get("access_denied_reason") or state.get("error") or "Access denied."
-        elif state.get("turn_action") == "chitchat":
-            msg = (
-                "Hello! I'm your sales analytics assistant. "
-                "Ask me about net sales, customers, products, rep performance, KPIs, "
-                "or targets for the current period."
-            )
         else:
             msg = state.get("error") or "Unable to process your request."
 
@@ -414,7 +398,6 @@ class AgentOrchestrator:
         return {
             "final_answer": msg,
             "result_summary": msg,
-            "waiting_for_user": False,
             "query_result": None,
             "result_preview": None,
             "visualizations": [],
@@ -424,33 +407,7 @@ class AgentOrchestrator:
             "plan_steps": None,
             "table_title": None,
             "relevant_tables": None,
-            "error": None if state.get("turn_action") == "chitchat" else state.get("error"),
-        }
-
-    def hitl_clarify_node(self, state: AgentState) -> dict:
-        question_to_user = (
-            state.get("clarification_question")
-            or state.get("question_to_user")
-            or "Could you provide more details?"
-        )
-
-        return {
-            "turn_action": "clarify",
-            "final_answer": question_to_user,
-            "result_summary": question_to_user,
-            "question_to_user": question_to_user,
-            "waiting_for_user": True,
-
-            # clear SQL artifacts
-            "query_result": None,
-            "result_preview": None,
-            "sql_query": None,
-            "sql_explanation": None,
-            "plan": None,
-            "plan_steps": None,
-            "relevant_tables": None,
-            "table_title": None,
-            "error": None,
+            "error": state.get("error"),
         }
     
     def _format_state(self, state: AgentState) -> dict:
@@ -479,7 +436,7 @@ class AgentOrchestrator:
             **state,
 
             "question": enriched,
-            "enriched_question": result.get("enriched_question") or enriched,
+            "question_description": result.get("question_description") or enriched,
 
             "query_result": result.get("query_result"),
             "needs_new_sql": needs_new_sql,
@@ -528,14 +485,14 @@ class AgentOrchestrator:
 
         return out
 
-    _CHITCHAT_FALLBACK = (
-        "I can help with sales analytics, KPIs, reps, customers, products, targets, and outlet performance."
+    _DIRECT_FALLBACK = (
+        "I can help with net sales, targets, achievement, reps, customers, products, routes, and outlets."
     )
 
 
     def _sql_question(self, state: AgentState) -> str:
-        """Question the SQL path should answer. Follow-ups use the enriched form."""
-        return state.get("enriched_question") or state.get("question") or ""
+        """Description the planner and SQL generator must follow."""
+        return state.get("question_description") or state.get("question") or ""
 
 
     def _with_sql_question(self, state: AgentState) -> dict:
@@ -662,8 +619,7 @@ class AgentOrchestrator:
         workflow.add_node("supervisor", self.supervisor_node)
         workflow.add_node("transform_result", self.transform_result_node)
         workflow.add_node("safe_response", self.safe_response_node)
-        workflow.add_node("chitchat", self.chitchat_node)
-        workflow.add_node("hitl_clarify", self.hitl_clarify_node)
+        workflow.add_node("direct", self.direct_node)
         workflow.add_node("security_policy", self.security_policy_node)
         workflow.add_node("planner", self.planner_node)
         workflow.add_node("parallel_retrieval", self.parallel_retrieval_node)
@@ -689,12 +645,11 @@ class AgentOrchestrator:
             "supervisor",
             self.supervisor_routing,
             {
-                "hitl_clarify": "hitl_clarify",
+                "direct": "direct",
                 "transform_result": "transform_result",
                 "security_policy": "security_policy",
                 "safe_response": "safe_response",
                 "formatter": "formatter",
-                "chitchat": "chitchat",
             },
         )
         workflow.add_conditional_edges(
@@ -740,8 +695,7 @@ class AgentOrchestrator:
         workflow.add_edge("formatter", "cache_result")
         workflow.add_edge("cache_result", "save_memory")
         workflow.add_edge("save_memory", END)
-        workflow.add_edge("hitl_clarify", "save_memory")
-        workflow.add_edge("chitchat", "save_memory")
+        workflow.add_edge("direct", "save_memory")
         return workflow.compile()
 
     def supervisor_node(self, state: AgentState) -> dict:
@@ -815,23 +769,23 @@ class AgentOrchestrator:
     def transform_result_node(self, state: AgentState) -> dict:
         return self._transform_state(state)
 
-    def chitchat_node(self, state: AgentState) -> dict:
+    def direct_node(self, state: AgentState) -> dict:
+        """Text reply with no SQL. The next turn reads this reply from memory."""
         try:
-            system_prompt, user_prompt = build_chitchat_prompt(
+            system_prompt, user_prompt = build_direct_prompt(
                 state.get("question") or "",
                 state.get("memory_context") or "",
             )
             response = self.llm_direct.invoke(chat_messages(system_prompt, user_prompt))
             msg = response.content if hasattr(response, "content") else str(response)
-            msg = (msg or "").strip() or self._CHITCHAT_FALLBACK
+            msg = (msg or "").strip() or self._DIRECT_FALLBACK
         except Exception as exc:
-            logger.error(f"Chitchat node failed: {exc}")
-            msg = self._CHITCHAT_FALLBACK
+            logger.error(f"Direct reply failed: {exc}")
+            msg = self._DIRECT_FALLBACK
         return {
-            "turn_action": "chitchat",
+            "turn_action": "direct",
             "final_answer": msg,
             "result_summary": msg,
-            "waiting_for_user": False,
             "query_result": None,
             "result_preview": None,
             "visualizations": [],
@@ -879,10 +833,8 @@ def _initial_state(
         "messages": [],
         "memory_context": "",
         "turn_action": None,
-        "enriched_question": None,
+        "question_description": None,
         "metrics": init_metrics(),
-        "question_to_user": None,
-        "waiting_for_user": False,
         "plan": None,
         "plan_steps": None,
         "relevant_tables": None,
@@ -914,34 +866,18 @@ def _finalize(result: dict) -> dict:
         total = (time.time() - result["start_time"]) * 1000
         result["total_latency_ms"] = total
         result["metrics"] = finalize_metrics(result.get("metrics"), total_latency_ms=total)
-    if "__interrupt__" in result:
-        interrupts = result["__interrupt__"]
-        if interrupts:
-            payload = interrupts[0].value if hasattr(interrupts[0], "value") else interrupts[0]
-            if isinstance(payload, dict):
-                result["waiting_for_user"] = True
-                result["question_to_user"] = payload.get("question_to_user")
-                result["gap_type"] = payload.get("gap_type") or result.get("gap_type")
     if result.get("error"):
         logger.error(f"Agent failed: {result['error']}")
     return sanitize_state(result)
 
 
-def _resolve_turn_type(session_id: str, turn_type: str | None, clarification_answer: str | None) -> str:
+def _resolve_turn_type(session_id: str, turn_type: str | None) -> str:
     if turn_type in ("start", "follow_up"):
         return turn_type
-    if clarification_answer:
-        return "follow_up"
     session = chat_memory.get_session(session_id) or {}
     if session.get("messages"):
         return "follow_up"
     return "start"
-
-
-def _graph_input(resolved_turn: str, clarification_answer: str | None, initial_state: dict) -> Any:
-    if resolved_turn == "follow_up" and clarification_answer and ENABLE_PRODUCTION_GRAPH:
-        return Command(resume=clarification_answer)
-    return initial_state
 
 
 def _prepare_turn(
@@ -949,19 +885,13 @@ def _prepare_turn(
     session_id: str | None,
     allowed_rep_codes: list[str] | None,
     user_role: str | None,
-    clarification_answer: str | None,
     user_id: str | None,
     turn_type: str | None,
-) -> tuple[str, str, dict, Any]:
+) -> tuple[str, str, dict]:
     session_id = chat_memory.get_or_create_session(session_id, user_id=user_id, user_role=user_role)
-    resolved_turn = _resolve_turn_type(session_id, turn_type, clarification_answer)
-    if resolved_turn == "follow_up" and not clarification_answer:
-        last_state = chat_memory.get_last_state(session_id) or {}
-        if last_state.get("waiting_for_user"):
-            clarification_answer = question
+    resolved_turn = _resolve_turn_type(session_id, turn_type)
     initial_state = _initial_state(question, session_id, allowed_rep_codes, user_role, user_id)
-    stream_input = _graph_input(resolved_turn, clarification_answer, initial_state)
-    return session_id, resolved_turn, initial_state, stream_input
+    return session_id, resolved_turn, initial_state
 
 
 orchestrator = build_agent()
@@ -971,12 +901,11 @@ graph = orchestrator.graph
 @traceable(name="sales-sql-agent-production", run_type="chain", tags=["text-to-sql", "production"])
 def run_agent(question: str, **kwargs) -> dict:
     """Synchronous entry point."""
-    session_id, _resolved, initial_state, graph_input = _prepare_turn(
+    session_id, _resolved, initial_state = _prepare_turn(
         question,
         kwargs.get("session_id"),
         kwargs.get("allowed_rep_codes"),
         kwargs.get("user_role"),
-        kwargs.get("clarification_answer"),
         kwargs.get("user_id"),
         kwargs.get("turn_type"),
     )
@@ -984,7 +913,7 @@ def run_agent(question: str, **kwargs) -> dict:
     if denied:
         return denied
     try:
-        final_state = graph.invoke(graph_input, build_invoke_config(session_id))
+        final_state = graph.invoke(initial_state, build_invoke_config(session_id))
         return _finalize(final_state)
     except Exception as exc:
         logger.error(f"Orchestrator error: {exc}")
@@ -996,19 +925,18 @@ async def run_agent_async(
     session_id: str | None = None,
     allowed_rep_codes: list[str] | None = None,
     user_role: str | None = None,
-    clarification_answer: str | None = None,
     user_id: str = None,
     turn_type: str | None = None,
 ) -> dict:
-    session_id, resolved_turn, initial_state, graph_input = _prepare_turn(
-        question, session_id, allowed_rep_codes, user_role, clarification_answer, user_id, turn_type
+    session_id, resolved_turn, initial_state = _prepare_turn(
+        question, session_id, allowed_rep_codes, user_role, user_id, turn_type
     )
     denied = orchestrator.missing_rep_codes(allowed_rep_codes, initial_state)
     if denied:
         denied["turn_type"] = resolved_turn
         return denied
     try:
-        result = await graph.ainvoke(graph_input, build_invoke_config(session_id))
+        result = await graph.ainvoke(initial_state, build_invoke_config(session_id))
         finalized = _finalize(result)
         finalized["turn_type"] = resolved_turn
         return finalized
@@ -1028,12 +956,11 @@ async def run_agent_stream(
     session_id: str | None = None,
     allowed_rep_codes: list[str] | None = None,
     user_role: str | None = None,
-    clarification_answer: str | None = None,
     user_id: str = None,
     turn_type: str | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
-    session_id, resolved_turn, initial_state, graph_input = _prepare_turn(
-        question, session_id, allowed_rep_codes, user_role, clarification_answer, user_id, turn_type
+    session_id, resolved_turn, initial_state = _prepare_turn(
+        question, session_id, allowed_rep_codes, user_role, user_id, turn_type
     )
     denied = orchestrator.missing_rep_codes(allowed_rep_codes, initial_state)
     if denied:
@@ -1043,9 +970,9 @@ async def run_agent_stream(
     merged: dict[str, Any] = dict(initial_state)
     try:
         try:
-            stream = graph.astream(graph_input, build_invoke_config(session_id), stream_mode=["updates", "values"])
+            stream = graph.astream(initial_state, build_invoke_config(session_id), stream_mode=["updates", "values"])
         except TypeError:
-            stream = graph.astream(graph_input, build_invoke_config(session_id), stream_mode="updates")
+            stream = graph.astream(initial_state, build_invoke_config(session_id), stream_mode="updates")
         async for item in stream:
             mode, data = _normalize_stream_item(item)
             if mode == "values" and isinstance(data, dict):

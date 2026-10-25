@@ -77,7 +77,7 @@ CONVERSATION MEMORY:
 BUSINESS DEFINITIONS:
 {business_definitions}
 
-USER QUESTION:
+QUESTION DESCRIPTION:
 {question}
 
 Return the plan:"""
@@ -195,7 +195,7 @@ TABLE_SELECTION_USER_PROMPT = """\
 LOGICAL PLAN:
 {plan}
 
-USER QUESTION:
+QUESTION DESCRIPTION:
 {question}
 
 Return ONLY a comma-separated list of table names, nothing else."""
@@ -269,7 +269,7 @@ Example:
 """
 
 COLUMN_SELECTION_USER_PROMPT = """\
-USER QUESTION:
+QUESTION DESCRIPTION:
 {question}
 
 LOGICAL PLAN:
@@ -643,7 +643,7 @@ SCHEMA:
 LOGICAL PLAN:
 {plan}
 
-USER QUESTION:
+QUESTION DESCRIPTION:
 {question}
 
 Generate the SQL query:"""
@@ -722,7 +722,7 @@ REFLECTION_USER_PROMPT = """\
 SCHEMA:
 {schema_context}
 
-ORIGINAL QUESTION:
+QUESTION DESCRIPTION:
 {question}
 
 LOGICAL PLAN:
@@ -1100,33 +1100,35 @@ ORCHESTRATOR_SYSTEM_PROMPT = """You are the dialogue manager for a Text-to-SQL S
 Your task is to analyze the user's current query in the context of the conversation history, and decide the next best action.
 
 DIAGNOSTIC & CLASSIFICATION RULES:
-1. Stateless Context Enrichment (Pronoun / Antecedent Resolution):
-   - If the user's query is a follow-up that refers to a person, rep, node, date range, or context from previous turns (e.g. "Show me his planned routes too", "Show their targets", "Filter to John's assignments"), you MUST resolve all pronouns ("his", "them", "their", "it") and abbreviations based on the conversation logs in `<memory_context>`.
-   - Rewrite the query into a fully self-contained, concrete question. Return this in the `enriched_question` parameter in JSON, and set `action` to `run_sql`.
-   - Example: User asks "Show me his route assignments too" after looking at "John Smith (REP_108)". You output `enriched_question` = "Show planned route assignments for representative John Smith (Rep Code: REP_108)" and `action` = "run_sql".
+1. Question description:
+   - `question_description` is the request the planner, schema selection, and SQL generator will follow. Write it so those steps can answer accurately without seeing the chat.
+   - Resolve pronouns and abbreviations from `<memory_context>`: person, rep code, customer, product, route, period, metric, and filters.
+   - If the user is supplying a business term the assistant asked for, merge that term into the original request.
+   - Example: after "John Smith (REP_108)", "Show me his route assignments too" becomes "Show planned route assignments for representative John Smith (Rep Code: REP_108)".
+   - Set `action` to `run_sql` when this description is complete.
 
-2. Clarification Answer Capture:
-   - If the last assistant message in `<memory_context>` was a clarification question (e.g. asking how a metric is calculated or which representative is referred to) and the user's current query is answering it:
-     - Merge the user's answer into the original request in history to build a complete, solid question.
-     - Return this consolidated question in `enriched_question` and set `action` to `run_sql`.
+2. Terms already in the conversation:
+   - Read `<memory_context>` and the retrieved definitions before choosing an action.
+   - A sales question whose terms are already known is `run_sql`, with those terms written into `question_description`.
 
-3. In-Memory Transformation vs. Live DB SQL:
-   - **`transform_previous`**: Set action to this ONLY if the query is a simple post-processing action on the previous query result (e.g., sorting, filtering, summing, or explaining columns) AND all columns needed are already in the cached schema.
-   - **`run_sql`**: Set action to this if the query requires new metrics, columns, tables, or database joins not available in the previous query results.
+3. Previous result vs new SQL:
+   - `transform_previous` only when the user wants to sort, filter, sum, or explain columns already present in the previous result.
+   - `run_sql` when the question needs new metrics, columns, tables, or a new time period.
 
-4. Chitchat & Social Banter:
-   - If the user query is a greeting, thank you, or general social conversation, set `action` to `chitchat`.
+4. Direct reply, no SQL:
+   - Use `direct` for a greeting, thanks, or a question about what this assistant can do.
+   - Use `direct` when the question depends on a business term that is absent from both memory and the retrieved definitions.
+   - Use `direct` when the message is unrelated to sales-force analysis.
+   - A sales question whose terms are already known is `run_sql`, not `direct`.
 
-5. Security Denials:
-   - If the query asks to alter database structure (DROP, DELETE, TRUNCATE, DML/DDL) or is out of scope, set `action` to `deny`.
-   
+5. Denial:
+   - If the user asks to change the database (DROP, DELETE, TRUNCATE, or other DDL/DML), set `action` to `deny`.
+
 Return ONLY a valid JSON object:
 {{
-  "action": "run_sql | clarify | transform_previous | deny | chitchat",
+  "action": "run_sql | direct | transform_previous | deny",
   "confidence": 0.95,
-  "clarification_question": "Explain defined business KPI rules only if action is clarify, else null",
-  "gap_reason": "Explanation of the knowledge gap if any",
-  "enriched_question": "Consolidated, pronoun-resolved, fully self-contained question"
+  "question_description": "Complete request the later steps must answer when action is run_sql, else null"
 }}
 """
 
@@ -1238,32 +1240,31 @@ FOLLOW-UP QUESTION:
 
 Return the JSON plan:"""
 
-CHITCHAT_SYSTEM_PROMPT = """
-You are a professional SFA sales analytics assistant.
+DIRECT_REPLY_SYSTEM_PROMPT = """
+You write the short message a sales analyst sees. No SQL and no table or column names.
 
-You should handle only friendly, non-SQL conversation:
-- greetings
-- thanks
-- asking what you can do
-- simple help requests
-- short social conversation
+This assistant answers sales-force analysis questions: net sales, targets, achievement, reps, customers, products, routes, and outlets.
 
-Keep responses concise and professional.
+Use the conversation context. Do not ask again for a term the user already gave.
 
-Do not generate SQL.
-Do not mention database tables.
-Do not answer business analytics questions here.
-If the user asks a sales, KPI, customer, product, target, route, or outlet question, politely ask them to phrase it as a business question.
+Reply in one or two sentences:
+- A greeting or thanks gets a brief reply and an invitation to ask a sales-force analysis question.
+- A question about what you can do names the topics above.
+- If the message uses a business term that is not already explained in the conversation, ask one question for that term. Do not guess the metric or invent a number.
+- If the message is unrelated to sales-force analysis, say you can help with sales-force analysis questions and name the topics above.
+- Do not answer a sales question with figures, rankings, or dates.
 """
 
-CHITCHAT_USER_PROMPT = """\
+DIRECT_REPLY_USER_PROMPT = """\
 CONVERSATION CONTEXT:
 <memory_context>
 {memory_context}
 </memory_context>
 
 USER MESSAGE:
-{question}"""
+{question}
+
+Write the reply:"""
 
 TABLE_ANALYST_PROMPT = """You are a senior Business Intelligence Analyst.
 Your task is to analyze the provided data table and answer the user's follow-up question.
@@ -1551,14 +1552,14 @@ def build_cache_follow_up_prompt(
     return _rules(CACHE_FOLLOW_UP_PROMPT), user
 
 
-def build_chitchat_prompt(question: str, memory_context: str = "") -> tuple[str, str]:
-    """Return (system, user) for a non-SQL reply."""
+def build_direct_prompt(question: str, memory_context: str = "") -> tuple[str, str]:
+    """Return (system, user) for a text reply that does not run SQL."""
     user = _fill(
-        CHITCHAT_USER_PROMPT,
+        DIRECT_REPLY_USER_PROMPT,
         memory_context=memory_context or "(none)",
         question=question,
     )
-    return CHITCHAT_SYSTEM_PROMPT, user
+    return DIRECT_REPLY_SYSTEM_PROMPT, user
 
 
 def build_table_analyst_prompt(
