@@ -49,9 +49,6 @@ AGGREGATION RULE (CRITICAL)
 If a metric requires multiple levels of aggregation the plan MUST
 explicitly describe each aggregation level. Do NOT collapse into one step.
 
-Conversation Memory:
-{memory_context}
-
 Critically keep in mind
 ────────────────────────────────
 sales always refers to net sales, unless specifically told in question not to consider returns.
@@ -70,10 +67,20 @@ For rep-level or secondary target, use target Type = 1.
 For distributor-level or primary target, use target Type = 0.
 Target records must overlap the requested period using StartDate and EndDate.
 
-{business_definitions}
-
 Return the plan.
 """
+
+PLANNER_USER_PROMPT = """\
+CONVERSATION MEMORY:
+{memory_context}
+
+BUSINESS DEFINITIONS:
+{business_definitions}
+
+USER QUESTION:
+{question}
+
+Return the plan:"""
 
 # ========================================================================
 # retriever_prompt.py
@@ -181,12 +188,17 @@ MANDATORY RULE
 Whenever sales_targets is selected, sales_hierarchy_nodes MUST also be selected. 
 These two tables can never be used without the bridge.
 
-Logical Plan:
-Select need to according to this plan
-{plan}
-
 Return ONLY a comma-separated list of table names, nothing else.
 """
+
+TABLE_SELECTION_USER_PROMPT = """\
+LOGICAL PLAN:
+{plan}
+
+USER QUESTION:
+{question}
+
+Return ONLY a comma-separated list of table names, nothing else."""
 
 COLUMN_SELECTION_TABLE = """You are a database column selection expert for a MySQL sales
 distribution system. Given the logical plan and the DDL schema, identify
@@ -255,6 +267,18 @@ Example:
   "sales_targets": ["RepId", "Type", "Value", "StartDate", "EndDate"]
 }
 """
+
+COLUMN_SELECTION_USER_PROMPT = """\
+USER QUESTION:
+{question}
+
+LOGICAL PLAN:
+{plan}
+
+SCHEMA:
+{schema_context}
+
+Return a JSON object only."""
 
 # ========================================================================
 # generator_prompt.py
@@ -610,10 +634,19 @@ FINAL CHECK BEFORE OUTPUT
 - Are sales and targets aggregated separately before joining?
 - Are all selected non-aggregated columns included in GROUP BY?
 - Is output SQL only?
+"""
 
+GENERATOR_USER_PROMPT = """\
 SCHEMA:
 {schema_context}
-"""
+
+LOGICAL PLAN:
+{plan}
+
+USER QUESTION:
+{question}
+
+Generate the SQL query:"""
 
 # ========================================================================
 # critic_prompt.py
@@ -682,13 +715,17 @@ FEW-SHOT EXAMPLES — USAGE RULES
 Examples are reference patterns only.
 ALWAYS follow the LOGICAL PLAN.
 
+Return the corrected SQL only.
+"""
+
+REFLECTION_USER_PROMPT = """\
 SCHEMA:
 {schema_context}
 
 ORIGINAL QUESTION:
 {question}
 
-LOGICAL PLAN (reference):
+LOGICAL PLAN:
 {plan}
 
 FAILED SQL:
@@ -842,17 +879,6 @@ You are a KPI knowledge gap detector for a Text-to-SQL BI assistant.
 
 CRITICAL: Only flag ACTUAL UNKNOWN METRICS/KPIs. Do NOT flag anything else.
 
-────────────────────────────────
-User Question:
-{question}
-
-Conversation Memory:
-{memory_context}
-
-Retrieved Business Definition Knowledge:
-{retrieved_knowledge}
-────────────────────────────────
-
 ABSOLUTELY NEVER FLAG THESE (Common words / dimensions / derivable concepts):
 ────────────────────────────────
 
@@ -948,6 +974,16 @@ Question: "Show max velocity by territory"
 → gap_type: "none" if "velocity" in retrieved_knowledge, else "knowledge_gap"
 """
 
+KNOWLEDGE_GAP_USER_PROMPT = """\
+USER QUESTION:
+{question}
+
+CONVERSATION MEMORY:
+{memory_context}
+
+RETRIEVED BUSINESS DEFINITION KNOWLEDGE:
+{retrieved_knowledge}"""
+
 # ========================================================================
 # clarification_prompt.py
 # ========================================================================
@@ -957,21 +993,6 @@ You are a clarification agent for a Text-to-SQL BI assistant.
 
 Your task:
 Generate ONE targeted question based on the detected gap.
-
-User Question:
-{question}
-
-Gap Type:
-{gap_type}
-
-Gap Reason:
-{gap_reason}
-
-Missing Pieces:
-{missing_pieces}
-
-Conversation Memory:
-{memory_context}
 
 Rules:
 1. Ask only ONE question.
@@ -987,33 +1008,28 @@ JSON format:
 }}
 """
 
+CLARIFICATION_USER_PROMPT = """\
+USER QUESTION:
+{question}
+
+GAP TYPE:
+{gap_type}
+
+GAP REASON:
+{gap_reason}
+
+MISSING PIECES:
+{missing_pieces}
+
+CONVERSATION MEMORY:
+{memory_context}"""
+
 # ========================================================================
 # prompts moved out of agent modules
 # ========================================================================
 
 RESULT_FORMATTER_PROMPT = """
 You are a BI result formatter and chart planner for a field sales analytics assistant.
-
-User Question:
-{question}
-
-Dataset Profile:
-{dataset_profile}
-
-Computed Facts from the FULL dataset:
-{computed_facts}
-
-Chartable Columns:
-{chartable_columns}
-
-User Requested Chart Type:
-{requested_chart_type}
-
-Currency symbol:
-{currency_symbol}
-
-Conversation memory context:
-{memory_context}
 
 Your task:
 Return ONLY valid JSON.
@@ -1058,17 +1074,30 @@ Return JSON format:
 }}
 """
 
+RESULT_FORMATTER_USER_PROMPT = """\
+USER QUESTION:
+{question}
+
+DATASET PROFILE:
+{dataset_profile}
+
+COMPUTED FACTS FROM THE FULL DATASET:
+{computed_facts}
+
+CHARTABLE COLUMNS:
+{chartable_columns}
+
+USER REQUESTED CHART TYPE:
+{requested_chart_type}
+
+CURRENCY SYMBOL:
+{currency_symbol}
+
+CONVERSATION MEMORY:
+{memory_context}"""
+
 ORCHESTRATOR_SYSTEM_PROMPT = """You are the dialogue manager for a Text-to-SQL Sales BI Assistant.
 Your task is to analyze the user's current query in the context of the conversation history, and decide the next best action.
-
-CONVERSATION CONTEXT:
-<memory_context>
-{memory_context}
-</memory_context>
-
-<retrieved_business_definitions>
-{retrieved_knowledge}
-</retrieved_business_definitions>
 
 DIAGNOSTIC & CLASSIFICATION RULES:
 1. Stateless Context Enrichment (Pronoun / Antecedent Resolution):
@@ -1101,23 +1130,26 @@ Return ONLY a valid JSON object:
 }}
 """
 
+ORCHESTRATOR_USER_PROMPT = """\
+CONVERSATION CONTEXT:
+<memory_context>
+{memory_context}
+</memory_context>
+
+<retrieved_business_definitions>
+{retrieved_knowledge}
+</retrieved_business_definitions>
+
+USER MESSAGE:
+{question}
+
+Classify and extract (JSON):"""
+
 FOLLOW_UP_CLASSIFIER_PROMPT = """
 You are a follow-up query classifier for a Sales BI assistant.
 
 The user has already received a previous table result.
 You must decide how to answer the latest follow-up question.
-
-Previous question:
-{previous_question}
-
-Previous result schema:
-{schema}
-
-Latest follow-up question:
-{question}
-
-Conversation context:
-{memory_context}
 
 Classify the follow-up into exactly one action:
 
@@ -1139,14 +1171,22 @@ Return ONLY valid JSON:
 }}
 """
 
+FOLLOW_UP_USER_PROMPT = """\
+PREVIOUS QUESTION:
+{previous_question}
+
+PREVIOUS RESULT SCHEMA:
+{schema}
+
+LATEST FOLLOW-UP QUESTION:
+{question}
+
+CONVERSATION CONTEXT:
+{memory_context}
+
+Classify and extract (JSON):"""
+
 CACHE_FOLLOW_UP_PROMPT = """You plan how to answer a follow-up using ONLY the previous query result rows.
-
-Previous question: {previous_question}
-Columns (use these exact names): {columns}
-Row count: {row_count}
-Sample rows (JSON): {sample_rows}
-
-Follow-up question: {follow_up_question}
 
 Return ONLY valid JSON (one operation value, no pipes):
 {{
@@ -1180,6 +1220,24 @@ Rules:
 - Never invent column names.
 """
 
+CACHE_FOLLOW_UP_USER_PROMPT = """\
+PREVIOUS QUESTION:
+{previous_question}
+
+COLUMNS (use these exact names):
+{columns}
+
+ROW COUNT:
+{row_count}
+
+SAMPLE ROWS (JSON):
+{sample_rows}
+
+FOLLOW-UP QUESTION:
+{follow_up_question}
+
+Return the JSON plan:"""
+
 CHITCHAT_SYSTEM_PROMPT = """
 You are a professional SFA sales analytics assistant.
 
@@ -1196,16 +1254,28 @@ Do not generate SQL.
 Do not mention database tables.
 Do not answer business analytics questions here.
 If the user asks a sales, KPI, customer, product, target, route, or outlet question, politely ask them to phrase it as a business question.
+"""
 
-Conversation context:
+CHITCHAT_USER_PROMPT = """\
+CONVERSATION CONTEXT:
 <memory_context>
 {memory_context}
 </memory_context>
-"""
+
+USER MESSAGE:
+{question}"""
 
 TABLE_ANALYST_PROMPT = """You are a senior Business Intelligence Analyst.
 Your task is to analyze the provided data table and answer the user's follow-up question.
 
+INSTRUCTIONS:
+1. Provide a professional, concise, and business-focused answer.
+2. Ground all numbers and calculations exactly in the provided dataset. Do not invent metrics.
+3. Call out interesting anomalies, outliers, top performers, or percentage distributions if relevant.
+4. Keep the explanation clear, readable, and structured using markdown lists/tables.
+"""
+
+TABLE_ANALYST_USER_PROMPT = """\
 PREVIOUS CONVERSATION CONTEXT:
 {memory_context}
 
@@ -1219,27 +1289,10 @@ DATA ROWS (Markdown format):
 ```
 
 USER'S FOLLOW-UP QUESTION:
-{follow_up_question}
-
-INSTRUCTIONS:
-1. Provide a professional, concise, and business-focused answer.
-2. Ground all numbers and calculations exactly in the provided dataset. Do not invent metrics.
-3. Call out interesting anomalies, outliers, top performers, or percentage distributions if relevant.
-4. Keep the explanation clear, readable, and structured using markdown lists/tables.
-"""
+{follow_up_question}"""
 
 LOCAL_SQL_PROMPT = """You are an in-memory SQL execution planner.
 Your task is to write a single standard SQL query that answers the follow-up question by querying a local virtual table named 'last_result'.
-
-VIRTUAL TABLE SCHEMA:
-- Table name: 'last_result'
-- Columns and Types: {columns_and_types}
-
-SAMPLE ROWS:
-{sample_rows}
-
-FOLLOW-UP QUESTION:
-{follow_up_question}
 
 RULES:
 1. Write standard, ANSI-compliant SQL.
@@ -1255,15 +1308,21 @@ Return ONLY valid JSON:
 }}
 """
 
+LOCAL_SQL_USER_PROMPT = """\
+VIRTUAL TABLE SCHEMA:
+- Table name: 'last_result'
+- Columns and Types: {columns_and_types}
+
+SAMPLE ROWS:
+{sample_rows}
+
+FOLLOW-UP QUESTION:
+{follow_up_question}
+
+Return the JSON plan:"""
+
 DOMAIN_CLASSIFIER_PROMPT = """
 You are a domain classifier for a sales analytics system.
-
-SYSTEM CONTEXT:
-- Previous topics discussed: {previous_topics}
-- Conversation history summary: {conversation_summary}
-- User role: {user_role}
-
-CURRENT QUESTION: {question}
 
 Task: Determine if this question is related to sales analytics (IN-SCOPE) or not (OUT-OF-SCOPE).
 
@@ -1296,6 +1355,21 @@ Important: RESPOND ONLY WITH VALID JSON, NO OTHER TEXT.
 }}
 """
 
+DOMAIN_CLASSIFIER_USER_PROMPT = """\
+PREVIOUS TOPICS:
+{previous_topics}
+
+CONVERSATION HISTORY SUMMARY:
+{conversation_summary}
+
+USER ROLE:
+{user_role}
+
+CURRENT QUESTION:
+{question}
+
+Classify and extract (JSON):"""
+
 PRE_EXEC_CRITIC_SYSTEM = (
     "Review this SQL for safety and correctness. Reply APPROVE or REJECT: reason."
 )
@@ -1324,26 +1398,34 @@ def chat_messages(system_prompt: str, user_prompt: str):
     ]
 
 
+def _rules(template: str) -> str:
+    """Return a system prompt. Doubled braces become the JSON the model should see."""
+    return template.format()
+
+
 def build_planner_prompt(
     question: str,
     business_definitions: str = "",
     memory_context: str = "",
 ) -> tuple[str, str]:
     """Return (system, user) for the planner."""
-    system = _fill(
-        PLANNER_PROMPT,
-        business_definitions=business_definitions or "(none)",
+    user = _fill(
+        PLANNER_USER_PROMPT,
         memory_context=memory_context or "(none)",
+        business_definitions=business_definitions or "(none)",
+        question=question,
     )
-    user = f"Question:\n{question}"
-    return system, user
+    return PLANNER_PROMPT, user
 
 
 def build_table_selection_prompt(question: str, plan: str = "") -> tuple[str, str]:
     """Return (system, user) for table selection."""
-    system = _fill(TABLE_SELECTION_TABLE, plan=plan or "(none)")
-    user = f"Question:\n{question}"
-    return system, user
+    user = _fill(
+        TABLE_SELECTION_USER_PROMPT,
+        plan=plan or "(none)",
+        question=question,
+    )
+    return TABLE_SELECTION_TABLE, user
 
 
 def build_column_selection_prompt(
@@ -1352,10 +1434,11 @@ def build_column_selection_prompt(
     schema_context: str = "",
 ) -> tuple[str, str]:
     """Return (system, user) for column selection."""
-    user = (
-        f"Question:\n{question}\n\n"
-        f"Logical plan:\n{plan}\n\n"
-        f"Schema:\n{schema_context}"
+    user = _fill(
+        COLUMN_SELECTION_USER_PROMPT,
+        question=question,
+        plan=plan or "(none)",
+        schema_context=schema_context or "(none)",
     )
     return COLUMN_SELECTION_TABLE, user
 
@@ -1366,9 +1449,13 @@ def build_generator_prompt(
     schema_context: str = "",
 ) -> tuple[str, str]:
     """Return (system, user) for SQL generation."""
-    system = _fill(GENERATOR_PROMPT, schema_context=schema_context or "(none)")
-    user = f"LOGICAL PLAN:\n{plan}\n\nUSER QUESTION:\n{question}\n\nGenerate the SQL query:"
-    return system, user
+    user = _fill(
+        GENERATOR_USER_PROMPT,
+        schema_context=schema_context or "(none)",
+        plan=plan or "(none)",
+        question=question,
+    )
+    return GENERATOR_PROMPT, user
 
 
 def build_reflection_prompt(
@@ -1379,16 +1466,15 @@ def build_reflection_prompt(
     error: str = "",
 ) -> tuple[str, str]:
     """Return (system, user) for SQL repair."""
-    system = _fill(
-        REFLECTION_PROMPT,
+    user = _fill(
+        REFLECTION_USER_PROMPT,
+        schema_context=schema_context or "(none)",
         question=question,
-        plan=plan,
-        schema_context=schema_context,
-        sql_query=sql_query,
-        error=error,
+        plan=plan or "(none)",
+        sql_query=sql_query or "(none)",
+        error=error or "(none)",
     )
-    user = "Fix the query."
-    return system, user
+    return REFLECTION_PROMPT, user
 
 
 def build_result_formatter_prompt(
@@ -1401,18 +1487,17 @@ def build_result_formatter_prompt(
     memory_context: str = "",
 ) -> tuple[str, str]:
     """Return (system, user) for the result formatter."""
-    system = _fill(
-        RESULT_FORMATTER_PROMPT,
+    user = _fill(
+        RESULT_FORMATTER_USER_PROMPT,
         question=question,
-        dataset_profile=dataset_profile,
-        computed_facts=computed_facts,
-        chartable_columns=chartable_columns,
+        dataset_profile=dataset_profile or "(none)",
+        computed_facts=computed_facts or "(none)",
+        chartable_columns=chartable_columns or "(none)",
         requested_chart_type=requested_chart_type or "none",
         currency_symbol=currency_symbol or "Rs",
         memory_context=memory_context or "(none)",
     )
-    user = f"Question:\n{question}"
-    return system, user
+    return _rules(RESULT_FORMATTER_PROMPT), user
 
 
 def build_router_prompt(
@@ -1421,13 +1506,13 @@ def build_router_prompt(
     retrieved_knowledge: str = "",
 ) -> tuple[str, str]:
     """Return (system, user) for the supervisor."""
-    system = _fill(
-        ORCHESTRATOR_SYSTEM_PROMPT,
+    user = _fill(
+        ORCHESTRATOR_USER_PROMPT,
         memory_context=memory_context or "(none)",
         retrieved_knowledge=retrieved_knowledge or "(none)",
+        question=question,
     )
-    user = question
-    return system, user
+    return _rules(ORCHESTRATOR_SYSTEM_PROMPT), user
 
 
 def build_follow_up_prompt(
@@ -1437,15 +1522,14 @@ def build_follow_up_prompt(
     memory_context: str = "",
 ) -> tuple[str, str]:
     """Return (system, user) for the follow-up classifier."""
-    system = _fill(
-        FOLLOW_UP_CLASSIFIER_PROMPT,
+    user = _fill(
+        FOLLOW_UP_USER_PROMPT,
+        previous_question=previous_question or "(none)",
+        schema=schema or "(none)",
         question=question,
-        previous_question=previous_question,
-        schema=schema,
         memory_context=memory_context or "(none)",
     )
-    user = question
-    return system, user
+    return _rules(FOLLOW_UP_CLASSIFIER_PROMPT), user
 
 
 def build_cache_follow_up_prompt(
@@ -1456,23 +1540,25 @@ def build_cache_follow_up_prompt(
     sample_rows: str = "",
 ) -> tuple[str, str]:
     """Return (system, user) for a cached-result follow-up plan."""
-    system = _fill(
-        CACHE_FOLLOW_UP_PROMPT,
-        follow_up_question=follow_up_question,
-        previous_question=previous_question,
-        columns=columns,
+    user = _fill(
+        CACHE_FOLLOW_UP_USER_PROMPT,
+        previous_question=previous_question or "(none)",
+        columns=columns or "(none)",
         row_count=row_count,
-        sample_rows=sample_rows,
+        sample_rows=sample_rows or "(none)",
+        follow_up_question=follow_up_question,
     )
-    user = follow_up_question
-    return system, user
+    return _rules(CACHE_FOLLOW_UP_PROMPT), user
 
 
 def build_chitchat_prompt(question: str, memory_context: str = "") -> tuple[str, str]:
     """Return (system, user) for a non-SQL reply."""
-    system = _fill(CHITCHAT_SYSTEM_PROMPT, memory_context=memory_context or "(none)")
-    user = question
-    return system, user
+    user = _fill(
+        CHITCHAT_USER_PROMPT,
+        memory_context=memory_context or "(none)",
+        question=question,
+    )
+    return CHITCHAT_SYSTEM_PROMPT, user
 
 
 def build_table_analyst_prompt(
@@ -1484,17 +1570,16 @@ def build_table_analyst_prompt(
     memory_context: str = "",
 ) -> tuple[str, str]:
     """Return (system, user) for table analysis."""
-    system = _fill(
-        TABLE_ANALYST_PROMPT,
-        follow_up_question=follow_up_question,
-        source_question=source_question,
-        total_rows=total_rows,
-        columns=columns,
-        table_markdown=table_markdown,
+    user = _fill(
+        TABLE_ANALYST_USER_PROMPT,
         memory_context=memory_context or "(none)",
+        source_question=source_question or "(none)",
+        total_rows=total_rows,
+        columns=columns or "(none)",
+        table_markdown=table_markdown or "(none)",
+        follow_up_question=follow_up_question,
     )
-    user = follow_up_question
-    return system, user
+    return TABLE_ANALYST_PROMPT, user
 
 
 def build_local_sql_prompt(
@@ -1503,14 +1588,13 @@ def build_local_sql_prompt(
     sample_rows: str = "",
 ) -> tuple[str, str]:
     """Return (system, user) for in-memory SQL."""
-    system = _fill(
-        LOCAL_SQL_PROMPT,
+    user = _fill(
+        LOCAL_SQL_USER_PROMPT,
+        columns_and_types=columns_and_types or "(none)",
+        sample_rows=sample_rows or "(none)",
         follow_up_question=follow_up_question,
-        columns_and_types=columns_and_types,
-        sample_rows=sample_rows,
     )
-    user = follow_up_question
-    return system, user
+    return _rules(LOCAL_SQL_PROMPT), user
 
 
 def build_domain_classifier_prompt(
@@ -1520,18 +1604,51 @@ def build_domain_classifier_prompt(
     user_role: str = "",
 ) -> tuple[str, str]:
     """Return (system, user) for the domain guardrail."""
-    system = _fill(
-        DOMAIN_CLASSIFIER_PROMPT,
-        question=question,
+    user = _fill(
+        DOMAIN_CLASSIFIER_USER_PROMPT,
         previous_topics=previous_topics or "None",
         conversation_summary=conversation_summary or "No previous conversation",
         user_role=user_role or "analyst",
+        question=question,
     )
-    user = question
-    return system, user
+    return _rules(DOMAIN_CLASSIFIER_PROMPT), user
+
+
+def build_knowledge_gap_prompt(
+    question: str,
+    memory_context: str = "",
+    retrieved_knowledge: str = "",
+) -> tuple[str, str]:
+    """Return (system, user) for the knowledge-gap detector."""
+    user = _fill(
+        KNOWLEDGE_GAP_USER_PROMPT,
+        question=question,
+        memory_context=memory_context or "(none)",
+        retrieved_knowledge=retrieved_knowledge or "(none)",
+    )
+    return _rules(KNOWLEDGE_GAP_DETECTOR_PROMPT), user
+
+
+def build_clarification_prompt(
+    question: str,
+    gap_type: str = "",
+    gap_reason: str = "",
+    missing_pieces: str = "",
+    memory_context: str = "",
+) -> tuple[str, str]:
+    """Return (system, user) for the clarification question."""
+    user = _fill(
+        CLARIFICATION_USER_PROMPT,
+        question=question,
+        gap_type=gap_type or "(none)",
+        gap_reason=gap_reason or "(none)",
+        missing_pieces=missing_pieces or "(none)",
+        memory_context=memory_context or "(none)",
+    )
+    return _rules(CLARIFICATION_AGENT_PROMPT), user
 
 
 def build_pre_exec_critic_prompt(question: str, sql: str = "") -> tuple[str, str]:
     """Return (system, user) for the pre-execution SQL review."""
-    user = _fill(_PRE_EXEC_CRITIC_USER, question=question, sql=sql)
+    user = _fill(_PRE_EXEC_CRITIC_USER, question=question, sql=sql or "(none)")
     return PRE_EXEC_CRITIC_SYSTEM, user
