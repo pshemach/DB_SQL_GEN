@@ -87,7 +87,7 @@ class DatabaseManager:
             fks = self.inspector.get_foreign_keys(table_name)
             indexes = self.inspector.get_indexes(table_name)
             
-            from src.utils.serialization import sanitize_state
+            from src.infrastructure.utils import sanitize_state
 
             return sanitize_state({
                 "name": table_name,

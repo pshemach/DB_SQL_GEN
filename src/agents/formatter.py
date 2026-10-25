@@ -1,14 +1,37 @@
 import json
 import base64
+import re
+
 import pandas as pd
 import plotly.express as px
 from loguru import logger
 
-from src.utils.chart_request import detect_requested_chart_type
-from src.utils.json_utils import extract_json
+from src.infrastructure.utils import extract_json
 from src.agents.prompts.agent_prompts import build_result_formatter_prompt, chat_messages
 from src.infrastructure.config import CURRENCY_SYMBOL
 from src.infrastructure.llm import get_direct_llm
+
+_REQUESTED_CHART_PATTERNS = (
+    (r"horizontal\s+bar", "horizontal_bar"),
+    (r"\bbar\s+(chart|graph|chat|plot)s?\b", "bar"),
+    (r"\bbarchart\b", "bar"),
+    (r"\b(line|trend)\s+(chart|graph|chat|plot)s?\b", "line"),
+    (r"\bpie\s+(chart|graph|chat|plot)s?\b", "pie"),
+    (r"\bscatter(?:\s+(?:plot|chart|graph|chat))?s?\b", "scatter"),
+    (r"\bas\s+an?\s+bar\b", "bar"),
+    (r"\bas\s+an?\s+line\b", "line"),
+    (r"\bas\s+an?\s+pie\b", "pie"),
+)
+
+
+def detect_requested_chart_type(question: str) -> str | None:
+    """Return a chart type when the user explicitly asks for one."""
+    text = (question or "").lower()
+    for pattern, chart_type in _REQUESTED_CHART_PATTERNS:
+        if re.search(pattern, text):
+            return chart_type
+    return None
+
 
 class ResultFormatterAgent:
     def __init__(self, llm=None):

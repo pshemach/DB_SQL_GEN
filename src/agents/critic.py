@@ -9,8 +9,8 @@ from src.agents.state import AgentState
 from src.agents.prompts.agent_prompts import build_reflection_prompt, chat_messages
 from src.infrastructure.config import ENABLE_SELF_CORRECTION, MAX_ITERATIONS, QUERY_TIMEOUT_SECONDS
 from src.infrastructure.llm import get_direct_llm
-from src.utils.error_taxonomy import classify_db_error, is_retryable
-from src.utils.serialization import sanitize_state, serialize_query_result
+from src.infrastructure.db.sql_safety import classify_db_error, is_retryable
+from src.infrastructure.utils import sanitize_state, serialize_query_result
 
 class CriticAgent:
     """

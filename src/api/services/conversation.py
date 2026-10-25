@@ -13,8 +13,8 @@ from src.memory import chat_memory
 from src.agents.guardrail import Guardrail
 
 guardrail_pipeline = Guardrail()
-from src.utils.chart_request import detect_requested_chart_type
-from src.utils.serialization import serialize_query_result
+from src.agents.formatter import detect_requested_chart_type
+from src.infrastructure.utils import serialize_query_result
 
 def format_agent_response(result: dict) -> str:
     if result.get("waiting_for_user"):

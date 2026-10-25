@@ -8,7 +8,7 @@ import pandas as pd
 import duckdb
 from loguru import logger
 from src.infrastructure.db.sql_safety import assess_sql
-from src.utils.json_utils import extract_json
+from src.infrastructure.utils import extract_json
 from src.agents.prompts.agent_prompts import build_local_sql_prompt, chat_messages
 from src.infrastructure.llm import get_fast_chat_llm
 

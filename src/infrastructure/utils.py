@@ -1,15 +1,57 @@
-"""
-JSON/msgpack-safe serialization for graph state and API responses.
-"""
+"""Shared helpers: LLM JSON parsing, graph metrics, and JSON-safe values."""
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+import json
+import re
+import time
+from datetime import date, datetime, time as time_of_day
 from decimal import Decimal
 from typing import Any
 
+
+def extract_json(text: str) -> dict:
+    """Pull the first JSON object out of an LLM response."""
+    text = text.strip().replace("```json", "").replace("```", "").strip()
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        raise ValueError(f"No JSON object found: {text}")
+    return json.loads(match.group(0))
+
+
+def init_metrics() -> dict[str, Any]:
+    return {
+        "cache_hit": False,
+        "router_action": None,
+        "sql_retries": 0,
+        "node_timings_ms": {},
+        "started_at": time.time(),
+    }
+
+
+def record_node_timing(metrics: dict | None, node_name: str, elapsed_ms: float) -> dict:
+    current = metrics or init_metrics()
+    timings = current.setdefault("node_timings_ms", {})
+    timings[node_name] = round(elapsed_ms, 2)
+    return current
+
+
+def set_router_action(metrics: dict | None, action: str) -> dict:
+    current = metrics or init_metrics()
+    current["router_action"] = action
+    return current
+
+
+def finalize_metrics(metrics: dict | None, total_latency_ms: float | None = None) -> dict:
+    current = metrics or init_metrics()
+    if total_latency_ms is not None:
+        current["total_latency_ms"] = round(total_latency_ms, 2)
+    if current.get("started_at"):
+        current["wall_clock_ms"] = round((time.time() - current["started_at"]) * 1000, 2)
+    return current
+
+
 def _is_sqlalchemy_type(value: Any) -> bool:
-    """Detect SQLAlchemy TypeEngine / dialect type objects (e.g. DATE())."""
     try:
         from sqlalchemy.sql.type_api import TypeEngine
 
@@ -17,8 +59,8 @@ def _is_sqlalchemy_type(value: Any) -> bool:
             return True
     except ImportError:
         pass
-    mod = getattr(type(value), "__module__", "") or ""
-    return mod.startswith("sqlalchemy") and type(value).__name__ in (
+    module = getattr(type(value), "__module__", "") or ""
+    return module.startswith("sqlalchemy") and type(value).__name__ in (
         "DATE",
         "DATETIME",
         "TIMESTAMP",
@@ -35,13 +77,12 @@ def _is_sqlalchemy_type(value: Any) -> bool:
         "NUMERIC",
     )
 
+
 def json_safe_value(value: Any) -> Any:
-    """Convert a single value to a checkpoint/JSON-safe type."""
-    if value is None:
-        return None
-    if isinstance(value, (str, int, float, bool)):
+    """Convert one value to a checkpoint-safe type."""
+    if value is None or isinstance(value, (str, int, float, bool)):
         return value
-    if isinstance(value, (datetime, date, time)):
+    if isinstance(value, (datetime, date, time_of_day)):
         return value.isoformat()
     if isinstance(value, Decimal):
         return float(value)
@@ -50,9 +91,9 @@ def json_safe_value(value: Any) -> Any:
     if _is_sqlalchemy_type(value):
         return str(value)
     if isinstance(value, (list, tuple)):
-        return [json_safe_value(v) for v in value]
+        return [json_safe_value(item) for item in value]
     if isinstance(value, dict):
-        return {str(k): json_safe_value(v) for k, v in value.items()}
+        return {str(key): json_safe_value(item) for key, item in value.items()}
 
     try:
         import numpy as np
@@ -64,27 +105,19 @@ def json_safe_value(value: Any) -> Any:
     except ImportError:
         pass
 
-    # Row-like objects
     if hasattr(value, "_mapping"):
         return json_safe_value(dict(value._mapping))
 
     type_name = type(value).__name__
     if type_name in ("DATE", "DATETIME", "TIMESTAMP", "TIME", "TIMEDELTA"):
         return str(value)
-
     return str(value)
 
+
 def serialize_query_result(query_result: Any) -> list[dict] | str | None:
-    """
-    Convert SQLAlchemy rows into plain dicts with JSON/msgpack-safe values.
-    Required before storing query_result in LangGraph state (checkpointer).
-    """
-    if query_result is None:
-        return None
-
-    if isinstance(query_result, str):
+    """Turn SQL rows into plain dicts before they enter graph state or the API."""
+    if query_result is None or isinstance(query_result, str):
         return query_result
-
     if not isinstance(query_result, (list, tuple)):
         return json_safe_value(query_result)
 
@@ -94,25 +127,19 @@ def serialize_query_result(query_result: Any) -> list[dict] | str | None:
             raw = dict(row._mapping)
         elif isinstance(row, dict):
             raw = row
+        elif hasattr(row, "__iter__") and not isinstance(row, (str, bytes)):
+            raw = dict(zip(range(len(row)), row))
         else:
-            raw = (
-                dict(zip(range(len(row)), row))
-                if hasattr(row, "__iter__") and not isinstance(row, (str, bytes))
-                else {"value": row}
-            )
-
-        serialized.append({str(k): json_safe_value(v) for k, v in raw.items()})
-
+            raw = {"value": row}
+        serialized.append({str(key): json_safe_value(item) for key, item in raw.items()})
     return serialized
 
+
 def sanitize_state(data: Any) -> Any:
-    """
-    Deep-sanitize graph node output for LangGraph checkpointer (msgpack).
-    Handles SQLAlchemy schema types, rows, numpy, dates, etc.
-    """
+    """Make graph output safe for the checkpointer."""
     if data is None or isinstance(data, (str, int, float, bool)):
         return data
-    if isinstance(data, (datetime, date, time)):
+    if isinstance(data, (datetime, date, time_of_day)):
         return data.isoformat()
     if isinstance(data, Decimal):
         return float(data)
@@ -121,9 +148,9 @@ def sanitize_state(data: Any) -> Any:
     if _is_sqlalchemy_type(data):
         return str(data)
     if isinstance(data, dict):
-        return {str(k): sanitize_state(v) for k, v in data.items()}
+        return {str(key): sanitize_state(item) for key, item in data.items()}
     if isinstance(data, (list, tuple)):
-        return [sanitize_state(v) for v in data]
+        return [sanitize_state(item) for item in data]
     if hasattr(data, "_mapping"):
         return sanitize_state(dict(data._mapping))
 
@@ -134,14 +161,6 @@ def sanitize_state(data: Any) -> Any:
             return sanitize_state(data.tolist())
         if isinstance(data, (np.integer, np.floating)):
             return data.item()
-    except ImportError:
-        pass
-
-    try:
-        from sqlalchemy.sql.type_api import TypeEngine
-
-        if isinstance(data, TypeEngine):
-            return str(data)
     except ImportError:
         pass
 

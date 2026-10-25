@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.utils.error_taxonomy import classify_db_error, is_retryable
+from src.infrastructure.db.sql_safety import classify_db_error, is_retryable
 from src.agents.orchestrator import FORBIDDEN_SQL, missing_rep_codes, static_validator_node
 from src.infrastructure.db.sql_safety import assess_sql
 

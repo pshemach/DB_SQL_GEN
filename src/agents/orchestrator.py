@@ -51,10 +51,11 @@ from src.infrastructure.config import (
     LANGCHAIN_ENDPOINT,
     LANGCHAIN_PROJECT,
     LANGCHAIN_TRACING_V2,
+    GRAPH_RECURSION_LIMIT,
     MAX_ITERATIONS,
     SQL_MAX_ROWS,
 )
-from src.infrastructure.db.sql_safety import assess_sql
+from src.infrastructure.db.sql_safety import assess_sql, is_retryable
 from src.infrastructure.llm import (
     get_direct_llm,
     get_generator_llm,
@@ -63,13 +64,16 @@ from src.infrastructure.llm import (
     get_schema_selection_llm,
 )
 from src.services.few_shot.retriever import few_shot_retriever
-from src.utils.error_taxonomy import is_retryable
 from src.memory import chat_memory
 from src.memory.result_cache import result_cache
 from src.services.cache.semantic_cache import semantic_cache
-from src.utils.graph_config import build_invoke_config
-from src.utils.metrics import finalize_metrics, init_metrics, record_node_timing
-from src.utils.serialization import sanitize_state, serialize_query_result
+from src.infrastructure.utils import (
+    finalize_metrics,
+    init_metrics,
+    record_node_timing,
+    sanitize_state,
+    serialize_query_result,
+)
 
 NODE_STATUS = {
     "init": "Starting...",
@@ -97,6 +101,14 @@ NODE_STATUS = {
 FORBIDDEN_SQL = re.compile(
     r"(?i)\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b"
 )
+
+
+def build_invoke_config(session_id: str | None = None) -> dict:
+    """Runtime config for graph.invoke. Recursion limit is set at invoke time."""
+    config: dict = {"recursion_limit": GRAPH_RECURSION_LIMIT}
+    if session_id:
+        config["configurable"] = {"thread_id": session_id}
+    return config
 
 
 def _setup_langsmith() -> None:
@@ -350,8 +362,6 @@ def semantic_cache_lookup_node(state: AgentState) -> dict:
 
     logger.info("Semantic cache HIT — skipping SQL generation")
     metrics["cache_hit"] = True
-    from src.utils.serialization import sanitize_state
-
     return sanitize_state({
         "cache_hit": True,
         "turn_action": "cache_hit",

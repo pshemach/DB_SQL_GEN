@@ -15,7 +15,7 @@ from src.agents.prompts.agent_prompts import (
 from src.agents.tools.local_sql_engine import LocalSQLEngine
 from src.infrastructure.llm import get_direct_llm, get_router_llm
 from src.memory.result_cache import result_cache
-from src.utils.json_utils import extract_json
+from src.infrastructure.utils import extract_json
 
 class TableAnalystAgent:
     """Performs business analysis and explains trends over cached query results."""
