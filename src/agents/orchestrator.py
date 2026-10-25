@@ -63,10 +63,10 @@ from src.infrastructure.llm import (
     get_router_llm,
     get_schema_selection_llm,
 )
-from src.services.few_shot.retriever import few_shot_retriever
+from src.services.chat_service.few_shot import few_shot_retriever
 from src.memory import chat_memory
 from src.memory.result_cache import result_cache
-from src.services.cache.semantic_cache import semantic_cache
+from src.services.chat_service.semantic_cache import semantic_cache
 from src.infrastructure.utils import (
     finalize_metrics,
     init_metrics,

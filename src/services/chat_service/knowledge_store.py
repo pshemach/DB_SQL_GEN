@@ -2,7 +2,7 @@ import yaml
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from src.services.knowledge.retriever import business_knowledge_retriever
+from src.services.chat_service.knowledge_retriever import business_knowledge_retriever
 from src.infrastructure.config import BUSINESS_DOC_YAML_PATH
 
 class LiteralString(str):

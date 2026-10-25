@@ -54,7 +54,7 @@ Row scope is `RepCode IN (...)` from the signed-in user's allowed rep codes, app
 | Shared graph state | `src/agents/state.py` |
 | SELECT-only policy | `src/infrastructure/db/sql_safety.py` |
 | Database connection and schema reads | `src/infrastructure/db/database.py` |
-| Business metric meanings | `data/business_definitions.yaml` (local only) and `src/services/knowledge/store.py` |
+| Business metric meanings | `data/business_definitions.yaml` (local only) and `src/services/chat_service/knowledge_store.py` |
 | HTTP API | `src/api/endpoints.py`, `src/api/routers/` |
 | Request and response models | `src/api/data_models.py` |
 | Browser UI served by FastAPI | `web/index.html`, `web/static/` |
@@ -87,7 +87,7 @@ Assembled in `src/api/endpoints.py`.
 main.py                 API and web UI
 src/agents/             LangGraph nodes, prompts, and the local SQL tool
 src/api/                FastAPI routers and the conversation service
-src/services/           Auth, semantic cache, few-shot examples, business knowledge
+src/services/           auth_service and chat_service (cache, few-shot, knowledge)
 src/infrastructure/     Config, models, and database
 web/                    Static UI served at /app
 data/                   Local business definitions (not in git)

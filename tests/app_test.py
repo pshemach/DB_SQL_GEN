@@ -7,7 +7,7 @@ from loguru import logger
 
 from src.agents.orchestrator import run_agent_async
 from src.infrastructure.db import db_manager
-from src.services.knowledge.store import business_knowledge_store
+from src.services.chat_service.knowledge_store import business_knowledge_store
 
 # =============================
 # PAGE CONFIG

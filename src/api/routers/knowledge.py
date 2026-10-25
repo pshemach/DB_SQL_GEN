@@ -2,7 +2,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.services.knowledge.store import business_knowledge_store
+from src.services.chat_service.knowledge_store import business_knowledge_store
 from src.api.data_models import KnowledgeDefinitionRequest
 from src.api.dependencies import require_knowledge_admin
 

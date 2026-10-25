@@ -1,1 +1,1 @@
-"""Application services: auth, cache, few-shot examples, and business knowledge."""
+"""Application services: auth and the chat helpers used by the SQL agents."""

@@ -11,8 +11,8 @@ from loguru import logger
 
 from src.agents.prompts.agent_prompts import build_router_prompt, chat_messages
 from src.agents.state import AgentState
-from src.services.knowledge.retriever import business_knowledge_retriever
-from src.services.knowledge.store import business_knowledge_store
+from src.services.chat_service.knowledge_retriever import business_knowledge_retriever
+from src.services.chat_service.knowledge_store import business_knowledge_store
 from src.infrastructure.llm import get_router_llm
 from src.infrastructure.utils import extract_json, set_router_action
 

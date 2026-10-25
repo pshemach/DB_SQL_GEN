@@ -1,7 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from loguru import logger
 
-from src.services.few_shot.retriever import few_shot_retriever, seed_examples
+from src.services.chat_service.few_shot import few_shot_retriever, seed_examples
 from src.api.data_models import ExampleRequest
 
 router = APIRouter(tags=["examples"])
