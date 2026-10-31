@@ -1,12 +1,11 @@
 from fastapi import APIRouter
 from loguru import logger
 
-from ...config import settings
-from ...core import db_manager
-from ..data_models import HealthResponse
+from src.infrastructure.db import db_manager
+from src.api.data_models import HealthResponse
+from src.infrastructure.config import ENABLE_DYNAMIC_FEW_SHOT, ENABLE_SEMANTIC_CACHE
 
 router = APIRouter(tags=["health"])
-
 
 @router.get("/")
 async def root():
@@ -18,7 +17,6 @@ async def root():
         "app": "/app",
     }
 
-
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
     try:
@@ -27,8 +25,8 @@ async def health_check():
             status="healthy",
             database_connected=True,
             total_tables=len(tables),
-            cache_enabled=settings.enable_semantic_cache,
-            few_shot_enabled=settings.enable_dynamic_few_shot,
+            cache_enabled=ENABLE_SEMANTIC_CACHE,
+            few_shot_enabled=ENABLE_DYNAMIC_FEW_SHOT,
         )
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -36,6 +34,6 @@ async def health_check():
             status="unhealthy",
             database_connected=False,
             total_tables=0,
-            cache_enabled=settings.enable_semantic_cache,
-            few_shot_enabled=settings.enable_dynamic_few_shot,
+            cache_enabled=ENABLE_SEMANTIC_CACHE,
+            few_shot_enabled=ENABLE_DYNAMIC_FEW_SHOT,
         )

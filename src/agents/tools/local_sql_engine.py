@@ -7,46 +7,16 @@ from typing import List, Dict, Any, Tuple
 import pandas as pd
 import duckdb
 from loguru import logger
-from langchain_core.prompts import ChatPromptTemplate
-
-from ...core.sql_safety import assess_sql
-from ...utils.llm_factory import groq_llm
-from ...utils.json_utils import extract_json
-
-LOCAL_SQL_PROMPT = """You are an in-memory SQL execution planner.
-Your task is to write a single standard SQL query that answers the follow-up question by querying a local virtual table named 'last_result'.
-
-VIRTUAL TABLE SCHEMA:
-- Table name: 'last_result'
-- Columns and Types: {columns_and_types}
-
-SAMPLE ROWS:
-{sample_rows}
-
-FOLLOW-UP QUESTION:
-{follow_up_question}
-
-RULES:
-1. Write standard, ANSI-compliant SQL.
-2. Query ONLY the virtual table named 'last_result'.
-3. Use only column names listed in the schema.
-4. If the question cannot be answered using ONLY these columns (e.g., requires other tables, joins, or details not present in this dataset), set "needs_live_db" to true.
-
-Return ONLY valid JSON:
-{{
-  "needs_live_db": false,
-  "sql": "SELECT col1, SUM(col2) FROM last_result WHERE col3 = 'Active' GROUP BY col1",
-  "explanation": "Brief explanation of what the query calculates"
-}}
-"""
+from src.infrastructure.db.sql_safety import assess_sql
+from src.infrastructure.utils import extract_json
+from src.agents.prompts.agent_prompts import build_local_sql_prompt, chat_messages
+from src.infrastructure.llm import get_fast_chat_llm
 
 class LocalSQLEngine:
     """Runs high-performance SQL queries on cached datasets in RAM using DuckDB."""
     
     def __init__(self):
-        self.llm = groq_llm(temperature=0)
-        self.prompt = ChatPromptTemplate.from_template(LOCAL_SQL_PROMPT)
-        self.chain = self.prompt | self.llm
+        self.llm = get_fast_chat_llm(temperature=0)
 
     def execute_follow_up(
         self, 
@@ -70,11 +40,10 @@ class LocalSQLEngine:
             sample_rows = df.head(5).to_markdown()
 
             # 2. Ask LLM to generate local SQL
-            resp = self.chain.invoke({
-                "follow_up_question": follow_up_question,
-                "columns_and_types": columns_and_types,
-                "sample_rows": sample_rows
-            })
+            system_prompt, user_prompt = build_local_sql_prompt(
+                follow_up_question, columns_and_types, sample_rows
+            )
+            resp = self.llm.invoke(chat_messages(system_prompt, user_prompt))
             
             text = resp.content if hasattr(resp, "content") else str(resp)
             plan = extract_json(text)
@@ -106,5 +75,3 @@ class LocalSQLEngine:
         except Exception as e:
             logger.error(f"DuckDB local query failed: {e}. Falling back to live DB.")
             return True, [], f"Local SQL error: {e}"
-
-local_sql_engine = LocalSQLEngine()

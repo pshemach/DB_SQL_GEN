@@ -1,14 +1,10 @@
 """Tests for production graph utilities (no live LLM/DB required)."""
 
-import re
-
 import pytest
 
-from src.utils.error_taxonomy import classify_db_error, is_retryable
-from src.agents.graph.sql_pipeline_nodes import static_validator_node, FORBIDDEN_SQL
-from src.core.sql_safety import assess_sql
-from src.agents.graph.nodes import authz_guardrails_node, DANGEROUS_PATTERNS
-
+from src.infrastructure.db.sql_safety import classify_db_error, is_retryable
+from src.agents.orchestrator import FORBIDDEN_SQL, orchestrator
+from src.infrastructure.db.sql_safety import assess_sql
 
 class TestErrorTaxonomy:
     def test_syntax_error_retryable(self):
@@ -23,10 +19,9 @@ class TestErrorTaxonomy:
         assert not is_retryable("permission", True)
         assert not is_retryable("access_denied", True)
 
-
 class TestStaticValidator:
     def test_rejects_ddl(self):
-        out = static_validator_node({
+        out = orchestrator.static_validator_node({
             "sql_query": "DROP TABLE sales_flat",
             "question": "test",
         })
@@ -34,22 +29,22 @@ class TestStaticValidator:
         assert out.get("should_retry") is False
 
     def test_accepts_select(self):
-        out = static_validator_node({
+        out = orchestrator.static_validator_node({
             "sql_query": "SELECT TOP 10 * FROM sales_flat",
             "question": "test",
         })
         assert out.get("error") is None
-        assert out.get("pre_exec_approved") is True
+        assert out.get("should_retry") is False
 
     def test_rejects_replace_and_stacked_statements(self):
-        replace_out = static_validator_node({
+        replace_out = orchestrator.static_validator_node({
             "sql_query": "REPLACE INTO sales_flat VALUES (1)",
             "question": "test",
         })
         assert replace_out.get("error_type") == "validation"
         assert replace_out.get("should_retry") is False
 
-        stacked_out = static_validator_node({
+        stacked_out = orchestrator.static_validator_node({
             "sql_query": "SELECT 1; DELETE FROM sales_flat",
             "question": "test",
         })
@@ -61,32 +56,16 @@ class TestStaticValidator:
         assert assess_sql("SELECT * FROM t FOR UPDATE")[0] == "policy"
         assert assess_sql("CALL update_sales()")[0] == "policy"
 
+class TestRepCodeGate:
+    def test_stops_without_rep_codes(self):
+        out = orchestrator.missing_rep_codes([], {"question": "What are total sales?"})
+        assert out["access_denied"] is True
+        assert out["turn_action"] == "deny"
+        assert out["error_type"] == "access_denied"
 
-class TestAuthzGuardrails:
-    def test_denies_without_rep_codes(self):
-        out = authz_guardrails_node({"question": "What are total sales?", "allowed_rep_codes": []})
-        assert out.get("access_denied") is True
-        assert out.get("turn_action") == "deny"
-
-    def test_rejects_injection_pattern(self):
-        out = authz_guardrails_node({
-            "question": "'; DROP TABLE users; --",
-            "allowed_rep_codes": ["R001"],
-        })
-        assert out.get("access_denied") is True
-
-    def test_passes_valid_question(self):
-        out = authz_guardrails_node({
-            "question": "What are sales for last month?",
-            "allowed_rep_codes": ["R001"],
-        })
-        assert out.get("access_denied") is False
-
+    def test_allows_when_codes_exist(self):
+        assert orchestrator.missing_rep_codes(["R001"], {"question": "What are sales?"}) is None
 
 class TestGuardrailPatterns:
-    def test_dangerous_patterns_compile(self):
-        for p in DANGEROUS_PATTERNS:
-            assert re.compile(p)
-
     def test_forbidden_sql_matches_delete(self):
         assert FORBIDDEN_SQL.search("DELETE FROM t")

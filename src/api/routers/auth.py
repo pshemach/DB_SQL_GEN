@@ -7,7 +7,7 @@ import secrets
 from fastapi import APIRouter, Depends, Header, HTTPException
 from loguru import logger
 
-from ...agents.tools.access_context import (
+from src.services.auth_service.access_context import (
     convert_node_ids_to_codes,
     extract_allowed_node_ids_from_system_login,
     extract_allowed_rep_codes_from_phone_auth,
@@ -18,13 +18,12 @@ from ...agents.tools.access_context import (
     extract_user_role_from_phone_auth,
     extract_user_role_from_system_login,
 )
-from ...agents.tools.chat_memory import chat_memory
-from ...agents.tools.chatbot_auth_client import chatbot_auth_client
-from ..data_models import PhoneLoginRequest, SystemLoginRequest
-from ..dependencies import AUTH_SESSIONS, bearer_token, public_user, require_user
+from src.memory import chat_memory
+from src.services.auth_service.chatbot_auth import chatbot_auth_client
+from src.api.data_models import PhoneLoginRequest, SystemLoginRequest
+from src.api.dependencies import AUTH_SESSIONS, bearer_token, public_user, require_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
 
 def _create_auth_session(payload: dict[str, Any]) -> dict[str, Any]:
     session_id = str(uuid4())
@@ -36,7 +35,6 @@ def _create_auth_session(payload: dict[str, Any]) -> dict[str, Any]:
     token = secrets.token_urlsafe(32)
     AUTH_SESSIONS[token] = {**payload, "session_id": session_id}
     return {"token": token, "user": public_user(AUTH_SESSIONS[token])}
-
 
 @router.post("/phone")
 async def login_phone(request: PhoneLoginRequest):
@@ -70,7 +68,6 @@ async def login_phone(request: PhoneLoginRequest):
     except Exception as e:
         logger.error(f"Phone login failed: {e}")
         raise HTTPException(status_code=500, detail=f"Login failed: {e}")
-
 
 @router.post("/system")
 async def login_system(request: SystemLoginRequest):
@@ -107,11 +104,9 @@ async def login_system(request: SystemLoginRequest):
         logger.error(f"System login failed: {e}")
         raise HTTPException(status_code=500, detail=f"Login failed: {e}")
 
-
 @router.get("/me")
 async def me(user: dict[str, Any] = Depends(require_user)):
     return {"success": True, "user": public_user(user)}
-
 
 @router.post("/logout")
 async def logout(authorization: Optional[str] = Header(default=None)):

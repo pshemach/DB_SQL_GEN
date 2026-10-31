@@ -6,13 +6,10 @@ from typing import Any, Optional
 
 from fastapi import Depends, Header, HTTPException
 
-
 AUTH_SESSIONS: dict[str, dict[str, Any]] = {}
-
 
 def is_rep(role: Optional[str]) -> bool:
     return str(role or "").strip().lower() == "rep"
-
 
 def public_user(user: dict[str, Any]) -> dict[str, Any]:
     return {
@@ -26,7 +23,6 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
         "can_edit_kb": not is_rep(user.get("user_role")),
     }
 
-
 def require_user(authorization: Optional[str] = Header(default=None)) -> dict[str, Any]:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Please login first.")
@@ -37,7 +33,6 @@ def require_user(authorization: Optional[str] = Header(default=None)) -> dict[st
         raise HTTPException(status_code=401, detail="Session expired. Please login again.")
     return user
 
-
 def require_knowledge_admin(user: dict[str, Any] = Depends(require_user)) -> dict[str, Any]:
     if is_rep(user.get("user_role")):
         raise HTTPException(
@@ -45,7 +40,6 @@ def require_knowledge_admin(user: dict[str, Any] = Depends(require_user)) -> dic
             detail="Knowledge base editing is not available for Rep users.",
         )
     return user
-
 
 def bearer_token(authorization: Optional[str]) -> Optional[str]:
     if authorization and authorization.lower().startswith("bearer "):

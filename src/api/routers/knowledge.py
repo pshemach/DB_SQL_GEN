@@ -2,17 +2,15 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ...agents.tools.business_knowledge_store import business_knowledge_store
-from ..data_models import KnowledgeDefinitionRequest
-from ..dependencies import require_knowledge_admin
+from src.services.chat_service.knowledge_store import business_knowledge_store
+from src.api.data_models import KnowledgeDefinitionRequest
+from src.api.dependencies import require_knowledge_admin
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
-
 
 @router.get("/definitions")
 async def list_definitions(_user: dict[str, Any] = Depends(require_knowledge_admin)):
     return {"success": True, "definitions": business_knowledge_store.list_definitions() or {}}
-
 
 @router.post("/reload")
 async def reload_definitions(_user: dict[str, Any] = Depends(require_knowledge_admin)):
@@ -22,7 +20,6 @@ async def reload_definitions(_user: dict[str, Any] = Depends(require_knowledge_a
         "message": "Knowledge base reloaded",
         "definitions": business_knowledge_store.list_definitions(),
     }
-
 
 @router.post("/definitions")
 async def upsert_definition(
@@ -51,7 +48,6 @@ async def upsert_definition(
         "key": saved_key,
         "definitions": business_knowledge_store.list_definitions(),
     }
-
 
 @router.delete("/definitions/{key}")
 async def delete_definition(key: str, _user: dict[str, Any] = Depends(require_knowledge_admin)):

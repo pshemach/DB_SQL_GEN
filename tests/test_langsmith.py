@@ -31,14 +31,12 @@ print("\n" + "=" * 60)
 print("🧪 RUNNING TRACED FUNCTIONS TEST")
 print("=" * 60 + "\n")
 
-
 @traceable(name="test_sync_function", run_type="chain", tags=["test", "sync"])
 def test_sync_function(text: str) -> str:
     """Simple synchronous traced function."""
     print(f"  ✓ test_sync_function called with: '{text}'")
     time.sleep(0.5)  # Simulate work
     return f"Processed: {text}"
-
 
 @traceable(name="test_async_function", run_type="chain", tags=["test", "async"])
 async def test_async_function(text: str) -> str:
@@ -47,7 +45,6 @@ async def test_async_function(text: str) -> str:
     await asyncio.sleep(0.5)  # Simulate work
     return f"Async Processed: {text}"
 
-
 @traceable(name="test_nested_trace", run_type="chain", tags=["test", "nested"])
 def test_nested_trace():
     """Nested traced function calls."""
@@ -55,7 +52,6 @@ def test_nested_trace():
     result1 = test_sync_function("first call")
     result2 = test_sync_function("second call")
     return f"Nested results: {result1}, {result2}"
-
 
 async def main():
     """Run all tests."""
@@ -79,7 +75,6 @@ async def main():
     print(f"   URL: {os.getenv('LANGCHAIN_ENDPOINT')}/projects")
     print("\n⏱️  Traces may take 5-10 seconds to appear in LangSmith dashboard.")
     print("   Look for runs with tags: 'test', 'sync', 'async', 'nested'\n")
-
 
 if __name__ == "__main__":
     try:

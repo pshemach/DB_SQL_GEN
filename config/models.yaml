@@ -1,0 +1,18 @@
+# Model names by provider and tier.
+# Override with OPENAI_MODEL_FAST, ANTHROPIC_MODEL_FAST,
+# GROQ_MODEL_REASONING, GROQ_MODEL_FAST, or EMBEDDING_MODEL in .env.
+
+openai:
+  chat:
+    fast: gpt-4o-mini
+  embedding:
+    small: text-embedding-3-small
+
+anthropic:
+  chat:
+    fast: claude-opus-4-5
+
+groq:
+  chat:
+    reasoning: llama-3.3-70b-versatile
+    fast: llama-3.1-8b-instant

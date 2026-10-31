@@ -4,18 +4,17 @@ from fastapi import APIRouter, HTTPException
 from langsmith import traceable
 from loguru import logger
 
-from ...agents.tools.access_context import (
+from src.services.auth_service.access_context import (
     extract_allowed_rep_codes_from_phone_auth,
     extract_user_id_from_phone_auth,
     extract_user_role_from_phone_auth,
 )
-from ...agents.tools.chat_memory import chat_memory
-from ...agents.tools.chatbot_auth_client import chatbot_auth_client
-from ..data_models import QueryRequest, QueryResponse
-from ..services.conversation import execute_turn
+from src.memory import chat_memory
+from src.services.auth_service.chatbot_auth import chatbot_auth_client
+from src.api.data_models import QueryRequest, QueryResponse
+from src.api.services.conversation import execute_turn
 
 router = APIRouter(tags=["query"])
-
 
 @traceable(name="text_to_sql_query", run_type="chain", tags=["api", "query-execution"])
 @router.post("/query", response_model=QueryResponse)
@@ -43,7 +42,6 @@ async def query_database(request: QueryRequest):
             user_role=user_role,
             allowed_rep_codes=allowed_rep_codes,
             turn_type=turn_type,
-            clarification_answer=request.clarification_answer,
         )
 
         return QueryResponse(

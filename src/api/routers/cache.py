@@ -1,10 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
-from ...agents.tools import semantic_cache
+from src.services.chat_service.semantic_cache import semantic_cache
 
 router = APIRouter(tags=["cache"])
-
 
 @router.delete("/cache")
 async def clear_cache():
