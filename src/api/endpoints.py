@@ -8,9 +8,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
-from ..config import settings
-from ..core import db_manager
-from .routers import auth, cache, conversations, examples, feedback, health, knowledge, query, schema
+from src.infrastructure.db import db_manager
+from src.api.routers import auth, cache, conversations, examples, feedback, health, knowledge, query, schema
+from src.infrastructure.config import (
+    DATABASE_URI,
+    ENABLE_DYNAMIC_FEW_SHOT,
+    ENABLE_SEMANTIC_CACHE,
+    validate,
+)
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 
@@ -38,7 +43,6 @@ app.include_router(examples.router)
 app.include_router(cache.router)
 app.include_router(query.router)
 
-
 @app.get("/app", include_in_schema=False)
 async def serve_app():
     index = WEB_DIR / "index.html"
@@ -46,23 +50,21 @@ async def serve_app():
         raise HTTPException(status_code=404, detail="Frontend not found. Missing web/index.html")
     return FileResponse(index)
 
-
 static_dir = WEB_DIR / "static"
 static_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-
 @app.on_event("startup")
 async def startup_event():
+    validate()
     logger.info("Starting Text-to-SQL Agent API")
-    logger.info(f"Database: {settings.database_uri}")
+    logger.info(f"Database: {DATABASE_URI}")
     logger.info(
-        f"Semantic Cache: {'Enabled' if settings.enable_semantic_cache else 'Disabled'}"
+        f"Semantic Cache: {'Enabled' if ENABLE_SEMANTIC_CACHE else 'Disabled'}"
     )
     logger.info(
-        f"Few-Shot Learning: {'Enabled' if settings.enable_dynamic_few_shot else 'Disabled'}"
+        f"Few-Shot Learning: {'Enabled' if ENABLE_DYNAMIC_FEW_SHOT else 'Disabled'}"
     )
-
 
 @app.on_event("shutdown")
 async def shutdown_event():

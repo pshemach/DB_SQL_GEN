@@ -5,10 +5,9 @@ import pandas as pd
 import plotly.express as px
 from loguru import logger
 
-from src.agents.graph import run_agent_async
-from src.core.database import db_manager
-from src.agents.tools.business_knowledge_store import business_knowledge_store
-
+from src.agents.orchestrator import run_agent_async
+from src.infrastructure.db import db_manager
+from src.services.chat_service.knowledge_store import business_knowledge_store
 
 # =============================
 # PAGE CONFIG
@@ -165,7 +164,6 @@ if "kb_editor_mode" not in st.session_state:
 if "selected_kpi" not in st.session_state:
     st.session_state.selected_kpi = None
 
-
 # =============================
 # HELPERS
 # =============================
@@ -177,7 +175,6 @@ def run_async_agent(question: str, session_id: str):
             session_id=session_id
         )
     )
-
 
 # def add_message(role: str, content: str, msg_type: str = "message"):
 #     st.session_state.messages.append({
@@ -246,10 +243,8 @@ def result_to_dataframe(result: dict) -> pd.DataFrame:
         logger.warning(f"Failed to convert query_result to DataFrame: {e}")
         return pd.DataFrame()
 
-
 def get_numeric_columns(df: pd.DataFrame):
     return df.select_dtypes(include=["number"]).columns.tolist()
-
 
 def get_text_columns(df: pd.DataFrame):
     return df.select_dtypes(exclude=["number"]).columns.tolist()
@@ -683,7 +678,6 @@ with st.sidebar:
     st.header("📊 Stats")
     st.metric("Queries", st.session_state.query_count)
 
-
 # =============================
 # CHAT HISTORY
 # =============================
@@ -743,7 +737,6 @@ if user_question:
                 error_text = f"Unexpected error: {str(e)}"
                 st.error(error_text)
                 add_message("assistant", error_text, "error")
-
 
 # =============================
 # RESULT DETAILS

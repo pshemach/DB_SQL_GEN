@@ -8,12 +8,13 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from ...agents.graph import run_agent_async, run_agent_stream
-from ...agents.tools.chat_memory import chat_memory
-from ...guardrails.pipeline import guardrail_pipeline
-from ...utils.chart_request import detect_requested_chart_type
-from ...utils.serialization import serialize_query_result
+from src.agents.orchestrator import run_agent_async, run_agent_stream
+from src.memory import chat_memory
+from src.agents.guardrail import Guardrail
 
+guardrail_pipeline = Guardrail()
+from src.agents.formatter import detect_requested_chart_type
+from src.infrastructure.utils import serialize_query_result
 
 def format_agent_response(result: dict) -> str:
     if result.get("waiting_for_user"):
@@ -27,7 +28,6 @@ def format_agent_response(result: dict) -> str:
     if result.get("sql_query"):
         return "SQL generated successfully."
     return "Done."
-
 
 def charts_for_message(result: dict, question: str) -> list[dict[str, Any]]:
     requested = result.get("requested_chart_type") or detect_requested_chart_type(question)
@@ -47,7 +47,6 @@ def charts_for_message(result: dict, question: str) -> list[dict[str, Any]]:
         })
     return charts
 
-
 def strip_heavy_visualizations(visualizations: Optional[list]) -> list:
     cleaned = []
     for viz in visualizations or []:
@@ -57,7 +56,6 @@ def strip_heavy_visualizations(visualizations: Optional[list]) -> list:
         item.pop("chart_image_base64", None)
         cleaned.append(item)
     return cleaned
-
 
 def build_turn_response(result: dict, question: str, session_id: str) -> dict[str, Any]:
     query_result = serialize_query_result(result.get("query_result"))
@@ -86,7 +84,6 @@ def build_turn_response(result: dict, question: str, session_id: str) -> dict[st
         "turn_type": result.get("turn_type"),
     }
 
-
 async def execute_turn(
     *,
     question: str,
@@ -95,7 +92,6 @@ async def execute_turn(
     user_role: Optional[str] = None,
     allowed_rep_codes: Optional[list] = None,
     turn_type: str,
-    clarification_answer: Optional[str] = None,
 ) -> dict[str, Any]:
     guardrail_context = {
         "conversation_history": [],
@@ -117,12 +113,10 @@ async def execute_turn(
         session_id=session_id,
         user_role=user_role,
         allowed_rep_codes=allowed_rep_codes or [],
-        clarification_answer=clarification_answer,
         user_id=user_id,
         turn_type=turn_type,
     )
     return build_turn_response(result, question, session_id)
-
 
 async def iter_answer_tokens(text: str, chunk_size: int = 28) -> AsyncIterator[str]:
     if not text:
@@ -141,7 +135,6 @@ async def iter_answer_tokens(text: str, chunk_size: int = 28) -> AsyncIterator[s
         index = end
         await asyncio.sleep(0.018)
 
-
 def _guardrail_failure(error_text: str, session_id: str, turn_type: str) -> dict[str, Any]:
     return {
         "success": False,
@@ -155,7 +148,6 @@ def _guardrail_failure(error_text: str, session_id: str, turn_type: str) -> dict
         "turn_type": turn_type,
     }
 
-
 async def stream_turn(
     *,
     question: str,
@@ -164,7 +156,6 @@ async def stream_turn(
     user_role: Optional[str] = None,
     allowed_rep_codes: Optional[list] = None,
     turn_type: str,
-    clarification_answer: Optional[str] = None,
 ) -> AsyncIterator[dict[str, Any]]:
     yield {"type": "status", "text": "Thinking..."}
 
@@ -194,7 +185,6 @@ async def stream_turn(
         session_id=session_id,
         user_role=user_role,
         allowed_rep_codes=allowed_rep_codes or [],
-        clarification_answer=clarification_answer,
         user_id=user_id,
         turn_type=turn_type,
     ):

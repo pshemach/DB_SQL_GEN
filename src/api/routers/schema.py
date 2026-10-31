@@ -1,10 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
-from ...core import db_manager
+from src.infrastructure.db import db_manager
 
 router = APIRouter(prefix="/schema", tags=["schema"])
-
 
 @router.get("/tables")
 async def get_tables():
@@ -14,7 +13,6 @@ async def get_tables():
     except Exception as e:
         logger.error(f"Error fetching tables: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/table/{table_name}")
 async def get_table_schema(table_name: str):

@@ -11,10 +11,8 @@ from qdrant_client.http.models import (
     FieldCondition,
     MatchValue,
 )
-from src.config import settings
+from src.infrastructure.config import QDRANT_API_KEY, QDRANT_URL
 
-QDRANT_API_KEY = settings.qdrant_api_key
-QDRANT_URL = settings.qdrant_url
 QDRANT_COLLECTION_NAME = ""
 EMBEDDING_DIM = 1536
 
@@ -54,11 +52,9 @@ def get_qdrant_client() -> QdrantClient:
     logger.info("Connected to Qdrant Cloud at {}", QDRANT_URL)
     return _qdrant_client
 
-
 # ---------------------------------------------------------------------------
 # Collection management
 # ---------------------------------------------------------------------------
-
 
 def ensure_collection(
     collection_name: str = QDRANT_COLLECTION_NAME,
@@ -117,7 +113,6 @@ def collection_info(collection_name:str=QDRANT_COLLECTION_NAME) -> Dict[str, Any
 # ---------------------------------------------------------------------------
 # Upsert
 # ---------------------------------------------------------------------------
-
 
 def upsert_chunks(
     chunks: List[Dict[str, Any]],
@@ -182,11 +177,9 @@ def upsert_chunks(
     logger.info("Upserted {} points into '{}'", total, collection_name)
     return total
 
-
 # ---------------------------------------------------------------------------
 # Search
 # ---------------------------------------------------------------------------
-
 
 def search_chunks(
     query_vector: List[float],
@@ -250,11 +243,9 @@ def search_chunks(
 
     return results
 
-
 # ---------------------------------------------------------------------------
 # Convenience — count
 # ---------------------------------------------------------------------------
-
 
 def count_points(collection_name: str = QDRANT_COLLECTION_NAME) -> int:
     """Return the number of points in the collection."""
@@ -262,18 +253,15 @@ def count_points(collection_name: str = QDRANT_COLLECTION_NAME) -> int:
     info = client.get_collection(collection_name)
     return info.points_count or 0
 
-
 def collection_exists(collection_name: str = QDRANT_COLLECTION_NAME) -> bool:
     """Check whether *collection_name* exists in Qdrant."""
     client = get_qdrant_client()
     existing = [c.name for c in client.get_collections().collections]
     return collection_name in existing
 
-
 # ---------------------------------------------------------------------------
 # Auto-ingest — ensures the KB is populated before the agent starts
 # ---------------------------------------------------------------------------
-
 
 # def ensure_kb_ingested(
 #     collection_name: str = QDRANT_COLLECTION_NAME,
