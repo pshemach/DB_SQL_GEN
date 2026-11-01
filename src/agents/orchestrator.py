@@ -6,8 +6,8 @@ One class owns one LangGraph. Large specialists stay in their own modules
 SQL generation is a path on this graph, not a nested subgraph.
 
 Flow:
-    recall memory → cache → supervisor
-        → security → plan → schema → SQL → validate → execute
+    recall memory → guardrail → cache → supervisor
+        → security → plan → schema retrieval → SQL → validate → execute
         | transform previous | direct reply | deny
         → format → save memory
 """
@@ -18,7 +18,6 @@ import os
 import re
 import time
 from collections.abc import AsyncIterator
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
@@ -28,6 +27,7 @@ from loguru import logger
 from src.agents.critic import CriticAgent
 from src.agents.formatter import ResultFormatterAgent
 from src.agents.generator import SQLGeneratorAgent
+from src.agents.guardrail import Guardrail
 from src.agents.planner import PlannerAgent
 from src.agents.prompts.agent_prompts import (
     build_direct_prompt,
@@ -76,11 +76,12 @@ from src.infrastructure.utils import (
 NODE_STATUS = {
     "init": "Starting...",
     "memory_loader": "Loading conversation...",
+    "guardrail": "Checking your question...",
     "semantic_cache": "Checking previous answers...",
     "supervisor": "Understanding your question...",
     "security_policy": "Checking row access...",
     "planner": "Planning the query...",
-    "parallel_retrieval": "Selecting tables...",
+    "schema_retrieval": "Selecting tables...",
     "generator": "Writing SQL...",
     "static_validator": "Checking the SQL...",
     "pre_exec_critic": "Reviewing the SQL...",
@@ -133,6 +134,7 @@ class AgentOrchestrator:
         _setup_langsmith()
         self.llm_direct = llm_direct
         self.supervisor = RouterAgent(llm_router)
+        self.guardrail = Guardrail(llm_router)
         self.planner = PlannerAgent(llm_planner)
         self.schema_linker = SchemaLinkerAgent(llm_schema_selection)
         self.generator = SQLGeneratorAgent(llm_generator)
@@ -150,6 +152,12 @@ class AgentOrchestrator:
         if state.get("cache_hit"):
             return "formatter"
         return "supervisor"
+
+
+    def route_after_guardrail(self, state: AgentState) -> Literal["semantic_cache", "safe_response"]:
+        if state.get("error_type") == "guardrail_rejection":
+            return "safe_response"
+        return "semantic_cache"
 
 
     def supervisor_routing(
@@ -322,6 +330,40 @@ class AgentOrchestrator:
             )
 
         return {}
+
+    def guardrail_node(self, state: AgentState) -> dict:
+        """Scope, injection, and rate checks. Failures skip SQL and go to a text reply."""
+        t0 = time.time()
+        result = self.guardrail.check(
+            state.get("question") or "",
+            {
+                "conversation_history": state.get("messages") or [],
+                "user_role": state.get("user_role"),
+                "session_id": state.get("session_id") or "anonymous",
+            },
+        )
+        metrics = record_node_timing(
+            state.get("metrics") or init_metrics(),
+            "guardrail",
+            (time.time() - t0) * 1000,
+        )
+        reason = result.get("reason") or ""
+        if not result.get("passed", False):
+            logger.warning(f"Query rejected by guardrails: {reason}")
+            return {
+                "guardrail_passed": False,
+                "guardrail_reason": reason,
+                "error": reason or "Query rejected by safety checks",
+                "error_type": "guardrail_rejection",
+                "should_retry": False,
+                "turn_action": "deny",
+                "metrics": metrics,
+            }
+        return {
+            "guardrail_passed": True,
+            "guardrail_reason": reason or "In scope",
+            "metrics": metrics,
+        }
 
     def memory_loader_node(self, state: dict) -> dict:
         """Load session memory and prior turn state."""
@@ -613,6 +655,7 @@ class AgentOrchestrator:
 
         workflow.add_node("init", self.add_start_time)
         workflow.add_node("memory_loader", self.memory_loader_node)
+        workflow.add_node("guardrail", self.guardrail_node)
         workflow.add_node("semantic_cache", self.semantic_cache_lookup_node)
         workflow.add_node("supervisor", self.supervisor_node)
         workflow.add_node("transform_result", self.transform_result_node)
@@ -620,7 +663,7 @@ class AgentOrchestrator:
         workflow.add_node("direct", self.direct_node)
         workflow.add_node("security_policy", self.security_policy_node)
         workflow.add_node("planner", self.planner_node)
-        workflow.add_node("parallel_retrieval", self.parallel_retrieval_node)
+        workflow.add_node("schema_retrieval", self.schema_retrieval_node)
         workflow.add_node("generator", self.generator_node)
         workflow.add_node("static_validator", self.static_validator_node)
         workflow.add_node("pre_exec_critic", self.pre_exec_critic_node)
@@ -633,7 +676,12 @@ class AgentOrchestrator:
 
         workflow.set_entry_point("init")
         workflow.add_edge("init", "memory_loader")
-        workflow.add_edge("memory_loader", "semantic_cache")
+        workflow.add_edge("memory_loader", "guardrail")
+        workflow.add_conditional_edges(
+            "guardrail",
+            self.route_after_guardrail,
+            {"semantic_cache": "semantic_cache", "safe_response": "safe_response"},
+        )
         workflow.add_conditional_edges(
             "semantic_cache",
             self.route_after_cache,
@@ -660,8 +708,8 @@ class AgentOrchestrator:
             self.route_after_security,
             {"planner": "planner", "formatter": "formatter"},
         )
-        workflow.add_edge("planner", "parallel_retrieval")
-        workflow.add_edge("parallel_retrieval", "generator")
+        workflow.add_edge("planner", "schema_retrieval")
+        workflow.add_edge("schema_retrieval", "generator")
         workflow.add_edge("generator", "static_validator")
         workflow.add_conditional_edges(
             "static_validator",
@@ -702,31 +750,25 @@ class AgentOrchestrator:
     def planner_node(self, state: AgentState) -> dict:
         return self.planner.plan(self._with_sql_question(state))
 
-    def parallel_retrieval_node(self, state: AgentState) -> dict:
-        """Fetch schema context and few-shot examples in parallel."""
+    def schema_retrieval_node(self, state: AgentState) -> dict:
+        """Fetch schema context and few-shot examples on the graph thread."""
         t0 = time.time()
         question = self._sql_question(state)
         payload = self._with_sql_question(state)
-        linker = self.schema_linker
+        schema_out = self.schema_linker.retrieve_schema(payload)
 
-        def _schema():
-            return linker.retrieve_schema(payload)
-
-        def _few_shot():
-            if not ENABLE_DYNAMIC_FEW_SHOT:
-                return {"few_shot_examples": []}
+        few_out = {"few_shot_examples": []}
+        if ENABLE_DYNAMIC_FEW_SHOT:
             try:
-                examples = few_shot_retriever.retrieve(question, k=FEW_SHOT_EXAMPLES_COUNT)
-                return {"few_shot_examples": examples}
+                few_out = {
+                    "few_shot_examples": few_shot_retriever.retrieve(
+                        question, k=FEW_SHOT_EXAMPLES_COUNT
+                    )
+                }
             except Exception as exc:
                 logger.warning(f"Few-shot retrieval failed: {exc}")
-                return {"few_shot_examples": []}
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            schema_out = pool.submit(_schema).result()
-            few_out = pool.submit(_few_shot).result()
-
-        logger.info(f"Parallel retrieval completed in {(time.time() - t0) * 1000:.0f}ms")
+        logger.info(f"Schema retrieval completed in {(time.time() - t0) * 1000:.0f}ms")
         return {**schema_out, **few_out}
 
     def generator_node(self, state: AgentState) -> dict:
@@ -831,6 +873,8 @@ def _initial_state(
         "memory_context": "",
         "turn_action": None,
         "question_description": None,
+        "guardrail_passed": None,
+        "guardrail_reason": None,
         "metrics": init_metrics(),
         "plan": None,
         "relevant_tables": None,
@@ -916,6 +960,7 @@ def run_agent(question: str, **kwargs) -> dict:
         return {**initial_state, "error": str(exc), "should_retry": False}
 
 
+@traceable(name="sales-sql-agent-production", run_type="chain", tags=["text-to-sql", "production"])
 async def run_agent_async(
     question: str,
     session_id: str | None = None,
@@ -947,6 +992,7 @@ def _normalize_stream_item(item: Any) -> tuple[str, Any]:
     return "updates", item
 
 
+@traceable(name="sales-sql-agent-production", run_type="chain", tags=["text-to-sql", "production"])
 async def run_agent_stream(
     question: str,
     session_id: str | None = None,

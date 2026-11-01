@@ -54,14 +54,14 @@ def is_social_message(question: str) -> bool:
 
 
 class Guardrail:
-    """Input and domain filter used before the orchestrator runs."""
+    """Input and domain filter used as a node in the orchestrator graph."""
 
     def __init__(self, llm: Any = None) -> None:
         self.llm = llm or get_router_llm()
         self._requests: dict[str, list[datetime]] = {}
 
-    async def evaluate(self, question: str, context: dict | None = None) -> dict:
-        """Return ``{"passed": bool, "reason": str}`` for the API layer."""
+    def check(self, question: str, context: dict | None = None) -> dict:
+        """Return ``{"passed": bool, "reason": str}`` for the graph node."""
         context = context or {}
         text = question or ""
         stripped = text.strip()
@@ -94,6 +94,10 @@ class Guardrail:
                 or "This question appears to be outside the scope of sales analytics. Please ask about sales metrics, KPIs, or rep performance.",
             }
         return {"passed": True, "reason": reason or "In scope"}
+
+    async def evaluate(self, question: str, context: dict | None = None) -> dict:
+        """Async wrapper around :meth:`check`."""
+        return self.check(question, context)
 
     def _within_rate_limit(self, session_id: str) -> bool:
         cutoff = datetime.now() - timedelta(seconds=_RATE_WINDOW_SECONDS)

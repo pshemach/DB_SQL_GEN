@@ -944,9 +944,14 @@
     });
 
     el("new-chat-btn").addEventListener("click", async () => {
+      const newSessionId = uuid();
       try {
-        const result = await api("/conversations", { method: "POST", body: JSON.stringify({}) });
-        state.sessionId = result.session_id;
+        const result = await api("/conversations", {
+          method: "POST",
+          body: JSON.stringify({ session_id: newSessionId }),
+        });
+        state.sessionId = result.session_id || newSessionId;
+        if (state.user) state.user.session_id = state.sessionId;
         state.messages = [];
         state.lastResult = null;
         state.queryCount = 0;

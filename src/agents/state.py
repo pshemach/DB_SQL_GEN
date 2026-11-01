@@ -22,6 +22,8 @@ class AgentState(TypedDict, total=False):
     # What this turn should do
     turn_action: Optional[str]
     metrics: Optional[Dict[str, Any]]
+    guardrail_passed: Optional[bool]
+    guardrail_reason: Optional[str]
 
     # Row access
     allowed_rep_codes: Optional[List[str]]
