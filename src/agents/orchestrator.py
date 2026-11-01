@@ -63,9 +63,6 @@ from src.infrastructure.llm import (
     get_schema_selection_llm,
 )
 from src.infrastructure.utils import (
-    finalize_metrics,
-    init_metrics,
-    record_node_timing,
     sanitize_state,
     serialize_query_result,
 )
@@ -242,7 +239,6 @@ class AgentOrchestrator:
 
     def memory_loader_node(self, state: dict) -> dict:
         """Load session memory and prior turn state."""
-        t0 = time.time()
         session_id = state["session_id"]
         previous_state = chat_memory.get_last_state(session_id)
 
@@ -259,35 +255,22 @@ class AgentOrchestrator:
                 user_role=state.get("user_role"),
             )
 
-        metrics = record_node_timing(
-            state.get("metrics") or init_metrics(),
-            "memory_loader",
-            (time.time() - t0) * 1000,
-        )
-
         return {
             "previous_state": previous_state,
             "messages": chat_memory.get_session(session_id).get("messages", []),
             "memory_context": chat_memory.build_memory_context(session_id),
             "user_message_id": user_message_id,
             "user_message_saved": True,
-            "metrics": metrics,
         }
 
     def guardrail_node(self, state: AgentState) -> dict:
         """Scope, injection, and rate checks. Failures skip SQL and go to a text reply."""
-        t0 = time.time()
         result = self.guardrail.check(
             state.get("question") or "",
             {
                 "conversation_history": state.get("memory_context") or [],
                 "user_role": state.get("user_role"),
             },
-        )
-        metrics = record_node_timing(
-            state.get("metrics") or init_metrics(),
-            "guardrail",
-            (time.time() - t0) * 1000,
         )
         reason = result.get("reason") or ""
         if not result.get("passed", False):
@@ -297,32 +280,23 @@ class AgentOrchestrator:
                 "guardrail_reason": reason,
                 "should_retry": False,
                 "turn_action": "deny",
-                "metrics": metrics,
             }
         return {
             "guardrail_passed": True,
             "guardrail_reason": reason or "In scope",
-            "metrics": metrics,
         }
 
     def semantic_cache_lookup_node(self, state: AgentState) -> dict:
         """Early semantic cache exit before any schema-bearing LLM call."""
-        t0 = time.time()
         if not ENABLE_SEMANTIC_CACHE:
             return {"cache_hit": False}
 
         cached = semantic_cache.get(state["question"])
-        metrics = record_node_timing(
-            state.get("metrics") or init_metrics(),
-            "semantic_cache_lookup",
-            (time.time() - t0) * 1000,
-        )
 
         if not cached:
-            return {"cache_hit": False, "metrics": metrics}
+            return {"cache_hit": False}
 
         logger.info("Semantic cache HIT — skipping SQL generation")
-        metrics["cache_hit"] = True
         return sanitize_state({
             "cache_hit": True,
             "turn_action": "cache_hit",
@@ -332,7 +306,6 @@ class AgentOrchestrator:
             "plan": cached.get("plan"),
             "relevant_tables": cached.get("relevant_tables"),
             "error": None,
-            "metrics": metrics,
         })
 
     def supervisor_node(self, state: AgentState) -> dict:
@@ -415,7 +388,6 @@ class AgentOrchestrator:
 
     def schema_retrieval_node(self, state: AgentState) -> dict:
         """Fetch schema context and few-shot examples on the graph thread."""
-        t0 = time.time()
         question = self._sql_question(state)
         payload = self._with_sql_question(state)
         schema_out = self.schema_linker.retrieve_schema(payload)
@@ -430,8 +402,6 @@ class AgentOrchestrator:
                 }
             except Exception as exc:
                 logger.warning(f"Few-shot retrieval failed: {exc}")
-
-        logger.info(f"Schema retrieval completed in {(time.time() - t0) * 1000:.0f}ms")
         return {**schema_out, **few_out}
 
     def generator_node(self, state: AgentState) -> dict:
@@ -845,7 +815,6 @@ def _initial_state(
         "question_description": None,
         "guardrail_passed": None,
         "guardrail_reason": None,
-        "metrics": init_metrics(),
         "plan": None,
         "relevant_tables": None,
         "schema_context": None,
@@ -873,9 +842,7 @@ def _initial_state(
 
 def _finalize(result: dict) -> dict:
     if result.get("start_time"):
-        total = (time.time() - result["start_time"]) * 1000
-        result["total_latency_ms"] = total
-        result["metrics"] = finalize_metrics(result.get("metrics"), total_latency_ms=total)
+        result["total_latency_ms"] = (time.time() - result["start_time"]) * 1000
     if result.get("error"):
         logger.error(f"Agent failed: {result['error']}")
     return sanitize_state(result)

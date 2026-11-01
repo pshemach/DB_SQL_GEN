@@ -14,7 +14,7 @@ from src.agents.state import AgentState
 from src.services.chat_service.knowledge_retriever import business_knowledge_retriever
 from src.services.chat_service.knowledge_store import business_knowledge_store
 from src.infrastructure.llm import get_router_llm
-from src.infrastructure.utils import extract_json, set_router_action
+from src.infrastructure.utils import extract_json
 
 
 class RouterAgent:
@@ -24,7 +24,6 @@ class RouterAgent:
     def route(self, state: AgentState) -> dict[str, Any]:
         logger.info("Supervisor running...")
         question = state["question"]
-        metrics = state.get("metrics")
 
         retrieved_knowledge = self._retrieve_knowledge(question)
         memory_context = state.get("memory_context") or ""
@@ -63,7 +62,6 @@ class RouterAgent:
             **cleaned_state_updates,
             "turn_action": action,
             "question_description": result.get("question_description") or question,
-            "metrics": set_router_action(metrics, action),
         }
 
         if result.get("question_description"):

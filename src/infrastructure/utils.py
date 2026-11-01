@@ -1,10 +1,9 @@
-"""Shared helpers: LLM JSON parsing, graph metrics, and JSON-safe values."""
+"""Shared helpers: LLM JSON parsing and JSON-safe values."""
 
 from __future__ import annotations
 
 import json
 import re
-import time
 from datetime import date, datetime, time as time_of_day
 from decimal import Decimal
 from typing import Any
@@ -17,38 +16,6 @@ def extract_json(text: str) -> dict:
     if not match:
         raise ValueError(f"No JSON object found: {text}")
     return json.loads(match.group(0))
-
-
-def init_metrics() -> dict[str, Any]:
-    return {
-        "cache_hit": False,
-        "router_action": None,
-        "sql_retries": 0,
-        "node_timings_ms": {},
-        "started_at": time.time(),
-    }
-
-
-def record_node_timing(metrics: dict | None, node_name: str, elapsed_ms: float) -> dict:
-    current = metrics or init_metrics()
-    timings = current.setdefault("node_timings_ms", {})
-    timings[node_name] = round(elapsed_ms, 2)
-    return current
-
-
-def set_router_action(metrics: dict | None, action: str) -> dict:
-    current = metrics or init_metrics()
-    current["router_action"] = action
-    return current
-
-
-def finalize_metrics(metrics: dict | None, total_latency_ms: float | None = None) -> dict:
-    current = metrics or init_metrics()
-    if total_latency_ms is not None:
-        current["total_latency_ms"] = round(total_latency_ms, 2)
-    if current.get("started_at"):
-        current["wall_clock_ms"] = round((time.time() - current["started_at"]) * 1000, 2)
-    return current
 
 
 def _is_sqlalchemy_type(value: Any) -> bool:
