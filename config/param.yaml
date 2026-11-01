@@ -2,6 +2,10 @@
 # Non-secret values live here. API keys and URIs live only in .env.
 # Environment variables override these values when they are set.
 
+api:
+  rate_limit: 100
+  rate_window_seconds: 60
+
 llm:
   temperature: 0.0
 

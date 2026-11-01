@@ -50,6 +50,7 @@ from src.infrastructure.config import (
     LANGCHAIN_ENDPOINT,
     LANGCHAIN_PROJECT,
     LANGCHAIN_TRACING_V2,
+    FALLBACK_DIRECT_MESSAGE,
     MAX_ITERATIONS,
     SQL_MAX_ROWS,
 )
@@ -121,11 +122,6 @@ def _setup_langsmith() -> None:
 
 class AgentOrchestrator:
     """One class owns the graph and the specialist agents."""
-
-    _DIRECT_FALLBACK = (
-        "I can help with net sales, targets, achievement, reps, customers, products, routes, and outlets."
-    )
-
     def __init__(
         self,
         llm_router: Any,
@@ -286,7 +282,6 @@ class AgentOrchestrator:
             {
                 "conversation_history": state.get("messages") or [],
                 "user_role": state.get("user_role"),
-                "session_id": state.get("session_id") or "anonymous",
             },
         )
         metrics = record_node_timing(
@@ -353,11 +348,10 @@ class AgentOrchestrator:
                 state.get("memory_context") or "",
             )
             response = self.llm_direct.invoke(chat_messages(system_prompt, user_prompt))
-            msg = response.content if hasattr(response, "content") else str(response)
-            msg = (msg or "").strip() or self._DIRECT_FALLBACK
+            msg = response.content.strip() or FALLBACK_DIRECT_MESSAGE
         except Exception as exc:
             logger.error(f"Direct reply failed: {exc}")
-            msg = self._DIRECT_FALLBACK
+            msg = FALLBACK_DIRECT_MESSAGE
         return {
             "turn_action": "direct",
             "final_answer": msg,
@@ -647,7 +641,7 @@ class AgentOrchestrator:
         }
 
     def route_after_guardrail(self, state: AgentState) -> Literal["semantic_cache", "safe_response"]:
-        if state.get("error_type") == "guardrail_rejection":
+        if state.get("guardrail_passed") == False:
             return "safe_response"
         return "semantic_cache"
 

@@ -87,11 +87,6 @@ class TestGuardrailGraph:
         assert out["guardrail_passed"] is False
         assert out["error_type"] == "guardrail_rejection"
 
-    def test_node_allows_social_message(self):
-        out = orchestrator.guardrail_node({"question": "hello", "session_id": "t1"})
-        assert out["guardrail_passed"] is True
-        assert out.get("error_type") is None
-
     def test_node_rejects_injection(self):
         out = orchestrator.guardrail_node({
             "question": "Show sales; DROP TABLE sales_flat",

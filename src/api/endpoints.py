@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from src.infrastructure.db import db_manager
+from src.api.rate_limit import RateLimitMiddleware
 from src.api.routers import auth, cache, conversations, examples, feedback, health, knowledge, query, schema
 from src.infrastructure.config import (
     DATABASE_URI,
@@ -32,6 +33,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitMiddleware)
 
 app.include_router(health.router)
 app.include_router(auth.router)
