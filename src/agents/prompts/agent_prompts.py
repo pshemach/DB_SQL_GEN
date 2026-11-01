@@ -63,7 +63,7 @@ If unsure and it is not clearly sales-force data, mark OUT_OF_SCOPE.
 
 JSON only:
 {{
-    "classification": "IN_SCOPE | OUT_OF_SCOPE",
+    "classification": "in_scope | out_of_scope",
     "confidence": 0.95,
     "reason": "brief reason",
     "inferred_topic": "topic"
@@ -108,15 +108,15 @@ def build_domain_classifier_prompt(
 ORCHESTRATOR_SYSTEM_PROMPT = """\
 Choose the next action. Write question_description so later steps can answer without chat history. Resolve pronouns from memory. If the user supplied a definition, merge it into the original request.
 
-run_sql — complete sales question; put known terms in question_description
-transform_previous — sort, filter, sum, or explain columns already in the previous result
+run_sql — complete sales question; when need to generate SQL analysis on SFA data, put known terms in question_description.
+transform_previous — sort, filter, sum, or explain columns already in the previous result when no need to generate SQL analysis on SFA data.
 direct — greeting, capability question, unknown business term, or unrelated
 deny — DDL/DML
 
 {{
   "action": "run_sql | direct | transform_previous | deny",
   "confidence": 0.95,
-  "question_description": "complete request when run_sql, else null"
+  "question_description": "clear and enriched description of the user requirement"
 }}
 """
 

@@ -34,15 +34,13 @@ class RouterAgent:
                 question, memory_context, retrieved_knowledge
             )
             resp = self.llm.invoke(chat_messages(system_prompt, user_prompt))
-            text = resp.content if hasattr(resp, "content") else str(resp)
+            text = resp.content.strip()
             result = extract_json(text)
         except Exception as e:
             logger.error(f"Supervisor routing failed: {e}")
             result = {"action": "run_sql", "confidence": 0.5}
 
         action = result.get("action", "run_sql")
-        if action in ("clarify", "chitchat"):
-            action = "direct"
         logger.info(f"Supervisor classified action: {action}")
 
         cleaned_state_updates = {}

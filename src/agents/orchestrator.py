@@ -280,7 +280,7 @@ class AgentOrchestrator:
         result = self.guardrail.check(
             state.get("question") or "",
             {
-                "conversation_history": state.get("messages") or [],
+                "conversation_history": state.get("memory_context") or [],
                 "user_role": state.get("user_role"),
             },
         )
@@ -295,8 +295,6 @@ class AgentOrchestrator:
             return {
                 "guardrail_passed": False,
                 "guardrail_reason": reason,
-                "error": reason or "Query rejected by safety checks",
-                "error_type": "guardrail_rejection",
                 "should_retry": False,
                 "turn_action": "deny",
                 "metrics": metrics,
@@ -369,10 +367,13 @@ class AgentOrchestrator:
 
     def safe_response_node(self, state: AgentState) -> dict:
         """Text reply when the turn is denied and no SQL should run."""
+        
         if state.get("access_denied"):
-            msg = state.get("access_denied_reason") or state.get("error") or "Access denied."
+            msg = state.get("access_denied_reason")
+        elif not state.get("guardrail_passed"):
+            msg = state.get("guardrail_reason")
         else:
-            msg = state.get("error") or "Unable to process your request."
+            msg = state.get("error")
 
         # Clear prior query artifacts so UI/history do not show last SQL table or charts
         return {
@@ -668,10 +669,8 @@ class AgentOrchestrator:
 
         if action == "direct":
             return "direct"
-        if action in ("deny", "cancel"):
+        if action in "deny":
             return "safe_response"
-        if action == "cache_hit":
-            return "formatter"
         return "security_policy"
 
     def route_after_transform(self, state: AgentState) -> Literal["formatter", "security_policy"]:

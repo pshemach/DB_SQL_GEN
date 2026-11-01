@@ -52,7 +52,7 @@ class Guardrail:
                 }
 
         verdict, reason = self._classify(text, context)
-        if verdict == "out_of_scope":
+        if verdict == "out_of_scope" :
             return {
                 "passed": False,
                 "reason": reason
@@ -70,7 +70,7 @@ class Guardrail:
             system_prompt, user_prompt = build_domain_classifier_prompt(
                 question,
                 ", ".join(_topics(history)[-5:]) or "None",
-                _summarize(history),
+                history,
                 context.get("user_role", "analyst"),
             )
             response = self.llm.invoke(chat_messages(system_prompt, user_prompt))
@@ -83,25 +83,12 @@ class Guardrail:
         if not parsed:
             return "in_scope", "Classifier parsing failed (fail-open)"
 
-        in_scope = parsed.get("classification", "IN_SCOPE") == "IN_SCOPE"
-        confidence = float(parsed.get("confidence", 0.0))
+        in_scope = parsed.get("classification", "in_scope") == "in_scope"
         reason = parsed.get("reason", "Classification complete")
-        if not in_scope and confidence > 0.7:
-            logger.info(f"Rejected out-of-scope question (confidence: {confidence})")
+        if not in_scope:
+            logger.info(f"Rejected out-of-scope question")
             return "out_of_scope", reason
         return "in_scope", reason
-
-
-def _summarize(history: list, max_chars: int = 800) -> str:
-    if not history:
-        return "No previous conversation"
-    lines = []
-    for message in history[-6:]:
-        text = _message_text(message)
-        if text:
-            lines.append(f"{_message_role(message)}: {text[:180]}")
-    summary = "; ".join(lines)
-    return (summary[:max_chars] if summary else "No previous conversation")
 
 
 def _topics(history: list) -> list[str]:
