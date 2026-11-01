@@ -404,7 +404,6 @@ class AgentOrchestrator:
             "sql_query": None,
             "sql_explanation": None,
             "plan": None,
-            "plan_steps": None,
             "table_title": None,
             "relevant_tables": None,
             "error": state.get("error"),
@@ -448,7 +447,6 @@ class AgentOrchestrator:
 
             "visualizations": [],
             "plan": None,
-            "plan_steps": None,
 
             "formatter_mode": formatter_mode,
             "rows_returned": result.get("rows_returned", 0),
@@ -792,7 +790,6 @@ class AgentOrchestrator:
             "sql_query": None,
             "sql_explanation": None,
             "plan": None,
-            "plan_steps": None,
             "table_title": None,
             "relevant_tables": None,
             "error": None,
@@ -836,7 +833,6 @@ def _initial_state(
         "question_description": None,
         "metrics": init_metrics(),
         "plan": None,
-        "plan_steps": None,
         "relevant_tables": None,
         "schema_context": None,
         "sql_query": None,

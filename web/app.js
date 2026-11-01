@@ -550,11 +550,7 @@ function renderResult(result) {
   renderChartTab(result.visualizations || []);
 
   document.getElementById("sqlTab").textContent = result.sql_query || "No SQL.";
-  document.getElementById("planTab").textContent = Array.isArray(
-    result.plan_steps,
-  )
-    ? result.plan_steps.join("\n")
-    : result.plan || "No plan.";
+  document.getElementById("planTab").textContent = result.plan || "No plan.";
 
   showTab("table");
 }

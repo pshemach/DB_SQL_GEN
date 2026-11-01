@@ -31,7 +31,6 @@ class AgentState(TypedDict, total=False):
 
     # SQL path
     plan: Optional[str]
-    plan_steps: Optional[List[str]]
     relevant_tables: Optional[List[str]]
     schema_context: Optional[str]
     few_shot_examples: Optional[List[Dict[str, Any]]]

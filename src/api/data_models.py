@@ -85,7 +85,6 @@ class QueryResponse(BaseModel):
     # PLANNER
     # =============================
     plan: Optional[str] = None
-    plan_steps: Optional[List[str]] = None
 
     # =============================
     # SCHEMA LINKER

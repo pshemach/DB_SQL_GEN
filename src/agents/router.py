@@ -54,7 +54,6 @@ class RouterAgent:
                 "sql_query": None,
                 "sql_explanation": None,
                 "plan": None,
-                "plan_steps": None,
                 "table_title": None,
                 "relevant_tables": None,
                 "error": None,
