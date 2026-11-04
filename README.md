@@ -58,6 +58,7 @@ Row scope is `RepCode IN (...)` from the signed-in user's allowed rep codes, app
 | HTTP API | `src/api/endpoints.py`, `src/api/routers/` |
 | Request and response models | `src/api/data_models.py` |
 | Browser UI served by FastAPI | `web/index.html`, `web/static/` |
+| Dashboard compose and layout | `src/agents/dashboard_composer.py`, `src/api/routers/dashboards.py`, `web/static/js/dashboard.js` |
 | Settings | `src/config/config_management.py` |
 
 `python main.py` starts the API and the web UI.
@@ -80,6 +81,12 @@ Assembled in `src/api/endpoints.py`.
 | `POST` | `/examples`, `/examples/seed` | Few-shot SQL examples |
 | `POST` | `/feedback` | User feedback |
 | `DELETE` | `/cache` | Clear semantic cache |
+| `POST` | `/dashboards/compose` | Build a dashboard from a natural-language brief |
+| `GET` | `/dashboards`, `/dashboards/{id}` | List or load saved dashboards |
+| `PUT` | `/dashboards/{id}` | Save title, layout, and widgets |
+| `POST` | `/dashboards/{id}/refresh` | Re-run each widget SELECT |
+| `POST` | `/dashboards/{id}/widgets` | Add a widget from a short request |
+| `DELETE` | `/dashboards/{id}` | Delete a saved dashboard |
 
 ## Layout
 

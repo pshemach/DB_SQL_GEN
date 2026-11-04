@@ -383,6 +383,78 @@ class AgentOrchestrator:
             "error_type": None,
         }
 
+    def run_sql_only(
+        self,
+        question: str,
+        allowed_rep_codes: list[str] | None = None,
+        user_role: str | None = None,
+        user_id: str | None = None,
+    ) -> dict:
+        """Generate and execute one SELECT without chat memory, cache, or Plotly."""
+        state: dict[str, Any] = {
+            "question": question,
+            "original_question": question,
+            "question_description": question,
+            "allowed_rep_codes": allowed_rep_codes or [],
+            "user_role": user_role,
+            "user_id": user_id,
+            "iterations": 0,
+            "should_retry": True,
+            "error": None,
+            "error_type": None,
+            "sql_query": None,
+            "sql_explanation": None,
+            "query_result": None,
+            "few_shot_examples": [],
+            "memory_context": "",
+            "messages": [],
+            "plan": None,
+            "schema_context": None,
+            "relevant_tables": None,
+        }
+        denied = self.missing_rep_codes(allowed_rep_codes, state)
+        if denied:
+            return denied
+
+        state.update(self.security_policy_node(state))
+        if state.get("error"):
+            return sanitize_state(state)
+
+        state.update(self.planner_node(state))
+        state.update(self.schema_retrieval_node(state))
+        state.update(self.generator_node(state))
+
+        while True:
+            state.update(self.static_validator_node(state))
+            if state.get("error"):
+                if self._can_retry_sql(state):
+                    state.update(self.reflector_node(state))
+                    continue
+                return sanitize_state(state)
+
+            if ENABLE_PRE_EXEC_CRITIC:
+                state.update(self.pre_exec_critic_node(state))
+                if state.get("error"):
+                    if self._can_retry_sql(state):
+                        state.update(self.reflector_node(state))
+                        continue
+                    return sanitize_state(state)
+
+            state.update(self.executor_node(state))
+            if state.get("error") is None:
+                state.update(self.result_verifier_node(state))
+                return sanitize_state(state)
+            if self._can_retry_sql(state):
+                state.update(self.reflector_node(state))
+                continue
+            return sanitize_state(state)
+
+    def _can_retry_sql(self, state: dict) -> bool:
+        return (
+            is_retryable(state.get("error_type"), state.get("should_retry", True))
+            and int(state.get("iterations") or 0) < MAX_ITERATIONS
+        )
+
     def planner_node(self, state: AgentState) -> dict:
         return self.planner.plan(self._with_sql_question(state))
 

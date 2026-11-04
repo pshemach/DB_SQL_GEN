@@ -21,6 +21,7 @@ from src.agents.prompts.agent_prompts import (
     RESULT_FORMATTER_PROMPT,
     KNOWLEDGE_GAP_DETECTOR_PROMPT,
     CLARIFICATION_AGENT_PROMPT,
+    DASHBOARD_PLANNER_PROMPT,
     build_domain_classifier_prompt,
     build_router_prompt,
     build_direct_prompt,
@@ -37,6 +38,7 @@ from src.agents.prompts.agent_prompts import (
     build_result_formatter_prompt,
     build_knowledge_gap_prompt,
     build_clarification_prompt,
+    build_dashboard_planner_prompt,
     chat_messages,
 )
 
@@ -57,6 +59,7 @@ __all__ = [
     "RESULT_FORMATTER_PROMPT",
     "KNOWLEDGE_GAP_DETECTOR_PROMPT",
     "CLARIFICATION_AGENT_PROMPT",
+    "DASHBOARD_PLANNER_PROMPT",
     "build_domain_classifier_prompt",
     "build_router_prompt",
     "build_direct_prompt",
@@ -73,5 +76,6 @@ __all__ = [
     "build_result_formatter_prompt",
     "build_knowledge_gap_prompt",
     "build_clarification_prompt",
+    "build_dashboard_planner_prompt",
     "chat_messages",
 ]

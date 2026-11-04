@@ -26,6 +26,7 @@
     selectedKpi: null,
     chartRows: [],
     pivotRows: [],
+    section: "chat",
   };
 
   const el = (id) => document.getElementById(id);
@@ -153,18 +154,39 @@
     el("system-login").classList.toggle("hidden", method !== "system");
   }
 
+  function applyWorkspaceVisibility() {
+    const loggedIn = Boolean(state.user);
+    const onDashboards = loggedIn && state.section === "dashboards";
+    const onChat = loggedIn && !onDashboards;
+    el("workspace-switch")?.classList.toggle("hidden", !loggedIn);
+    el("workspace")?.classList.toggle("hidden", !onChat);
+    el("chat-form")?.classList.toggle("hidden", !onChat);
+    el("dashboard-workspace")?.classList.toggle("hidden", !onDashboards);
+    document.body.classList.toggle("section-dashboard", onDashboards);
+    document.body.classList.toggle("section-chat", onChat);
+    document.querySelectorAll("[data-section]").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.section === (onDashboards ? "dashboards" : "chat"));
+    });
+  }
+
+  function setAppSection(section) {
+    state.section = section === "dashboards" ? "dashboards" : "chat";
+    applyWorkspaceVisibility();
+    if (state.section === "dashboards") window.EVisionDashboard?.show();
+  }
+
   function renderAuth() {
     const loggedIn = Boolean(state.user);
     el("login-form").classList.toggle("hidden", loggedIn);
     el("logged-in").classList.toggle("hidden", !loggedIn);
     el("session-panel").classList.toggle("hidden", !loggedIn);
     el("login-gate").classList.toggle("hidden", loggedIn);
-    el("workspace").classList.toggle("hidden", !loggedIn);
-    el("chat-form").classList.toggle("hidden", !loggedIn);
     el("kb-panel").classList.toggle("hidden", !(loggedIn && state.user?.can_edit_kb));
+    applyWorkspaceVisibility();
 
     if (!loggedIn) {
       el("kb-editor").classList.add("hidden");
+      window.EVisionDashboard?.reset();
       return;
     }
 
@@ -938,6 +960,7 @@
       state.lastResult = null;
       state.queryCount = 0;
       state.hasStarted = false;
+      state.section = "chat";
       localStorage.removeItem(STORAGE_KEY);
       renderAuth();
       renderMessages();
@@ -1119,6 +1142,10 @@
     });
 
     el("sidebar-toggle").addEventListener("click", () => el("sidebar").classList.toggle("open"));
+
+    document.querySelectorAll("[data-section]").forEach((btn) => {
+      btn.addEventListener("click", () => setAppSection(btn.dataset.section));
+    });
   }
 
   async function init() {
@@ -1141,6 +1168,15 @@
       renderAuth();
     }
   }
+
+  window.EVisionApp = {
+    api,
+    toast,
+    escapeHtml,
+    readSse,
+    getState: () => state,
+    setSection: setAppSection,
+  };
 
   document.addEventListener("DOMContentLoaded", init);
 })();

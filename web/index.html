@@ -4,8 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EVision Agent</title>
-  <link rel="stylesheet" href="/static/css/app.css?v=11" />
+  <link rel="stylesheet" href="/static/css/app.css?v=16" />
+  <link rel="stylesheet" href="/static/css/dashboard.css?v=16" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@11.5.1/dist/gridstack.min.css" />
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gridstack@11.5.1/dist/gridstack-all.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
 </head>
@@ -103,6 +107,10 @@
       <header class="hero">
         <h1>SFA SmartAnalyst</h1>
         <p>Your AI-Powered Sales Intelligence Assistant</p>
+        <div class="workspace-switch hidden" id="workspace-switch" role="tablist">
+          <button type="button" class="segment active" data-section="chat">Chat</button>
+          <button type="button" class="segment" data-section="dashboards">Dashboards</button>
+        </div>
       </header>
 
       <section id="kb-editor" class="card hidden">
@@ -149,6 +157,40 @@ Exclusions:
 
       <section id="workspace" class="hidden">
         <div id="messages" class="messages"></div>
+      </section>
+
+      <section id="dashboard-workspace" class="dashboard-workspace hidden">
+        <div class="dashboard-toolbar">
+          <label>
+            Saved boards
+            <select id="dashboard-select">
+              <option value="">New dashboard</option>
+            </select>
+          </label>
+          <label class="dashboard-title-field">
+            Title
+            <input type="text" id="dashboard-title" placeholder="Dashboard title" />
+          </label>
+          <button type="button" id="dashboard-save-btn" class="btn">Save</button>
+          <button type="button" id="dashboard-refresh-btn" class="btn">Refresh</button>
+          <button type="button" id="dashboard-new-btn" class="btn">New</button>
+          <button type="button" id="dashboard-delete-btn" class="btn danger">Delete</button>
+        </div>
+
+        <form id="dashboard-compose-form" class="dashboard-compose">
+          <textarea id="dashboard-requirement" rows="2" placeholder="Describe the dashboard you need, e.g. this month: net sales, daily trend, top 10 SKUs, achievement by rep" required></textarea>
+          <button type="submit" class="btn primary" id="dashboard-generate-btn">Generate</button>
+        </form>
+
+        <p id="dashboard-status" class="muted hidden"></p>
+
+        <form id="dashboard-add-form" class="dashboard-add hidden">
+          <input type="text" id="dashboard-add-input" placeholder="Add a widget, e.g. returns this month" />
+          <button type="submit" class="btn" id="dashboard-add-btn">Add widget</button>
+        </form>
+
+        <p id="dashboard-empty" class="dashboard-empty">Describe what you want to see, then generate a dashboard.</p>
+        <div class="grid-stack" id="dashboard-grid"></div>
       </section>
       </div>
 
@@ -242,6 +284,8 @@ Exclusions:
       </div>
     </section>
   </template>
-  <script src="/static/js/app.js?v=11"></script>
+  <script src="/static/js/echarts_adapter.js?v=16"></script>
+  <script src="/static/js/app.js?v=16"></script>
+  <script src="/static/js/dashboard.js?v=17"></script>
 </body>
 </html>

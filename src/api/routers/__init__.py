@@ -1,6 +1,7 @@
 import src.api.routers.auth as auth
 import src.api.routers.cache as cache
 import src.api.routers.conversations as conversations
+import src.api.routers.dashboards as dashboards
 import src.api.routers.examples as examples
 import src.api.routers.feedback as feedback
 import src.api.routers.health as health
@@ -12,6 +13,7 @@ __all__ = [
     "auth",
     "cache",
     "conversations",
+    "dashboards",
     "examples",
     "feedback",
     "health",

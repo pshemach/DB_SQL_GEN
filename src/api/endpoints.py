@@ -10,7 +10,7 @@ from loguru import logger
 
 from src.infrastructure.db import db_manager
 from src.api.rate_limit import RateLimitMiddleware
-from src.api.routers import auth, cache, conversations, examples, feedback, health, knowledge, query, schema
+from src.api.routers import auth, cache, conversations, dashboards, examples, feedback, health, knowledge, query, schema
 from src.infrastructure.config import (
     DATABASE_URI,
     ENABLE_DYNAMIC_FEW_SHOT,
@@ -44,6 +44,7 @@ app.include_router(schema.router)
 app.include_router(examples.router)
 app.include_router(cache.router)
 app.include_router(query.router)
+app.include_router(dashboards.router)
 
 @app.get("/app", include_in_schema=False)
 async def serve_app():

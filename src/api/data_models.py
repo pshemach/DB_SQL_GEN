@@ -163,3 +163,15 @@ class KnowledgeDefinitionRequest(BaseModel):
     key: str
     keywords: List[str]
     definition: str
+
+class DashboardComposeRequest(BaseModel):
+    requirement: str
+    dashboard_id: Optional[str] = None
+
+class DashboardSaveRequest(BaseModel):
+    title: Optional[str] = None
+    layout: Optional[List[Dict[str, Any]]] = None
+    widgets: Optional[List[Dict[str, Any]]] = None
+
+class DashboardWidgetAddRequest(BaseModel):
+    requirement: str
