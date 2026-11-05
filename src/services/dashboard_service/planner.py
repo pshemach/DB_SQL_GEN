@@ -6,8 +6,8 @@ from typing import Any
 
 from loguru import logger
 
-from src.agents.dashboard_filters import normalize_dimensions
-from src.agents.dashboard_layout import normalize_plan_widgets
+from src.services.dashboard_service.filters import normalize_dimensions
+from src.services.dashboard_service.layout import normalize_plan_widgets
 from src.agents.prompts.agent_prompts import build_dashboard_planner_prompt, chat_messages
 from src.infrastructure.llm import get_router_llm
 from src.infrastructure.utils import extract_json

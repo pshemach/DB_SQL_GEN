@@ -7,7 +7,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.agents.dashboard_filters import (
+from src.services.dashboard_service.filters import (
     base_sql,
     filter_columns,
     filter_values,
@@ -16,8 +16,8 @@ from src.agents.dashboard_filters import (
     normalize_dimensions,
     selected_sql_column,
 )
-from src.agents.dashboard_layout import pack_layout
-from src.agents.dashboard_planner import DashboardPlanner
+from src.services.dashboard_service.layout import pack_layout
+from src.services.dashboard_service.planner import DashboardPlanner
 from src.agents.orchestrator import orchestrator
 from src.infrastructure.db import db_manager
 from src.infrastructure.db.sql_safety import assess_sql

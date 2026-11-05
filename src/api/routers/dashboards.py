@@ -15,7 +15,7 @@ from src.api.data_models import (
     DashboardWidgetAddRequest,
 )
 from src.api.dependencies import require_user
-from src.api.services.dashboard import (
+from src.services.dashboard_service import (
     add_widget,
     public_dashboard,
     refresh_dashboard,
