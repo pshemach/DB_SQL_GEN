@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from typing import Any, Optional
-from uuid import uuid4
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
@@ -13,6 +12,7 @@ from src.memory import chat_memory
 from src.api.data_models import ConversationFollowUpRequest, ConversationStartRequest
 from src.api.dependencies import AUTH_SESSIONS, bearer_token, require_user
 from src.api.services.conversation import execute_turn, stream_turn
+from src.api.session import resolve_start_session_id
 
 router = APIRouter(tags=["conversations"])
 
@@ -26,8 +26,18 @@ def _bind_session(token: Optional[str], session_id: str) -> None:
     if token and token in AUTH_SESSIONS:
         AUTH_SESSIONS[token]["session_id"] = session_id
 
-def _ensure_session(request_session_id: Optional[str], user: dict[str, Any], authorization: Optional[str]) -> str:
-    session_id = request_session_id or user.get("session_id") or str(uuid4())
+def _ensure_session(
+    request_session_id: Optional[str],
+    user: dict[str, Any],
+    authorization: Optional[str],
+    *,
+    new_conversation: bool = False,
+) -> str:
+    session_id = resolve_start_session_id(
+        request_session_id,
+        current_session_id=user.get("session_id"),
+        new_conversation=new_conversation,
+    )
     chat_memory.get_or_create_session(
         session_id=session_id,
         user_id=user.get("user_id"),
@@ -54,9 +64,13 @@ async def start_conversation(
     user: dict[str, Any] = Depends(require_user),
     authorization: Optional[str] = Header(default=None),
 ):
-    session_id = _ensure_session(request.session_id, user, authorization)
-
     question = (request.question or "").strip()
+    session_id = _ensure_session(
+        request.session_id,
+        user,
+        authorization,
+        new_conversation=not question,
+    )
     if not question:
         return {"success": True, "session_id": session_id, "turn_type": "start"}
 

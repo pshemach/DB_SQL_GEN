@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.express as px
 from loguru import logger
 
-from src.infrastructure.utils import extract_json
+from src.infrastructure.utils import extract_json, json_safe_value
 from src.agents.prompts.agent_prompts import build_result_formatter_prompt, chat_messages
 from src.infrastructure.config import CURRENCY_SYMBOL
 from src.infrastructure.llm import get_direct_llm
@@ -36,6 +36,87 @@ def detect_requested_chart_type(question: str) -> str | None:
 class ResultFormatterAgent:
     def __init__(self, llm=None):
         self.llm = llm or get_direct_llm()
+
+    def chart_spec_from_rows(
+        self,
+        rows: list,
+        requested_chart_type: str | None = None,
+        widget_type: str = "chart",
+        title: str | None = None,
+    ) -> dict:
+        """Pick x/y columns for a dashboard widget. Does not build Plotly figures."""
+        empty = {
+            "enabled": False,
+            "chart_type": "table" if widget_type == "table" else "none",
+            "x_column": None,
+            "y_column": None,
+            "color_column": None,
+            "kpi_value": None,
+            "kpi_column": None,
+            "title": title,
+        }
+        if not rows:
+            return empty
+
+        df = self._prepare_dataframe(self._rows_to_dataframe(rows))
+        if df.empty:
+            return empty
+
+        numeric_columns = self._get_numeric_columns(df)
+        category_columns = [col for col in df.columns if col not in numeric_columns]
+        requested = (requested_chart_type or "").strip().lower() or None
+
+        if widget_type == "table" or requested == "table":
+            return {**empty, "chart_type": "table"}
+
+        if widget_type == "kpi" or requested == "kpi":
+            if not numeric_columns:
+                return empty
+            y_col = self._choose_best_numeric_column(numeric_columns)
+            values = df[y_col].dropna()
+            kpi_value = None if values.empty else json_safe_value(values.iloc[0])
+            return {
+                "enabled": True,
+                "chart_type": "kpi",
+                "x_column": None,
+                "y_column": y_col,
+                "color_column": None,
+                "kpi_value": kpi_value,
+                "kpi_column": y_col,
+                "title": title,
+            }
+
+        specs = []
+        if requested:
+            specs = self._specs_for_requested_chart(
+                [],
+                requested,
+                df,
+                numeric_columns,
+                category_columns,
+            )
+        if not specs:
+            specs = self._fallback_visualization_specs(df, numeric_columns, category_columns)
+        if not specs:
+            return empty
+
+        raw = specs[0]
+        config = self._validate_config(
+            {
+                "enabled": True,
+                "chart_type": raw.get("chart_type", "bar"),
+                "x_column": raw.get("x_column"),
+                "y_column": raw.get("y_column"),
+                "color_column": raw.get("color_column"),
+            },
+            df=df,
+            numeric_columns=numeric_columns,
+            category_columns=category_columns,
+        )
+        config["kpi_value"] = None
+        config["kpi_column"] = None
+        config["title"] = title or raw.get("title")
+        return config
 
     def format(self, state: dict) -> dict:
         rows = state.get("query_result") or []

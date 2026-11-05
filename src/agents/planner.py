@@ -26,15 +26,10 @@ class PlannerAgent:
             )
             response = self.llm.invoke(chat_messages(system_prompt, user_prompt))
             plan = response.content
-            
-            # Extract numbered steps from the plan
-            import re
-            steps = re.findall(r'^\d+\..*$', plan, re.MULTILINE)
-            logger.info(f"Generated plan with {len(steps)} steps")
-            
+            logger.info("Generated plan")
+
             return {
                 "plan": plan,
-                "plan_steps": steps,
                 "iterations": 0,
                 "should_retry": True
             }

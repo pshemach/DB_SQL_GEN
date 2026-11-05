@@ -8,6 +8,7 @@ Turns, last SQL state, and feedback live in MySQL (``st_store``).
 from src.memory.memory_ops import MemoryRecaller, MemoryWriter, recaller, writer
 from src.memory.schemas import ConversationTurn
 from src.memory.result_cache import ResultCache, result_cache
+from src.memory.dashboard_store import DashboardStore, dashboard_store
 from src.memory.st_store import ChatMemoryStore, chat_memory
 
 __all__ = [
@@ -20,4 +21,6 @@ __all__ = [
     "writer",
     "ResultCache",
     "result_cache",
+    "DashboardStore",
+    "dashboard_store",
 ]

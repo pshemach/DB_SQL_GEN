@@ -210,6 +210,13 @@ CACHE_SIMILARITY_THRESHOLD = _setting(
     0.99,
 )
 
+API_RATE_LIMIT = _setting("API_RATE_LIMIT", _get_nested(_PARAMS, "api", "rate_limit"), 100)
+API_RATE_WINDOW_SECONDS = _setting(
+    "API_RATE_WINDOW_SECONDS",
+    _get_nested(_PARAMS, "api", "rate_window_seconds"),
+    60,
+)
+
 MAX_ITERATIONS = _setting("MAX_ITERATIONS", _get_nested(_PARAMS, "agent", "max_iterations"), 1)
 ENABLE_SELF_CORRECTION = _setting(
     "ENABLE_SELF_CORRECTION",
@@ -292,6 +299,35 @@ QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "") or None
 QDRANT_URL = os.getenv("QDRANT_URL", "") or None
 QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "")
 
+# ========================================
+# Fallback messages
+# ========================================
+
+FALLBACK_DIRECT_MESSAGE = _setting(
+    "FALLBACK_DIRECT_MESSAGE",
+    _get_nested(_PARAMS, "agent", "fallback_direct_message"),
+    "I can help with net sales, targets, achievement, reps, customers, products, routes, and outlets. Please ask me a question about the data.",
+)
+FALLBACK_PLANNER_MESSAGE = _setting(
+    "FALLBACK_PLANNER_MESSAGE",
+    _get_nested(_PARAMS, "agent", "fallback_planner_message"),
+    "Planer fallback is happening. Please try again.",
+)
+FALLBACK_SCHEMA_SELECTION_MESSAGE = _setting(
+    "FALLBACK_SCHEMA_SELECTION_MESSAGE",
+    _get_nested(_PARAMS, "agent", "fallback_schema_selection_message"),
+    "Schema selection fallback is happening. Please try again.",
+)
+FALLBACK_GENERATOR_MESSAGE = _setting(
+    "FALLBACK_GENERATOR_MESSAGE",
+    _get_nested(_PARAMS, "agent", "fallback_generator_message"),
+    "Generator fallback is happening. Please try again.",
+)
+FALLBACK_DIRECT_MESSAGE = _setting(
+    "FALLBACK_DIRECT_MESSAGE",
+    _get_nested(_PARAMS, "agent", "fallback_direct_message"),
+    "Direct fallback is happening. Please try again.",
+)
 
 # ========================================
 # Helpers

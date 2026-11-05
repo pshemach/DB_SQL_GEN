@@ -6,13 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Any, Optional
 
-from loguru import logger
-
 from src.agents.orchestrator import run_agent_async, run_agent_stream
-from src.memory import chat_memory
-from src.agents.guardrail import Guardrail
-
-guardrail_pipeline = Guardrail()
 from src.agents.formatter import detect_requested_chart_type
 from src.infrastructure.utils import serialize_query_result
 
@@ -93,21 +87,6 @@ async def execute_turn(
     allowed_rep_codes: Optional[list] = None,
     turn_type: str,
 ) -> dict[str, Any]:
-    guardrail_context = {
-        "conversation_history": [],
-        "previous_topics": [],
-        "user_role": user_role,
-    }
-    session = chat_memory.get_session(session_id)
-    if session:
-        guardrail_context["conversation_history"] = session.get("messages", [])
-
-    guardrail_result = await guardrail_pipeline.evaluate(question, guardrail_context)
-    if not guardrail_result.get("passed", False):
-        error_text = guardrail_result.get("reason", "Query rejected by safety checks")
-        logger.warning(f"Query rejected by guardrails: {error_text}")
-        return _guardrail_failure(error_text, session_id, turn_type)
-
     result = await run_agent_async(
         question=question,
         session_id=session_id,
@@ -135,19 +114,6 @@ async def iter_answer_tokens(text: str, chunk_size: int = 28) -> AsyncIterator[s
         index = end
         await asyncio.sleep(0.018)
 
-def _guardrail_failure(error_text: str, session_id: str, turn_type: str) -> dict[str, Any]:
-    return {
-        "success": False,
-        "error": error_text,
-        "error_type": "guardrail_rejection",
-        "session_id": session_id,
-        "waiting_for_user": False,
-        "answer_text": error_text,
-        "charts": [],
-        "query_result": None,
-        "turn_type": turn_type,
-    }
-
 async def stream_turn(
     *,
     question: str,
@@ -158,26 +124,6 @@ async def stream_turn(
     turn_type: str,
 ) -> AsyncIterator[dict[str, Any]]:
     yield {"type": "status", "text": "Thinking..."}
-
-    guardrail_context = {
-        "conversation_history": [],
-        "previous_topics": [],
-        "user_role": user_role,
-    }
-    session = chat_memory.get_session(session_id)
-    if session:
-        guardrail_context["conversation_history"] = session.get("messages", [])
-
-    guardrail_result = await guardrail_pipeline.evaluate(question, guardrail_context)
-    if not guardrail_result.get("passed", False):
-        error_text = guardrail_result.get("reason", "Query rejected by safety checks")
-        logger.warning(f"Query rejected by guardrails: {error_text}")
-        payload = _guardrail_failure(error_text, session_id, turn_type)
-        async for token in iter_answer_tokens(error_text):
-            yield {"type": "token", "text": token}
-        yield {"type": "result", "payload": payload}
-        yield {"type": "done"}
-        return
 
     result_state = None
     async for event in run_agent_stream(

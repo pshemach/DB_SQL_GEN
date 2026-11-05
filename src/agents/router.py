@@ -14,7 +14,7 @@ from src.agents.state import AgentState
 from src.services.chat_service.knowledge_retriever import business_knowledge_retriever
 from src.services.chat_service.knowledge_store import business_knowledge_store
 from src.infrastructure.llm import get_router_llm
-from src.infrastructure.utils import extract_json, set_router_action
+from src.infrastructure.utils import extract_json
 
 
 class RouterAgent:
@@ -24,7 +24,6 @@ class RouterAgent:
     def route(self, state: AgentState) -> dict[str, Any]:
         logger.info("Supervisor running...")
         question = state["question"]
-        metrics = state.get("metrics")
 
         retrieved_knowledge = self._retrieve_knowledge(question)
         memory_context = state.get("memory_context") or ""
@@ -34,15 +33,13 @@ class RouterAgent:
                 question, memory_context, retrieved_knowledge
             )
             resp = self.llm.invoke(chat_messages(system_prompt, user_prompt))
-            text = resp.content if hasattr(resp, "content") else str(resp)
+            text = resp.content.strip()
             result = extract_json(text)
         except Exception as e:
             logger.error(f"Supervisor routing failed: {e}")
             result = {"action": "run_sql", "confidence": 0.5}
 
         action = result.get("action", "run_sql")
-        if action in ("clarify", "chitchat"):
-            action = "direct"
         logger.info(f"Supervisor classified action: {action}")
 
         cleaned_state_updates = {}
@@ -54,7 +51,6 @@ class RouterAgent:
                 "sql_query": None,
                 "sql_explanation": None,
                 "plan": None,
-                "plan_steps": None,
                 "table_title": None,
                 "relevant_tables": None,
                 "error": None,
@@ -66,7 +62,6 @@ class RouterAgent:
             **cleaned_state_updates,
             "turn_action": action,
             "question_description": result.get("question_description") or question,
-            "metrics": set_router_action(metrics, action),
         }
 
         if result.get("question_description"):

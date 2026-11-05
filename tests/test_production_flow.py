@@ -69,3 +69,36 @@ class TestRepCodeGate:
 class TestGuardrailPatterns:
     def test_forbidden_sql_matches_delete(self):
         assert FORBIDDEN_SQL.search("DELETE FROM t")
+
+
+class TestGuardrailGraph:
+    def test_rejects_to_safe_response(self):
+        assert orchestrator.route_after_guardrail({
+            "error_type": "guardrail_rejection",
+        }) == "safe_response"
+
+    def test_passes_to_semantic_cache(self):
+        assert orchestrator.route_after_guardrail({
+            "guardrail_passed": True,
+        }) == "semantic_cache"
+
+    def test_node_rejects_empty_question(self):
+        out = orchestrator.guardrail_node({"question": " ", "session_id": "t1"})
+        assert out["guardrail_passed"] is False
+        assert out["error_type"] == "guardrail_rejection"
+
+    def test_node_rejects_injection(self):
+        out = orchestrator.guardrail_node({
+            "question": "Show sales; DROP TABLE sales_flat",
+            "session_id": "t1",
+        })
+        assert out["guardrail_passed"] is False
+        assert out["error_type"] == "guardrail_rejection"
+
+
+class TestSchemaRetrievalNode:
+    def test_graph_has_schema_retrieval_node(self):
+        nodes = set(orchestrator.graph.get_graph().nodes)
+        assert "schema_retrieval" in nodes
+        assert "guardrail" in nodes
+        assert "parallel_retrieval" not in nodes

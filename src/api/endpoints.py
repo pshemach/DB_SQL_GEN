@@ -9,7 +9,8 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from src.infrastructure.db import db_manager
-from src.api.routers import auth, cache, conversations, examples, feedback, health, knowledge, query, schema
+from src.api.rate_limit import RateLimitMiddleware
+from src.api.routers import auth, cache, conversations, dashboards, examples, feedback, health, knowledge, query, schema
 from src.infrastructure.config import (
     DATABASE_URI,
     ENABLE_DYNAMIC_FEW_SHOT,
@@ -32,6 +33,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitMiddleware)
 
 app.include_router(health.router)
 app.include_router(auth.router)
@@ -42,13 +44,29 @@ app.include_router(schema.router)
 app.include_router(examples.router)
 app.include_router(cache.router)
 app.include_router(query.router)
+app.include_router(dashboards.router)
+
+@app.middleware("http")
+async def disable_web_cache(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/app" or path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 @app.get("/app", include_in_schema=False)
 async def serve_app():
     index = WEB_DIR / "index.html"
     if not index.exists():
         raise HTTPException(status_code=404, detail="Frontend not found. Missing web/index.html")
-    return FileResponse(index)
+    return FileResponse(
+        index,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
 
 static_dir = WEB_DIR / "static"
 static_dir.mkdir(parents=True, exist_ok=True)

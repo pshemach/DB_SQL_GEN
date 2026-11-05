@@ -6,8 +6,8 @@ One class owns one LangGraph. Large specialists stay in their own modules
 SQL generation is a path on this graph, not a nested subgraph.
 
 Flow:
-    recall memory → cache → supervisor
-        → security → plan → schema → SQL → validate → execute
+    recall memory → guardrail → cache → supervisor
+        → security → plan → schema retrieval → SQL → validate → execute
         | transform previous | direct reply | deny
         → format → save memory
 """
@@ -18,7 +18,6 @@ import os
 import re
 import time
 from collections.abc import AsyncIterator
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
@@ -28,6 +27,7 @@ from loguru import logger
 from src.agents.critic import CriticAgent
 from src.agents.formatter import ResultFormatterAgent
 from src.agents.generator import SQLGeneratorAgent
+from src.agents.guardrail import Guardrail
 from src.agents.planner import PlannerAgent
 from src.agents.prompts.agent_prompts import (
     build_direct_prompt,
@@ -45,11 +45,12 @@ from src.infrastructure.config import (
     ENABLE_SEMANTIC_CACHE,
     ENABLE_TRANSFORM_PREVIOUS,
     FEW_SHOT_EXAMPLES_COUNT,
+    GRAPH_RECURSION_LIMIT,
     LANGCHAIN_API_KEY,
     LANGCHAIN_ENDPOINT,
     LANGCHAIN_PROJECT,
     LANGCHAIN_TRACING_V2,
-    GRAPH_RECURSION_LIMIT,
+    FALLBACK_DIRECT_MESSAGE,
     MAX_ITERATIONS,
     SQL_MAX_ROWS,
 )
@@ -61,26 +62,24 @@ from src.infrastructure.llm import (
     get_router_llm,
     get_schema_selection_llm,
 )
-from src.services.chat_service.few_shot import few_shot_retriever
-from src.memory import chat_memory
-from src.memory.result_cache import result_cache
-from src.services.chat_service.semantic_cache import semantic_cache
 from src.infrastructure.utils import (
-    finalize_metrics,
-    init_metrics,
-    record_node_timing,
     sanitize_state,
     serialize_query_result,
 )
+from src.memory import chat_memory
+from src.memory.result_cache import result_cache
+from src.services.chat_service.few_shot import few_shot_retriever
+from src.services.chat_service.semantic_cache import semantic_cache
 
 NODE_STATUS = {
     "init": "Starting...",
     "memory_loader": "Loading conversation...",
+    "guardrail": "Checking your question...",
     "semantic_cache": "Checking previous answers...",
     "supervisor": "Understanding your question...",
     "security_policy": "Checking row access...",
     "planner": "Planning the query...",
-    "parallel_retrieval": "Selecting tables...",
+    "schema_retrieval": "Selecting tables...",
     "generator": "Writing SQL...",
     "static_validator": "Checking the SQL...",
     "pre_exec_critic": "Reviewing the SQL...",
@@ -98,6 +97,7 @@ NODE_STATUS = {
 FORBIDDEN_SQL = re.compile(
     r"(?i)\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b"
 )
+_NO_REP_CODES = "Access denied. No allowed rep codes were provided."
 
 
 def build_invoke_config(session_id: str | None = None) -> dict:
@@ -117,11 +117,8 @@ def _setup_langsmith() -> None:
     os.environ["LANGCHAIN_ENDPOINT"] = LANGCHAIN_ENDPOINT
 
 
-_NO_REP_CODES = "Access denied. No allowed rep codes were provided."
-
 class AgentOrchestrator:
     """One class owns the graph and the specialist agents."""
-
     def __init__(
         self,
         llm_router: Any,
@@ -133,6 +130,7 @@ class AgentOrchestrator:
         _setup_langsmith()
         self.llm_direct = llm_direct
         self.supervisor = RouterAgent(llm_router)
+        self.guardrail = Guardrail(llm_router)
         self.planner = PlannerAgent(llm_planner)
         self.schema_linker = SchemaLinkerAgent(llm_schema_selection)
         self.generator = SQLGeneratorAgent(llm_generator)
@@ -141,52 +139,83 @@ class AgentOrchestrator:
         self.transformer = ResultTransformer(llm_router, analyst_llm=llm_direct)
         self.graph = self._build_graph()
 
-    def add_start_time(self, state: AgentState) -> dict:
-        """Add timestamp at start of workflow."""
-        return {"start_time": time.time()}
+    def _sql_question(self, state: AgentState) -> str:
+        """Description the planner and SQL generator must follow."""
+        return state.get("question_description") or state.get("question") or ""
 
+    def _with_sql_question(self, state: AgentState) -> dict:
+        payload = dict(state)
+        payload["question"] = self._sql_question(state)
+        return payload
 
-    def route_after_cache(self, state: AgentState) -> Literal["formatter", "supervisor"]:
-        if state.get("cache_hit"):
-            return "formatter"
-        return "supervisor"
+    def _format_state(self, state: AgentState) -> dict:
+        """Format results and sanitize for checkpointer (plotly/numpy/date)."""
+        return sanitize_state(self.formatter.format(state))
 
+    def _transform_state(self, state: dict) -> dict:
+        """Graph node wrapper for result transformation."""
+        result = self.transformer.transform(state)
 
-    def supervisor_routing(
-        self,
-        state: AgentState,
-    ) -> Literal["transform_result", "security_policy", "safe_response", "formatter", "direct"]:
-        """Route the turn. A direct reply is text only, with no SQL."""
-        action = state.get("turn_action", "run_sql")
+        cached = result_cache.get_cached_result(state.get("session_id"))
+        question = state.get("original_question") or state.get("question") or ""
 
-        if action == "transform_previous" and ENABLE_TRANSFORM_PREVIOUS:
-            sid = state.get("session_id")
-            if sid and result_cache.get_cached_result(sid):
-                return "transform_result"
-            logger.warning(
-                "transform_previous requested but no session cache found - falling back to SQL"
+        if cached and cached.original_question:
+            enriched = (
+                f"Previous question: {cached.original_question}\n"
+                f"Follow-up: {question}"
             )
-            return "security_policy"
+        else:
+            enriched = question
 
-        if action == "direct":
-            return "direct"
-        if action in ("deny", "cancel"):
-            return "safe_response"
-        if action == "cache_hit":
-            return "formatter"
-        return "security_policy"
+        needs_new_sql = result.get("needs_new_sql", False)
+        formatter_mode = result.get("formatter_mode")
 
+        out = {
+            **state,
+            "question": enriched,
+            "question_description": result.get("question_description") or enriched,
+            "query_result": result.get("query_result"),
+            "needs_new_sql": needs_new_sql,
+            "transformation_applied": result.get("transformation_applied", {}),
+            "current_phase": result.get("current_phase", "analyze"),
+            "turn_action": "run_sql" if needs_new_sql else "transform_previous",
+            "reused_previous_result": result.get("reused_previous_result", False),
+            "visualizations": [],
+            "plan": None,
+            "formatter_mode": formatter_mode,
+            "rows_returned": result.get("rows_returned", 0),
+        }
 
-    def route_after_transform(self, state: AgentState) -> Literal["formatter", "security_policy"]:
-        """LLM planner may decide cached rows are insufficient → new SQL."""
-        if state.get("needs_new_sql"):
-            logger.info("Follow-up planner requested new SQL")
-            return "security_policy"
-        if state.get("query_result") is None and state.get("current_phase") == "error":
-            return "security_policy"
-        return "formatter"
+        if result.get("sql_query"):
+            out["sql_query"] = result["sql_query"]
 
+        if result.get("local_sql_query"):
+            out["local_sql_query"] = result["local_sql_query"]
 
+        # Only semantic explanation should directly become final answer.
+        if formatter_mode == "semantic_answer":
+            explanation = result.get("explanation") or ""
+            out["result_preview"] = explanation
+            out["final_answer"] = explanation
+            out["result_summary"] = explanation
+            out["table_title"] = "Analysis of Previous Result"
+
+        # For DuckDB transformed data, DO NOT set final_answer/result_summary.
+        # Let formatter_node dynamically summarize the transformed query_result.
+        elif formatter_mode == "dynamic_result":
+            out["result_preview"] = result.get("explanation")
+            out["final_answer"] = None
+            out["result_summary"] = None
+            out["table_title"] = None
+
+        # If local result cannot answer and live SQL is needed.
+        elif needs_new_sql:
+            out["query_result"] = None
+            out["final_answer"] = None
+            out["result_summary"] = None
+            out["result_preview"] = result.get("explanation")
+
+        return out
 
     def missing_rep_codes(self, allowed_rep_codes: list[str] | None, state: dict) -> dict | None:
         """Stop before the graph when the user has no row scope."""
@@ -204,6 +233,383 @@ class AgentOrchestrator:
             "result_summary": _NO_REP_CODES,
         }
 
+    def add_start_time(self, state: AgentState) -> dict:
+        """Add timestamp at start of workflow."""
+        return {"start_time": time.time()}
+
+    def memory_loader_node(self, state: dict) -> dict:
+        """Load session memory and prior turn state."""
+        session_id = state["session_id"]
+        previous_state = chat_memory.get_last_state(session_id)
+
+        user_message_id = None
+
+        # Save user question only once per graph run
+        if not state.get("user_message_saved"):
+            user_message_id = chat_memory.add_message(
+                session_id=session_id,
+                role="user",
+                content=state["question"],
+                message_type="question",
+                user_id=state.get("user_id"),
+                user_role=state.get("user_role"),
+            )
+
+        return {
+            "previous_state": previous_state,
+            "messages": chat_memory.get_session(session_id).get("messages", []),
+            "memory_context": chat_memory.build_memory_context(session_id),
+            "user_message_id": user_message_id,
+            "user_message_saved": True,
+        }
+
+    def guardrail_node(self, state: AgentState) -> dict:
+        """Scope, injection, and rate checks. Failures skip SQL and go to a text reply."""
+        result = self.guardrail.check(
+            state.get("question") or "",
+            {
+                "conversation_history": state.get("memory_context") or [],
+                "user_role": state.get("user_role"),
+            },
+        )
+        reason = result.get("reason") or ""
+        if not result.get("passed", False):
+            logger.warning(f"Query rejected by guardrails: {reason}")
+            return {
+                "guardrail_passed": False,
+                "guardrail_reason": reason,
+                "should_retry": False,
+                "turn_action": "deny",
+            }
+        return {
+            "guardrail_passed": True,
+            "guardrail_reason": reason or "In scope",
+        }
+
+    def semantic_cache_lookup_node(self, state: AgentState) -> dict:
+        """Early semantic cache exit before any schema-bearing LLM call."""
+        if not ENABLE_SEMANTIC_CACHE:
+            return {"cache_hit": False}
+
+        cached = semantic_cache.get(state["question"])
+
+        if not cached:
+            return {"cache_hit": False}
+
+        logger.info("Semantic cache HIT — skipping SQL generation")
+        return sanitize_state({
+            "cache_hit": True,
+            "turn_action": "cache_hit",
+            "sql_query": cached.get("sql_query"),
+            "query_result": cached.get("query_result"),
+            "result_preview": cached.get("result_preview"),
+            "plan": cached.get("plan"),
+            "relevant_tables": cached.get("relevant_tables"),
+            "error": None,
+        })
+
+    def supervisor_node(self, state: AgentState) -> dict:
+        return self.supervisor.route(state)
+
+    def direct_node(self, state: AgentState) -> dict:
+        """Text reply with no SQL. The next turn reads this reply from memory."""
+        try:
+            system_prompt, user_prompt = build_direct_prompt(
+                state.get("question") or "",
+                state.get("memory_context") or "",
+            )
+            response = self.llm_direct.invoke(chat_messages(system_prompt, user_prompt))
+            msg = response.content.strip() or FALLBACK_DIRECT_MESSAGE
+        except Exception as exc:
+            logger.error(f"Direct reply failed: {exc}")
+            msg = FALLBACK_DIRECT_MESSAGE
+        return {
+            "turn_action": "direct",
+            "final_answer": msg,
+            "result_summary": msg,
+            "query_result": None,
+            "result_preview": None,
+            "visualizations": [],
+            "sql_query": None,
+            "sql_explanation": None,
+            "plan": None,
+            "table_title": None,
+            "relevant_tables": None,
+            "error": None,
+        }
+
+    def safe_response_node(self, state: AgentState) -> dict:
+        """Text reply when the turn is denied and no SQL should run."""
+        
+        if state.get("access_denied"):
+            msg = state.get("access_denied_reason")
+        elif not state.get("guardrail_passed"):
+            msg = state.get("guardrail_reason")
+        else:
+            msg = state.get("error")
+
+        # Clear prior query artifacts so UI/history do not show last SQL table or charts
+        return {
+            "final_answer": msg,
+            "result_summary": msg,
+            "query_result": None,
+            "result_preview": None,
+            "visualizations": [],
+            "sql_query": None,
+            "sql_explanation": None,
+            "plan": None,
+            "table_title": None,
+            "relevant_tables": None,
+            "error": state.get("error"),
+        }
+
+    def transform_result_node(self, state: AgentState) -> dict:
+        return self._transform_state(state)
+
+    def security_policy_node(self, state: AgentState) -> dict:
+        """Inject row-level security context. Fail closed without rep codes."""
+        allowed = state.get("allowed_rep_codes") or []
+        if not allowed:
+            return {
+                "error": "Access denied. No allowed rep codes were provided.",
+                "error_type": "access_denied",
+                "should_retry": False,
+            }
+        codes_sql = ", ".join(f"'{c}'" for c in allowed)
+        return {
+            "security_filter_sql": f"RepCode IN ({codes_sql})",
+            "access_denied": False,
+            "error": None,
+            "error_type": None,
+        }
+
+    def run_sql_only(
+        self,
+        question: str,
+        allowed_rep_codes: list[str] | None = None,
+        user_role: str | None = None,
+        user_id: str | None = None,
+    ) -> dict:
+        """Generate and execute one SELECT without chat memory, cache, or Plotly."""
+        state: dict[str, Any] = {
+            "question": question,
+            "original_question": question,
+            "question_description": question,
+            "allowed_rep_codes": allowed_rep_codes or [],
+            "user_role": user_role,
+            "user_id": user_id,
+            "iterations": 0,
+            "should_retry": True,
+            "error": None,
+            "error_type": None,
+            "sql_query": None,
+            "sql_explanation": None,
+            "query_result": None,
+            "few_shot_examples": [],
+            "memory_context": "",
+            "messages": [],
+            "plan": None,
+            "schema_context": None,
+            "relevant_tables": None,
+        }
+        denied = self.missing_rep_codes(allowed_rep_codes, state)
+        if denied:
+            return denied
+
+        state.update(self.security_policy_node(state))
+        if state.get("error"):
+            return sanitize_state(state)
+
+        state.update(self.planner_node(state))
+        state.update(self.schema_retrieval_node(state))
+        state.update(self.generator_node(state))
+
+        while True:
+            state.update(self.static_validator_node(state))
+            if state.get("error"):
+                if self._can_retry_sql(state):
+                    state.update(self.reflector_node(state))
+                    continue
+                return sanitize_state(state)
+
+            if ENABLE_PRE_EXEC_CRITIC:
+                state.update(self.pre_exec_critic_node(state))
+                if state.get("error"):
+                    if self._can_retry_sql(state):
+                        state.update(self.reflector_node(state))
+                        continue
+                    return sanitize_state(state)
+
+            state.update(self.executor_node(state))
+            if state.get("error") is None:
+                state.update(self.result_verifier_node(state))
+                return sanitize_state(state)
+            if self._can_retry_sql(state):
+                state.update(self.reflector_node(state))
+                continue
+            return sanitize_state(state)
+
+    def _can_retry_sql(self, state: dict) -> bool:
+        return (
+            is_retryable(state.get("error_type"), state.get("should_retry", True))
+            and int(state.get("iterations") or 0) < MAX_ITERATIONS
+        )
+
+    def planner_node(self, state: AgentState) -> dict:
+        return self.planner.plan(self._with_sql_question(state))
+
+    def schema_retrieval_node(self, state: AgentState) -> dict:
+        """Fetch schema context and few-shot examples on the graph thread."""
+        question = self._sql_question(state)
+        payload = self._with_sql_question(state)
+        schema_out = self.schema_linker.retrieve_schema(payload)
+
+        few_out = {"few_shot_examples": []}
+        if ENABLE_DYNAMIC_FEW_SHOT:
+            try:
+                few_out = {
+                    "few_shot_examples": few_shot_retriever.retrieve(
+                        question, k=FEW_SHOT_EXAMPLES_COUNT
+                    )
+                }
+            except Exception as exc:
+                logger.warning(f"Few-shot retrieval failed: {exc}")
+        return {**schema_out, **few_out}
+
+    def generator_node(self, state: AgentState) -> dict:
+        return self.generator.generate(
+            self._with_sql_question(state),
+            few_shot_examples=state.get("few_shot_examples"),
+        )
+
+    def static_validator_node(self, state: AgentState) -> dict:
+        """Deterministic SQL validation before execution."""
+        sql = (state.get("sql_query") or "").strip()
+        if not sql:
+            return {
+                "error": "No SQL query generated",
+                "error_type": "validation",
+                "should_retry": True,
+            }
+
+        if FORBIDDEN_SQL.search(sql):
+            return {
+                "error": "Query contains forbidden DDL/DML statements",
+                "error_type": "validation",
+                "should_retry": False,
+            }
+
+        kind, message = assess_sql(sql)
+        if kind == "policy":
+            return {
+                "error": message,
+                "error_type": "validation",
+                "should_retry": False,
+            }
+        if kind == "parse":
+            return {
+                "error": f"SQL parse error: {message}",
+                "error_type": "syntax",
+                "should_retry": True,
+            }
+
+        update = {
+            "error": None,
+            "error_type": None,
+            "should_retry": False,
+        }
+        sql_upper = sql.upper()
+        if "LIMIT" not in sql_upper and "TOP " not in sql_upper:
+            logger.info("Enforcing row cap via TOP clause recommendation in state")
+            note = f"-- validator: consider TOP {SQL_MAX_ROWS}"
+            update["sql_explanation"] = (state.get("sql_explanation") or "") + f"\n{note}"
+        return update
+
+    def pre_exec_critic_node(self, state: AgentState) -> dict:
+        """Optional LLM review of SQL before execution."""
+        if not ENABLE_PRE_EXEC_CRITIC:
+            return {}
+        try:
+            system_prompt, user_prompt = build_pre_exec_critic_prompt(
+                self._sql_question(state), state.get("sql_query", "")
+            )
+            resp = self.llm_direct.invoke(chat_messages(system_prompt, user_prompt))
+            content = (resp.content or "").strip()
+            if content.upper().startswith("REJECT"):
+                return {
+                    "error": content,
+                    "error_type": "validation",
+                    "should_retry": True,
+                }
+        except Exception as exc:
+            logger.warning(f"Pre-exec critic failed: {exc}")
+        return {}
+
+    def executor_node(self, state: AgentState) -> dict:
+        return self.critic.execute_and_validate(state)
+
+    def reflector_node(self, state: AgentState) -> dict:
+        return self.critic.reflect_and_fix(state)
+
+    def result_verifier_node(self, state: AgentState) -> dict:
+        """Sanity-check execution results before formatting."""
+        if not ENABLE_RESULT_VERIFIER or state.get("error"):
+            return {}
+        result = state.get("query_result")
+        if result is None:
+            return {}
+        if isinstance(result, list) and len(result) == 0:
+            preview = state.get("result_preview") or "Query returned no rows."
+            return {"result_preview": preview}
+        return {}
+
+    def formatter_node(self, state: AgentState) -> dict:
+        return self._format_state(state)
+
+    def cache_result_node(self, state: AgentState) -> dict:
+        """
+        Stores successful query results in semantic cache for future use.
+        Also caches the last result set per session for follow-up lookups (no re-SQL).
+        """
+        if state.get("error") is not None:
+            return {}
+
+        question_key = state.get("question_description") or state.get("question") or ""
+
+        if state.get("sql_query") and not state.get("reused_previous_result"):
+            result_to_cache = {
+                "sql_query": state["sql_query"],
+                "query_result": state.get("query_result"),
+                "result_preview": state.get("result_preview"),
+                "plan": state.get("plan"),
+                "relevant_tables": state.get("relevant_tables"),
+            }
+            semantic_cache.set(question_key, result_to_cache)
+
+        # Session result cache: only after a fresh SQL run (not transform / semantic hit)
+        if state.get("reused_previous_result") or state.get("turn_action") in (
+            "transform_previous",
+            "cache_hit",
+        ):
+            return {}
+
+        session_id = state.get("session_id")
+        rows = serialize_query_result(state.get("query_result"))
+        if session_id and isinstance(rows, list) and rows:
+            tables = state.get("relevant_tables") or []
+            if isinstance(tables, str):
+                tables = [tables]
+            schema = {str(k): type(v).__name__ for k, v in rows[0].items()}
+            result_cache.cache_result(
+                session_id=session_id,
+                question=question_key,
+                sql=state.get("sql_query") or "",
+                data=rows,
+                tables=list(tables),
+                schema=schema,
+            )
+
+        return {}
 
     def save_memory_node(self, state: AgentState) -> dict:
         session_id = state.get("session_id")
@@ -276,311 +682,52 @@ class AgentOrchestrator:
             "assistant_message_saved": bool(assistant_content),
             "sql_execution_saved": sql_execution_saved,
         }
-    
 
-    def cache_result_node(self, state: AgentState) -> dict:
-        """
-        Stores successful query results in semantic cache for future use.
-        Also caches the last result set per session for follow-up lookups (no re-SQL).
-        """
-        if state.get("error") is not None:
-            return {}
+    def route_after_guardrail(self, state: AgentState) -> Literal["semantic_cache", "safe_response"]:
+        if state.get("guardrail_passed") == False:
+            return "safe_response"
+        return "semantic_cache"
 
-        question_key = state.get("question_description") or state.get("question") or ""
+    def route_after_cache(self, state: AgentState) -> Literal["formatter", "supervisor"]:
+        if state.get("cache_hit"):
+            return "formatter"
+        return "supervisor"
 
-        if state.get("sql_query") and not state.get("reused_previous_result"):
-            result_to_cache = {
-                "sql_query": state["sql_query"],
-                "query_result": state.get("query_result"),
-                "result_preview": state.get("result_preview"),
-                "plan": state.get("plan"),
-                "relevant_tables": state.get("relevant_tables"),
-            }
-            semantic_cache.set(question_key, result_to_cache)
+    def supervisor_routing(
+        self,
+        state: AgentState,
+    ) -> Literal["transform_result", "security_policy", "safe_response", "formatter", "direct"]:
+        """Route the turn. A direct reply is text only, with no SQL."""
+        action = state.get("turn_action", "run_sql")
 
-        # Session result cache: only after a fresh SQL run (not transform / semantic hit)
-        if state.get("reused_previous_result") or state.get("turn_action") in (
-            "transform_previous",
-            "cache_hit",
-        ):
-            return {}
-
-        session_id = state.get("session_id")
-        rows = serialize_query_result(state.get("query_result"))
-        if session_id and isinstance(rows, list) and rows:
-            tables = state.get("relevant_tables") or []
-            if isinstance(tables, str):
-                tables = [tables]
-            schema = {str(k): type(v).__name__ for k, v in rows[0].items()}
-            result_cache.cache_result(
-                session_id=session_id,
-                question=question_key,
-                sql=state.get("sql_query") or "",
-                data=rows,
-                tables=list(tables),
-                schema=schema,
+        if action == "transform_previous" and ENABLE_TRANSFORM_PREVIOUS:
+            sid = state.get("session_id")
+            if sid and result_cache.get_cached_result(sid):
+                return "transform_result"
+            logger.warning(
+                "transform_previous requested but no session cache found - falling back to SQL"
             )
+            return "security_policy"
 
-        return {}
+        if action == "direct":
+            return "direct"
+        if action in "deny":
+            return "safe_response"
+        return "security_policy"
 
-    def memory_loader_node(self, state: dict) -> dict:
-        """Load session memory and prior turn state."""
-        t0 = time.time()
-        session_id = state["session_id"]
-        previous_state = chat_memory.get_last_state(session_id)
-
-        user_message_id = None
-
-        # Save user question only once per graph run
-        if not state.get("user_message_saved"):
-            user_message_id = chat_memory.add_message(
-                session_id=session_id,
-                role="user",
-                content=state["question"],
-                message_type="question",
-                user_id=state.get("user_id"),
-                user_role=state.get("user_role"),
-            )
-
-        metrics = record_node_timing(
-            state.get("metrics") or init_metrics(),
-            "memory_loader",
-            (time.time() - t0) * 1000,
-        )
-
-        return {
-            "previous_state": previous_state,
-            "messages": chat_memory.get_session(session_id).get("messages", []),
-            "memory_context": chat_memory.build_memory_context(session_id),
-            "user_message_id": user_message_id,
-            "user_message_saved": True,
-            "metrics": metrics,
-        }
-
-    def semantic_cache_lookup_node(self, state: AgentState) -> dict:
-        """Early semantic cache exit before any schema-bearing LLM call."""
-        t0 = time.time()
-        if not ENABLE_SEMANTIC_CACHE:
-            return {"cache_hit": False}
-
-        cached = semantic_cache.get(state["question"])
-        metrics = record_node_timing(
-            state.get("metrics") or init_metrics(),
-            "semantic_cache_lookup",
-            (time.time() - t0) * 1000,
-        )
-
-        if not cached:
-            return {"cache_hit": False, "metrics": metrics}
-
-        logger.info("Semantic cache HIT — skipping SQL generation")
-        metrics["cache_hit"] = True
-        return sanitize_state({
-            "cache_hit": True,
-            "turn_action": "cache_hit",
-            "sql_query": cached.get("sql_query"),
-            "query_result": cached.get("query_result"),
-            "result_preview": cached.get("result_preview"),
-            "plan": cached.get("plan"),
-            "relevant_tables": cached.get("relevant_tables"),
-            "error": None,
-            "metrics": metrics,
-        })
-
-    def safe_response_node(self, state: AgentState) -> dict:
-        """Text reply when the turn is denied and no SQL should run."""
-        if state.get("access_denied"):
-            msg = state.get("access_denied_reason") or state.get("error") or "Access denied."
-        else:
-            msg = state.get("error") or "Unable to process your request."
-
-        # Clear prior query artifacts so UI/history do not show last SQL table or charts
-        return {
-            "final_answer": msg,
-            "result_summary": msg,
-            "query_result": None,
-            "result_preview": None,
-            "visualizations": [],
-            "sql_query": None,
-            "sql_explanation": None,
-            "plan": None,
-            "plan_steps": None,
-            "table_title": None,
-            "relevant_tables": None,
-            "error": state.get("error"),
-        }
-    
-    def _format_state(self, state: AgentState) -> dict:
-        """Format results and sanitize for checkpointer (plotly/numpy/date)."""
-        return sanitize_state(self.formatter.format(state))
-
-    def _transform_state(self, state: dict) -> dict:
-        """Graph node wrapper for result transformation."""
-        result = self.transformer.transform(state)
-
-        cached = result_cache.get_cached_result(state.get("session_id"))
-        question = state.get("original_question") or state.get("question") or ""
-
-        if cached and cached.original_question:
-            enriched = (
-                f"Previous question: {cached.original_question}\n"
-                f"Follow-up: {question}"
-            )
-        else:
-            enriched = question
-
-        needs_new_sql = result.get("needs_new_sql", False)
-        formatter_mode = result.get("formatter_mode")
-
-        out = {
-            **state,
-
-            "question": enriched,
-            "question_description": result.get("question_description") or enriched,
-
-            "query_result": result.get("query_result"),
-            "needs_new_sql": needs_new_sql,
-            "transformation_applied": result.get("transformation_applied", {}),
-            "current_phase": result.get("current_phase", "analyze"),
-
-            "turn_action": "run_sql" if needs_new_sql else "transform_previous",
-            "reused_previous_result": result.get("reused_previous_result", False),
-
-            "visualizations": [],
-            "plan": None,
-            "plan_steps": None,
-
-            "formatter_mode": formatter_mode,
-            "rows_returned": result.get("rows_returned", 0),
-        }
-
-        if result.get("sql_query"):
-            out["sql_query"] = result["sql_query"]
-
-        if result.get("local_sql_query"):
-            out["local_sql_query"] = result["local_sql_query"]
-
-        # Only semantic explanation should directly become final answer.
-        if formatter_mode == "semantic_answer":
-            explanation = result.get("explanation") or ""
-            out["result_preview"] = explanation
-            out["final_answer"] = explanation
-            out["result_summary"] = explanation
-            out["table_title"] = "Analysis of Previous Result"
-
-        # For DuckDB transformed data, DO NOT set final_answer/result_summary.
-        # Let formatter_node dynamically summarize the transformed query_result.
-        elif formatter_mode == "dynamic_result":
-            out["result_preview"] = result.get("explanation")
-            out["final_answer"] = None
-            out["result_summary"] = None
-            out["table_title"] = None
-
-        # If local result cannot answer and live SQL is needed.
-        elif needs_new_sql:
-            out["query_result"] = None
-            out["final_answer"] = None
-            out["result_summary"] = None
-            out["result_preview"] = result.get("explanation")
-
-        return out
-
-    _DIRECT_FALLBACK = (
-        "I can help with net sales, targets, achievement, reps, customers, products, routes, and outlets."
-    )
-
-
-    def _sql_question(self, state: AgentState) -> str:
-        """Description the planner and SQL generator must follow."""
-        return state.get("question_description") or state.get("question") or ""
-
-
-    def _with_sql_question(self, state: AgentState) -> dict:
-        payload = dict(state)
-        payload["question"] = self._sql_question(state)
-        return payload
-
-
-    def security_policy_node(self, state: AgentState) -> dict:
-        """Inject row-level security context. Fail closed without rep codes."""
-        allowed = state.get("allowed_rep_codes") or []
-        if not allowed:
-            return {
-                "error": "Access denied. No allowed rep codes were provided.",
-                "error_type": "access_denied",
-                "should_retry": False,
-            }
-        codes_sql = ", ".join(f"'{c}'" for c in allowed)
-        return {
-            "security_filter_sql": f"RepCode IN ({codes_sql})",
-            "access_denied": False,
-            "error": None,
-            "error_type": None,
-        }
-
-
-    def static_validator_node(self, state: AgentState) -> dict:
-        """Deterministic SQL validation before execution."""
-        sql = (state.get("sql_query") or "").strip()
-        if not sql:
-            return {
-                "error": "No SQL query generated",
-                "error_type": "validation",
-                "should_retry": True,
-            }
-
-        if FORBIDDEN_SQL.search(sql):
-            return {
-                "error": "Query contains forbidden DDL/DML statements",
-                "error_type": "validation",
-                "should_retry": False,
-            }
-
-        kind, message = assess_sql(sql)
-        if kind == "policy":
-            return {
-                "error": message,
-                "error_type": "validation",
-                "should_retry": False,
-            }
-        if kind == "parse":
-            return {
-                "error": f"SQL parse error: {message}",
-                "error_type": "syntax",
-                "should_retry": True,
-            }
-
-        update = {
-            "error": None,
-            "error_type": None,
-            "should_retry": False,
-        }
-        sql_upper = sql.upper()
-        if "LIMIT" not in sql_upper and "TOP " not in sql_upper:
-            logger.info("Enforcing row cap via TOP clause recommendation in state")
-            note = f"-- validator: consider TOP {SQL_MAX_ROWS}"
-            update["sql_explanation"] = (state.get("sql_explanation") or "") + f"\n{note}"
-        return update
-
-
-    def result_verifier_node(self, state: AgentState) -> dict:
-        """Sanity-check execution results before formatting."""
-        if not ENABLE_RESULT_VERIFIER or state.get("error"):
-            return {}
-        result = state.get("query_result")
-        if result is None:
-            return {}
-        if isinstance(result, list) and len(result) == 0:
-            preview = state.get("result_preview") or "Query returned no rows."
-            return {"result_preview": preview}
-        return {}
-
+    def route_after_transform(self, state: AgentState) -> Literal["formatter", "security_policy"]:
+        """LLM planner may decide cached rows are insufficient → new SQL."""
+        if state.get("needs_new_sql"):
+            logger.info("Follow-up planner requested new SQL")
+            return "security_policy"
+        if state.get("query_result") is None and state.get("current_phase") == "error":
+            return "security_policy"
+        return "formatter"
 
     def route_after_security(self, state: AgentState) -> Literal["planner", "formatter"]:
         if state.get("error"):
             return "formatter"
         return "planner"
-
 
     def route_after_static_validator(self, state: AgentState) -> str:
         if state.get("error"):
@@ -590,7 +737,6 @@ class AgentOrchestrator:
             return "formatter"
         return "pre_exec_critic" if ENABLE_PRE_EXEC_CRITIC else "executor"
 
-
     def route_after_pre_exec(self, state: AgentState) -> str:
         if state.get("error"):
             if is_retryable(state.get("error_type"), state.get("should_retry", True)):
@@ -598,7 +744,6 @@ class AgentOrchestrator:
                     return "reflect"
             return "formatter"
         return "executor"
-
 
     def route_after_executor(self, state: AgentState) -> str:
         if state.get("error") is None:
@@ -615,14 +760,15 @@ class AgentOrchestrator:
 
         workflow.add_node("init", self.add_start_time)
         workflow.add_node("memory_loader", self.memory_loader_node)
+        workflow.add_node("guardrail", self.guardrail_node)
         workflow.add_node("semantic_cache", self.semantic_cache_lookup_node)
         workflow.add_node("supervisor", self.supervisor_node)
-        workflow.add_node("transform_result", self.transform_result_node)
-        workflow.add_node("safe_response", self.safe_response_node)
         workflow.add_node("direct", self.direct_node)
+        workflow.add_node("safe_response", self.safe_response_node)
+        workflow.add_node("transform_result", self.transform_result_node)
         workflow.add_node("security_policy", self.security_policy_node)
         workflow.add_node("planner", self.planner_node)
-        workflow.add_node("parallel_retrieval", self.parallel_retrieval_node)
+        workflow.add_node("schema_retrieval", self.schema_retrieval_node)
         workflow.add_node("generator", self.generator_node)
         workflow.add_node("static_validator", self.static_validator_node)
         workflow.add_node("pre_exec_critic", self.pre_exec_critic_node)
@@ -635,7 +781,12 @@ class AgentOrchestrator:
 
         workflow.set_entry_point("init")
         workflow.add_edge("init", "memory_loader")
-        workflow.add_edge("memory_loader", "semantic_cache")
+        workflow.add_edge("memory_loader", "guardrail")
+        workflow.add_conditional_edges(
+            "guardrail",
+            self.route_after_guardrail,
+            {"semantic_cache": "semantic_cache", "safe_response": "safe_response"},
+        )
         workflow.add_conditional_edges(
             "semantic_cache",
             self.route_after_cache,
@@ -662,8 +813,8 @@ class AgentOrchestrator:
             self.route_after_security,
             {"planner": "planner", "formatter": "formatter"},
         )
-        workflow.add_edge("planner", "parallel_retrieval")
-        workflow.add_edge("parallel_retrieval", "generator")
+        workflow.add_edge("planner", "schema_retrieval")
+        workflow.add_edge("schema_retrieval", "generator")
         workflow.add_edge("generator", "static_validator")
         workflow.add_conditional_edges(
             "static_validator",
@@ -691,112 +842,12 @@ class AgentOrchestrator:
         )
         workflow.add_edge("reflector", "static_validator")
         workflow.add_edge("result_verifier", "formatter")
+        workflow.add_edge("direct", "save_memory")
         workflow.add_edge("safe_response", "save_memory")
         workflow.add_edge("formatter", "cache_result")
         workflow.add_edge("cache_result", "save_memory")
         workflow.add_edge("save_memory", END)
-        workflow.add_edge("direct", "save_memory")
         return workflow.compile()
-
-    def supervisor_node(self, state: AgentState) -> dict:
-        return self.supervisor.route(state)
-
-    def planner_node(self, state: AgentState) -> dict:
-        return self.planner.plan(self._with_sql_question(state))
-
-    def parallel_retrieval_node(self, state: AgentState) -> dict:
-        """Fetch schema context and few-shot examples in parallel."""
-        t0 = time.time()
-        question = self._sql_question(state)
-        payload = self._with_sql_question(state)
-        linker = self.schema_linker
-
-        def _schema():
-            return linker.retrieve_schema(payload)
-
-        def _few_shot():
-            if not ENABLE_DYNAMIC_FEW_SHOT:
-                return {"few_shot_examples": []}
-            try:
-                examples = few_shot_retriever.retrieve(question, k=FEW_SHOT_EXAMPLES_COUNT)
-                return {"few_shot_examples": examples}
-            except Exception as exc:
-                logger.warning(f"Few-shot retrieval failed: {exc}")
-                return {"few_shot_examples": []}
-
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            schema_out = pool.submit(_schema).result()
-            few_out = pool.submit(_few_shot).result()
-
-        logger.info(f"Parallel retrieval completed in {(time.time() - t0) * 1000:.0f}ms")
-        return {**schema_out, **few_out}
-
-    def generator_node(self, state: AgentState) -> dict:
-        return self.generator.generate(
-            self._with_sql_question(state),
-            few_shot_examples=state.get("few_shot_examples"),
-        )
-
-    def pre_exec_critic_node(self, state: AgentState) -> dict:
-        """Optional LLM review of SQL before execution."""
-        if not ENABLE_PRE_EXEC_CRITIC:
-            return {}
-        try:
-            system_prompt, user_prompt = build_pre_exec_critic_prompt(
-                self._sql_question(state), state.get("sql_query", "")
-            )
-            resp = self.llm_direct.invoke(chat_messages(system_prompt, user_prompt))
-            content = (resp.content or "").strip()
-            if content.upper().startswith("REJECT"):
-                return {
-                    "error": content,
-                    "error_type": "validation",
-                    "should_retry": True,
-                }
-        except Exception as exc:
-            logger.warning(f"Pre-exec critic failed: {exc}")
-        return {}
-
-    def executor_node(self, state: AgentState) -> dict:
-        return self.critic.execute_and_validate(state)
-
-    def reflector_node(self, state: AgentState) -> dict:
-        return self.critic.reflect_and_fix(state)
-
-    def formatter_node(self, state: AgentState) -> dict:
-        return self._format_state(state)
-
-    def transform_result_node(self, state: AgentState) -> dict:
-        return self._transform_state(state)
-
-    def direct_node(self, state: AgentState) -> dict:
-        """Text reply with no SQL. The next turn reads this reply from memory."""
-        try:
-            system_prompt, user_prompt = build_direct_prompt(
-                state.get("question") or "",
-                state.get("memory_context") or "",
-            )
-            response = self.llm_direct.invoke(chat_messages(system_prompt, user_prompt))
-            msg = response.content if hasattr(response, "content") else str(response)
-            msg = (msg or "").strip() or self._DIRECT_FALLBACK
-        except Exception as exc:
-            logger.error(f"Direct reply failed: {exc}")
-            msg = self._DIRECT_FALLBACK
-        return {
-            "turn_action": "direct",
-            "final_answer": msg,
-            "result_summary": msg,
-            "query_result": None,
-            "result_preview": None,
-            "visualizations": [],
-            "sql_query": None,
-            "sql_explanation": None,
-            "plan": None,
-            "plan_steps": None,
-            "table_title": None,
-            "relevant_tables": None,
-            "error": None,
-        }
 
     def run(self, question: str, **kwargs) -> dict:
         return run_agent(question, **kwargs)
@@ -834,9 +885,9 @@ def _initial_state(
         "memory_context": "",
         "turn_action": None,
         "question_description": None,
-        "metrics": init_metrics(),
+        "guardrail_passed": None,
+        "guardrail_reason": None,
         "plan": None,
-        "plan_steps": None,
         "relevant_tables": None,
         "schema_context": None,
         "sql_query": None,
@@ -863,9 +914,7 @@ def _initial_state(
 
 def _finalize(result: dict) -> dict:
     if result.get("start_time"):
-        total = (time.time() - result["start_time"]) * 1000
-        result["total_latency_ms"] = total
-        result["metrics"] = finalize_metrics(result.get("metrics"), total_latency_ms=total)
+        result["total_latency_ms"] = (time.time() - result["start_time"]) * 1000
     if result.get("error"):
         logger.error(f"Agent failed: {result['error']}")
     return sanitize_state(result)
@@ -894,6 +943,12 @@ def _prepare_turn(
     return session_id, resolved_turn, initial_state
 
 
+def _normalize_stream_item(item: Any) -> tuple[str, Any]:
+    if isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], str):
+        return item[0], item[1]
+    return "updates", item
+
+
 orchestrator = build_agent()
 graph = orchestrator.graph
 
@@ -920,6 +975,7 @@ def run_agent(question: str, **kwargs) -> dict:
         return {**initial_state, "error": str(exc), "should_retry": False}
 
 
+@traceable(name="sales-sql-agent-production", run_type="chain", tags=["text-to-sql", "production"])
 async def run_agent_async(
     question: str,
     session_id: str | None = None,
@@ -945,12 +1001,7 @@ async def run_agent_async(
         return {**initial_state, "error": str(exc), "should_retry": False, "turn_type": resolved_turn}
 
 
-def _normalize_stream_item(item: Any) -> tuple[str, Any]:
-    if isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], str):
-        return item[0], item[1]
-    return "updates", item
-
-
+@traceable(name="sales-sql-agent-production", run_type="chain", tags=["text-to-sql", "production"])
 async def run_agent_stream(
     question: str,
     session_id: str | None = None,
