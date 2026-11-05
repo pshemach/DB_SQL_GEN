@@ -804,7 +804,9 @@ Rules:
 - Each question must be a complete sales question that SQL can answer without chat history.
 - Use the current month when no period is given.
 - Scope to the signed-in user's reps when the user says "my" or names no people.
-- Do not invent filters the user did not state.
+- "Filter by X" / "slicer on X" is a dashboard slicer, not a chart grouping. Put X in filter_dimensions using the user's word for X.
+- Widget questions must keep the requested breakdown. Do not group, split, or rank a chart by a slicer dimension unless the user asked to compare that dimension.
+- Do not invent filters the user did not state. If there is no slicer request, use an empty filter_dimensions list.
 - Do not duplicate the same question with different wording.
 - Stay in sales-force scope.
 - If existing_widgets is not empty, add only new widgets that are not already covered.
@@ -812,6 +814,7 @@ Rules:
 JSON only:
 {{
   "title": "short dashboard title",
+  "filter_dimensions": [],
   "widgets": [
     {{
       "title": "widget title",

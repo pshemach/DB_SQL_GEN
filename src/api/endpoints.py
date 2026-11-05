@@ -46,12 +46,27 @@ app.include_router(cache.router)
 app.include_router(query.router)
 app.include_router(dashboards.router)
 
+@app.middleware("http")
+async def disable_web_cache(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/app" or path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
 @app.get("/app", include_in_schema=False)
 async def serve_app():
     index = WEB_DIR / "index.html"
     if not index.exists():
         raise HTTPException(status_code=404, detail="Frontend not found. Missing web/index.html")
-    return FileResponse(index)
+    return FileResponse(
+        index,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
 
 static_dir = WEB_DIR / "static"
 static_dir.mkdir(parents=True, exist_ok=True)

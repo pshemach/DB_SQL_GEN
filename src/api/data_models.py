@@ -172,6 +172,19 @@ class DashboardSaveRequest(BaseModel):
     title: Optional[str] = None
     layout: Optional[List[Dict[str, Any]]] = None
     widgets: Optional[List[Dict[str, Any]]] = None
+    filters: Optional[Dict[str, Any]] = None
 
 class DashboardWidgetAddRequest(BaseModel):
     requirement: str
+
+class DashboardFieldFilter(BaseModel):
+    column: str
+    values: List[str] = []
+
+class DashboardFilterRequest(BaseModel):
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    fields: Optional[List[DashboardFieldFilter]] = None
+    dimensions: Optional[List[str]] = None
+    dimension_values: Optional[Dict[str, List[str]]] = None
+    dimension_columns: Optional[Dict[str, str]] = None

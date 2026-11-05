@@ -10,6 +10,7 @@ from loguru import logger
 
 from src.api.data_models import (
     DashboardComposeRequest,
+    DashboardFilterRequest,
     DashboardSaveRequest,
     DashboardWidgetAddRequest,
 )
@@ -19,6 +20,7 @@ from src.api.services.dashboard import (
     public_dashboard,
     refresh_dashboard,
     save_dashboard,
+    stream_apply_filters_and_save,
     stream_compose_and_save,
 )
 from src.memory.dashboard_store import dashboard_store
@@ -49,6 +51,16 @@ async def _sse_compose(**kwargs) -> AsyncIterator[str]:
             yield _sse(event)
     except Exception as exc:
         logger.error(f"Dashboard compose error: {exc}")
+        yield _sse({"type": "error", "error": str(exc)})
+        yield _sse({"type": "done"})
+
+
+async def _sse_filter(**kwargs) -> AsyncIterator[str]:
+    try:
+        async for event in stream_apply_filters_and_save(**kwargs):
+            yield _sse(event)
+    except Exception as exc:
+        logger.error(f"Dashboard filter error: {exc}")
         yield _sse({"type": "error", "error": str(exc)})
         yield _sse({"type": "done"})
 
@@ -103,6 +115,7 @@ async def update_dashboard(
         title=request.title,
         layout=request.layout,
         widgets=request.widgets,
+        filters=request.filters,
     )
     if result.get("status_code") == 404:
         raise HTTPException(status_code=404, detail=result.get("error"))
@@ -122,6 +135,25 @@ async def refresh_saved_dashboard(
     if result.get("status_code") == 404:
         raise HTTPException(status_code=404, detail=result.get("error"))
     return result
+
+
+@router.post("/dashboards/{dashboard_id}/filter")
+async def filter_dashboard(
+    dashboard_id: str,
+    request: DashboardFilterRequest,
+    user: dict[str, Any] = Depends(require_user),
+):
+    return StreamingResponse(
+        _sse_filter(
+            dashboard_id=dashboard_id,
+            user_id=_user_id(user),
+            user_role=user.get("user_role"),
+            allowed_rep_codes=user.get("allowed_rep_codes") or [],
+            filters=request.model_dump(),
+        ),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )
 
 
 @router.post("/dashboards/{dashboard_id}/widgets")

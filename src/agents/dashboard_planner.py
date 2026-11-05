@@ -6,6 +6,7 @@ from typing import Any
 
 from loguru import logger
 
+from src.agents.dashboard_filters import normalize_dimensions
 from src.agents.dashboard_layout import normalize_plan_widgets
 from src.agents.prompts.agent_prompts import build_dashboard_planner_prompt, chat_messages
 from src.infrastructure.llm import get_router_llm
@@ -14,6 +15,29 @@ from src.services.chat_service.knowledge_retriever import business_knowledge_ret
 from src.services.chat_service.knowledge_store import business_knowledge_store
 
 FALLBACK_TITLE = "Sales dashboard"
+SLICER_QUESTION_MARK = "dashboard filter applied later"
+
+
+def apply_slicer_to_questions(
+    widgets: list[dict[str, Any]],
+    dimensions: list[str],
+) -> list[dict[str, Any]]:
+    names = normalize_dimensions(dimensions)
+    if not names:
+        return widgets
+    listed = ", ".join(names)
+    note = (
+        f" Do not group, split, or rank by {listed}; "
+        "that is a dashboard filter applied later, not a chart breakdown."
+    )
+    updated = []
+    for widget in widgets:
+        item = dict(widget)
+        question = str(item.get("question") or "").rstrip()
+        if question and SLICER_QUESTION_MARK not in question.lower():
+            item["question"] = f"{question}{note}"
+        updated.append(item)
+    return updated
 
 FALLBACK_WIDGETS = [
     {
@@ -68,7 +92,12 @@ class DashboardPlanner:
             widgets = normalize_plan_widgets(FALLBACK_WIDGETS)
         if mode == "add":
             widgets = widgets[:2]
-        return {"title": title, "widgets": widgets}
+        dimensions = normalize_dimensions(parsed.get("filter_dimensions"))
+        return {
+            "title": title,
+            "widgets": apply_slicer_to_questions(widgets, dimensions),
+            "filter_dimensions": dimensions,
+        }
 
     def _retrieve_knowledge(self, question: str) -> str:
         keyword_matches = business_knowledge_store.keyword_search(question)

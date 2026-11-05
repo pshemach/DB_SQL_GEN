@@ -12,6 +12,8 @@ from sqlalchemy import text
 
 from src.infrastructure.db import db_manager
 
+_EMPTY_FILTERS = {"date_from": None, "date_to": None, "fields": []}
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
@@ -19,6 +21,10 @@ def _now() -> str:
 
 def _as_json(value: Any) -> str:
     return json.dumps(value if value is not None else [], default=str)
+
+
+def _as_filters(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else dict(_EMPTY_FILTERS)
 
 
 def _load_json(value: Any, default: Any) -> Any:
@@ -52,6 +58,7 @@ class DashboardStore:
             requirement_text TEXT,
             layout_json JSON,
             widgets_json JSON,
+            filters_json JSON,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             INDEX idx_user_id (user_id),
@@ -64,6 +71,23 @@ class DashboardStore:
             logger.info("Dashboard table initialized")
         except Exception as exc:
             logger.warning(f"Dashboard table may already exist: {exc}")
+        self._ensure_filters_column()
+
+    def _ensure_filters_column(self) -> None:
+        sql = """
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :table_name
+          AND COLUMN_NAME = 'filters_json'
+        """
+        try:
+            with db_manager.engine.begin() as conn:
+                exists = conn.execute(text(sql), {"table_name": self.table_name}).scalar()
+                if not exists:
+                    conn.execute(text(f"ALTER TABLE {self.table_name} ADD COLUMN filters_json JSON"))
+                    logger.info("Added filters_json to user_dashboards")
+        except Exception as exc:
+            logger.warning(f"Could not ensure dashboard filters column: {exc}")
 
     def create(
         self,
@@ -73,6 +97,7 @@ class DashboardStore:
         requirement_text: str = "",
         layout: Optional[list[dict[str, Any]]] = None,
         widgets: Optional[list[dict[str, Any]]] = None,
+        filters: Optional[dict[str, Any]] = None,
         dashboard_id: Optional[str] = None,
     ) -> dict[str, Any]:
         record = {
@@ -82,14 +107,15 @@ class DashboardStore:
             "requirement_text": requirement_text or "",
             "layout": layout or [],
             "widgets": widgets or [],
+            "filters": _as_filters(filters),
             "created_at": _now(),
             "updated_at": _now(),
         }
         insert_sql = f"""
         INSERT INTO {self.table_name}
-            (dashboard_id, user_id, title, requirement_text, layout_json, widgets_json, created_at, updated_at)
+            (dashboard_id, user_id, title, requirement_text, layout_json, widgets_json, filters_json, created_at, updated_at)
         VALUES
-            (:dashboard_id, :user_id, :title, :requirement_text, :layout_json, :widgets_json, :created_at, :updated_at)
+            (:dashboard_id, :user_id, :title, :requirement_text, :layout_json, :widgets_json, :filters_json, :created_at, :updated_at)
         """
         with db_manager.engine.begin() as conn:
             conn.execute(text(insert_sql), {
@@ -99,6 +125,7 @@ class DashboardStore:
                 "requirement_text": record["requirement_text"],
                 "layout_json": _as_json(record["layout"]),
                 "widgets_json": _as_json(record["widgets"]),
+                "filters_json": _as_json(record["filters"]),
                 "created_at": record["created_at"],
                 "updated_at": record["updated_at"],
             })
@@ -106,7 +133,7 @@ class DashboardStore:
 
     def get(self, dashboard_id: str, user_id: str) -> Optional[dict[str, Any]]:
         sql = f"""
-        SELECT dashboard_id, user_id, title, requirement_text, layout_json, widgets_json, created_at, updated_at
+        SELECT dashboard_id, user_id, title, requirement_text, layout_json, widgets_json, filters_json, created_at, updated_at
         FROM {self.table_name}
         WHERE dashboard_id = :dashboard_id AND user_id = :user_id
         """
@@ -121,7 +148,7 @@ class DashboardStore:
 
     def list_for_user(self, user_id: str) -> list[dict[str, Any]]:
         sql = f"""
-        SELECT dashboard_id, user_id, title, requirement_text, layout_json, widgets_json, created_at, updated_at
+        SELECT dashboard_id, user_id, title, requirement_text, layout_json, widgets_json, filters_json, created_at, updated_at
         FROM {self.table_name}
         WHERE user_id = :user_id
         ORDER BY updated_at DESC
@@ -150,6 +177,7 @@ class DashboardStore:
         requirement_text: Optional[str] = None,
         layout: Optional[list[dict[str, Any]]] = None,
         widgets: Optional[list[dict[str, Any]]] = None,
+        filters: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         current = self.get(dashboard_id, user_id)
         if not current:
@@ -162,6 +190,8 @@ class DashboardStore:
             current["layout"] = layout
         if widgets is not None:
             current["widgets"] = widgets
+        if filters is not None:
+            current["filters"] = _as_filters(filters)
         current["updated_at"] = _now()
 
         sql = f"""
@@ -170,6 +200,7 @@ class DashboardStore:
             requirement_text = :requirement_text,
             layout_json = :layout_json,
             widgets_json = :widgets_json,
+            filters_json = :filters_json,
             updated_at = :updated_at
         WHERE dashboard_id = :dashboard_id AND user_id = :user_id
         """
@@ -181,6 +212,7 @@ class DashboardStore:
                 "requirement_text": current["requirement_text"],
                 "layout_json": _as_json(current["layout"]),
                 "widgets_json": _as_json(current["widgets"]),
+                "filters_json": _as_json(current.get("filters") or _EMPTY_FILTERS),
                 "updated_at": current["updated_at"],
             })
         return current
@@ -193,6 +225,7 @@ class DashboardStore:
         requirement_text: str = "",
         layout: Optional[list[dict[str, Any]]] = None,
         widgets: Optional[list[dict[str, Any]]] = None,
+        filters: Optional[dict[str, Any]] = None,
         dashboard_id: Optional[str] = None,
     ) -> dict[str, Any]:
         if dashboard_id:
@@ -203,6 +236,7 @@ class DashboardStore:
                 requirement_text=requirement_text,
                 layout=layout,
                 widgets=widgets,
+                filters=filters,
             )
             if updated:
                 return updated
@@ -212,6 +246,7 @@ class DashboardStore:
             requirement_text=requirement_text,
             layout=layout,
             widgets=widgets,
+            filters=filters,
             dashboard_id=dashboard_id,
         )
 
@@ -238,6 +273,7 @@ class DashboardStore:
             "requirement_text": data.get("requirement_text") or "",
             "layout": _load_json(data.get("layout_json"), []),
             "widgets": _load_json(data.get("widgets_json"), []),
+            "filters": _as_filters(_load_json(data.get("filters_json"), {})),
             "created_at": created.isoformat() if hasattr(created, "isoformat") else created,
             "updated_at": updated.isoformat() if hasattr(updated, "isoformat") else updated,
         }

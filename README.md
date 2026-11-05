@@ -85,6 +85,7 @@ Assembled in `src/api/endpoints.py`.
 | `GET` | `/dashboards`, `/dashboards/{id}` | List or load saved dashboards |
 | `PUT` | `/dashboards/{id}` | Save title, layout, and widgets |
 | `POST` | `/dashboards/{id}/refresh` | Re-run each widget SELECT |
+| `POST` | `/dashboards/{id}/filter` | Re-query widgets with shared date and field filters |
 | `POST` | `/dashboards/{id}/widgets` | Add a widget from a short request |
 | `DELETE` | `/dashboards/{id}` | Delete a saved dashboard |
 

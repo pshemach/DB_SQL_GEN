@@ -69,6 +69,82 @@
   resize: vertical;
 }
 
+.dashboard-filters {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: #fff;
+  border: 2px solid var(--primary);
+  border-radius: 12px;
+}
+
+.dashboard-filters-head {
+  display: grid;
+  gap: 2px;
+}
+
+.dashboard-filters-head strong {
+  font-size: 13px;
+}
+
+.dashboard-filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+.dashboard-filters-row label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dashboard-filters-row input[type="date"],
+.dashboard-filter-field select {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font: inherit;
+  background: #fff;
+}
+
+.dashboard-filter-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboard-filter-field {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px);
+  gap: 8px;
+  align-items: end;
+}
+
+.dashboard-filter-field label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dashboard-filter-field input,
+.dashboard-filter-field select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font: inherit;
+  background: #fff;
+  min-height: 40px;
+}
+
+.dashboard-filter-hint {
+  margin: 0;
+  font-size: 12px;
+}
+
 .dashboard-empty {
   margin: 24px 0;
   color: var(--muted);
@@ -220,5 +296,8 @@ body.section-chat #dashboard-workspace {
   .dashboard-compose,
   .dashboard-add {
     flex-direction: column;
+  }
+  .dashboard-filter-field {
+    grid-template-columns: 1fr;
   }
 }

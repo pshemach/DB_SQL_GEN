@@ -4,8 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EVision Agent</title>
-  <link rel="stylesheet" href="/static/css/app.css?v=16" />
-  <link rel="stylesheet" href="/static/css/dashboard.css?v=16" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <link rel="stylesheet" href="/static/css/app.css?v=23" />
+  <link rel="stylesheet" href="/static/css/dashboard.css?v=23" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@11.5.1/dist/gridstack.min.css" />
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
@@ -160,6 +162,18 @@ Exclusions:
       </section>
 
       <section id="dashboard-workspace" class="dashboard-workspace hidden">
+        <section id="dashboard-filters" class="dashboard-filters hidden">
+          <div class="dashboard-filters-head">
+            <strong>Dashboard filters</strong>
+            <p class="muted dashboard-filter-hint">These come from the dashboard requirement. Apply reuses each widget’s SQL; it does not generate a new query.</p>
+          </div>
+          <div class="dashboard-filters-row">
+            <button type="button" class="btn primary" id="dashboard-filter-apply">Apply filters</button>
+            <button type="button" class="btn" id="dashboard-filter-clear">Clear</button>
+          </div>
+          <div id="dashboard-filter-fields" class="dashboard-filter-fields"></div>
+        </section>
+
         <div class="dashboard-toolbar">
           <label>
             Saved boards
@@ -284,8 +298,8 @@ Exclusions:
       </div>
     </section>
   </template>
-  <script src="/static/js/echarts_adapter.js?v=16"></script>
-  <script src="/static/js/app.js?v=16"></script>
-  <script src="/static/js/dashboard.js?v=17"></script>
+  <script src="/static/js/echarts_adapter.js?v=23"></script>
+  <script src="/static/js/app.js?v=23"></script>
+  <script src="/static/js/dashboard.js?v=23"></script>
 </body>
 </html>

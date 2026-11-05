@@ -62,7 +62,14 @@
 
   function setBusy(busy) {
     dash.composing = busy;
-    ["dashboard-generate-btn", "dashboard-add-btn", "dashboard-refresh-btn", "dashboard-save-btn"].forEach((id) => {
+    [
+      "dashboard-generate-btn",
+      "dashboard-add-btn",
+      "dashboard-refresh-btn",
+      "dashboard-save-btn",
+      "dashboard-filter-apply",
+      "dashboard-filter-clear",
+    ].forEach((id) => {
       if (el(id)) el(id).disabled = busy;
     });
   }
@@ -113,12 +120,117 @@
     }));
   }
 
+  function emptyFilters() {
+    return { date_from: null, date_to: null, fields: [], dimensions: [], dimension_values: {}, dimension_columns: {} };
+  }
+
+  function plannedDimensions(filters) {
+    const fromFilters = filters?.dimensions || dash.current?.filters?.dimensions || [];
+    if (fromFilters.length) return fromFilters;
+    return (dash.current?.filter_fields || []).map((item) => item.column).filter(Boolean);
+  }
+
+  function ensureFilterBar() {
+    return el("dashboard-filters");
+  }
+
+  function showFilterBar(visible) {
+    const bar = ensureFilterBar();
+    if (!bar) return;
+    bar.classList.toggle("hidden", !visible);
+    bar.style.display = visible ? "grid" : "none";
+  }
+
+  function availableFields() {
+    return dash.current?.filter_fields || [];
+  }
+
+  function valuesForColumn(column, selected) {
+    const found = availableFields().find((item) => item.column.toLowerCase() === String(column || "").toLowerCase());
+    const options = [...(found?.values || [])];
+    (selected || []).forEach((value) => {
+      if (value && !options.includes(value)) options.push(value);
+    });
+    return options;
+  }
+
+  function selectedValue(field) {
+    const values = field?.values || [];
+    return values.length ? String(values[0]) : "";
+  }
+
+  function fieldRowHtml(field, index) {
+    const selectedColumn = field?.column || "";
+    const picked = selectedValue(field);
+    const valueOptions = valuesForColumn(selectedColumn, picked ? [picked] : []).map((value) => (
+      `<option value="${escapeHtml(value)}" ${value === picked ? "selected" : ""}>${escapeHtml(value)}</option>`
+    )).join("");
+    return `
+      <div class="dashboard-filter-field" data-filter-index="${index}">
+        <label>${escapeHtml(selectedColumn || "Filter")}
+          <input type="hidden" data-filter-column value="${escapeHtml(selectedColumn)}" />
+          <select data-filter-values>
+            <option value="">All</option>
+            ${valueOptions}
+          </select>
+        </label>
+      </div>
+    `;
+  }
+
+  function rowsForFilters(filters) {
+    const selected = {};
+    (filters?.fields || []).forEach((field) => {
+      if (!field?.column) return;
+      selected[String(field.column).toLowerCase()] = field.values || [];
+    });
+    return plannedDimensions(filters).map((dimension) => ({
+      column: dimension,
+      values: selected[String(dimension).toLowerCase()] || [],
+    }));
+  }
+
+  function renderFieldRows(fields) {
+    const host = el("dashboard-filter-fields");
+    if (!host) return;
+    host.innerHTML = (fields || []).map((field, index) => fieldRowHtml(field, index)).join("");
+  }
+
+  function hydrateFilters(filters) {
+    const data = { ...emptyFilters(), ...(filters || {}) };
+    const rows = rowsForFilters(data);
+    showFilterBar(rows.length > 0);
+    renderFieldRows(rows);
+  }
+
+  function collectFilters() {
+    const fields = [];
+    const dimensions = [];
+    document.querySelectorAll("#dashboard-filter-fields .dashboard-filter-field").forEach((row) => {
+      const column = row.querySelector("[data-filter-column]")?.value?.trim();
+      if (!column) return;
+      dimensions.push(column);
+      const picked = row.querySelector("[data-filter-values]")?.value?.trim();
+      if (picked) fields.push({ column, values: [picked] });
+    });
+    const current = dash.current?.filters || emptyFilters();
+    return {
+      date_from: null,
+      date_to: null,
+      fields,
+      dimensions: dimensions.length ? dimensions : (current.dimensions || []),
+      dimension_values: current.dimension_values || {},
+      dimension_columns: current.dimension_columns || {},
+    };
+  }
+
   function applyCurrent(record) {
     dash.current = record;
     el("dashboard-title").value = record?.title || "";
     el("dashboard-requirement").value = record?.requirement_text || el("dashboard-requirement").value;
     el("dashboard-select").value = record?.dashboard_id || "";
     el("dashboard-add-form").classList.toggle("hidden", !record?.dashboard_id);
+    hydrateFilters(record?.filters);
     renderGrid(record?.widgets || [], record?.layout || []);
   }
 
@@ -339,6 +451,7 @@
     el("dashboard-requirement").value = "";
     el("dashboard-select").value = "";
     el("dashboard-add-form").classList.add("hidden");
+    hydrateFilters(emptyFilters());
     setStatus("");
     renderGrid([], []);
   }
@@ -362,6 +475,7 @@
         title,
         layout,
         widgets: dash.current.widgets,
+        filters: dash.current.filters || emptyFilters(),
       }),
     });
     dash.current = result;
@@ -404,6 +518,11 @@
             requirement_text: requirement,
             widgets: event.widgets || [],
             layout: event.layout || [],
+            filters: {
+              ...emptyFilters(),
+              dimensions: event.filter_dimensions || [],
+            },
+            filter_fields: (event.filter_dimensions || []).map((column) => ({ column, values: [] })),
           });
           el("dashboard-title").value = event.title || "";
         } else if (event.type === "widget_ready") {
@@ -443,6 +562,49 @@
     }
   }
 
+  async function applyFilters(filters) {
+    if (!dash.current?.dashboard_id) {
+      toast("Generate or open a dashboard first.", "error");
+      return;
+    }
+    setBusy(true);
+    setStatus("Applying filters...");
+    try {
+      const headers = {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      };
+      const token = app().getState?.()?.token;
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const response = await fetch(`/dashboards/${encodeURIComponent(dash.current.dashboard_id)}/filter`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(filters || emptyFilters()),
+      });
+      if (!response.ok) {
+        let payload = null;
+        try { payload = await response.json(); } catch { payload = null; }
+        throw new Error(payload?.detail || payload?.error || `Request failed (${response.status})`);
+      }
+      const readSse = app().readSse;
+      if (!readSse) throw new Error("Streaming is not available.");
+      for await (const event of readSse(response)) {
+        if (event.type === "status") setStatus(event.text || "Applying filters...");
+        else if (event.type === "widget_ready") upsertWidget(event.widget);
+        else if (event.type === "result") {
+          applyCurrent(event.payload);
+          await loadList();
+        } else if (event.type === "error") {
+          throw new Error(event.error || "Dashboard filter failed.");
+        }
+      }
+      setStatus("");
+      toast("Filters applied.", "success");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function refreshBoard() {
     if (!dash.current?.dashboard_id) {
       toast("Generate or open a dashboard first.", "error");
@@ -475,6 +637,8 @@
   }
 
   function bindEvents() {
+    ensureFilterBar();
+    hydrateFilters(emptyFilters());
     el("dashboard-compose-form")?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const requirement = el("dashboard-requirement").value.trim();
@@ -514,7 +678,25 @@
       try { await loadDashboard(event.target.value); } catch (error) { toast(error.message, "error"); }
     });
     el("dashboard-title")?.addEventListener("change", () => scheduleSave());
-
+    el("dashboard-filter-apply")?.addEventListener("click", async () => {
+      try { await applyFilters(collectFilters()); } catch (error) {
+        setStatus("");
+        toast(error.message, "error");
+      }
+    });
+    el("dashboard-filter-clear")?.addEventListener("click", async () => {
+      const cleared = {
+        ...emptyFilters(),
+        dimensions: dash.current?.filters?.dimensions || [],
+        dimension_values: dash.current?.filters?.dimension_values || {},
+        dimension_columns: dash.current?.filters?.dimension_columns || {},
+      };
+      hydrateFilters(cleared);
+      try { await applyFilters(cleared); } catch (error) {
+        setStatus("");
+        toast(error.message, "error");
+      }
+    });
     el("dashboard-grid")?.addEventListener("click", async (event) => {
       const tile = event.target.closest(".dashboard-tile");
       if (!tile) return;
@@ -549,8 +731,11 @@
   window.EVisionDashboard = {
     async show() {
       try {
+        ensureFilterBar();
         await loadList();
         if (!dash.grid) ensureGrid();
+        if (dash.current) hydrateFilters(dash.current.filters);
+        else hydrateFilters(emptyFilters());
         scheduleResize();
       } catch (error) {
         toast(error.message, "error");
