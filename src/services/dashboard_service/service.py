@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any, Optional
 
-from src.agents.dashboard_composer import dashboard_composer
-from src.agents.dashboard_filters import empty_filters, merge_filter_fields, normalize_filters
-from src.agents.dashboard_layout import extend_layout, pack_layout
+from src.services.dashboard_service.composer import dashboard_composer
+from src.services.dashboard_service.filters import empty_filters, merge_filter_fields, normalize_filters
+from src.services.dashboard_service.layout import extend_layout, pack_layout
 from src.memory.dashboard_store import dashboard_store
 
 

@@ -1,6 +1,6 @@
 """Dashboard layout, chart mapping, and read-only refresh checks."""
 
-from src.agents.dashboard_filters import (
+from src.services.dashboard_service.filters import (
     filter_columns,
     filter_values,
     has_filters,
@@ -9,13 +9,13 @@ from src.agents.dashboard_filters import (
     normalize_filters,
     question_with_filters,
 )
-from src.agents.dashboard_planner import apply_slicer_to_questions
-from src.agents.dashboard_layout import (
+from src.services.dashboard_service.planner import apply_slicer_to_questions
+from src.services.dashboard_service.layout import (
     extend_layout,
     normalize_plan_widgets,
     pack_layout,
 )
-from src.agents.dashboard_composer import DashboardComposer
+from src.services.dashboard_service.composer import DashboardComposer
 from src.agents.formatter import ResultFormatterAgent
 from src.agents.orchestrator import orchestrator
 
