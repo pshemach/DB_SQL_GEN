@@ -9,7 +9,7 @@ from src.services.dashboard_service.filters import (
     normalize_filters,
     question_with_filters,
 )
-from src.services.dashboard_service.planner import apply_slicer_to_questions
+from src.agents.dashboard.dashboard_planer import DashboardPlaner
 from src.services.dashboard_service.layout import (
     extend_layout,
     normalize_plan_widgets,
@@ -22,8 +22,8 @@ from src.agents.dashboard.orchestrator import (
     filter_orchestrator,
     refresh_orchestrator,
 )
-from src.agents.formatter import ResultFormatterAgent
-from src.agents.orchestrator import orchestrator
+from src.agents.chat.formatter import ResultFormatterAgent
+from src.agents.chat.orchestrator import orchestrator
 
 
 class StubFormatter(ResultFormatterAgent):
@@ -201,7 +201,7 @@ class TestDashboardFilters:
         assert "FROM sales_agg" in updated
 
     def test_slicer_note_keeps_widget_breakdown(self):
-        widgets = apply_slicer_to_questions(
+        widgets = DashboardPlaner.apply_slicer_to_questions(
             [{"title": "By product", "question": "Product-wise net sales last month"}],
             ["region"],
         )
@@ -209,7 +209,7 @@ class TestDashboardFilters:
         assert "Product-wise net sales last month" in question
         assert "region" in question
         assert "dashboard filter applied later" in question
-        again = apply_slicer_to_questions(widgets, ["region"])
+        again = DashboardPlaner.apply_slicer_to_questions(widgets, ["region"])
         assert again[0]["question"].count("dashboard filter applied later") == 1
 
 

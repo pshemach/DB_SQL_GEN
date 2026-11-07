@@ -4,7 +4,7 @@ Critic Agent (Refiner): Validates, executes, and corrects SQL queries.
 
 from loguru import logger
 from src.infrastructure.db import db_manager
-from src.agents.state import AgentState
+from src.agents.chat.state import AgentState
 
 from src.agents.prompts.chat_agent_prompts import build_reflection_prompt, chat_messages
 from src.infrastructure.config import ENABLE_SELF_CORRECTION, MAX_ITERATIONS, QUERY_TIMEOUT_SECONDS
@@ -122,7 +122,7 @@ class CriticAgent:
             )
             response = self.llm.invoke(chat_messages(system_prompt, user_prompt))
             
-            from src.agents.generator import SQLGeneratorAgent
+            from src.agents.chat.generator import SQLGeneratorAgent
             fixed_sql = SQLGeneratorAgent._clean_sql(response.content)
             
             logger.info(f"Generated corrected SQL (iteration {iterations + 1})")

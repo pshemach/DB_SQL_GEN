@@ -6,39 +6,19 @@ from typing import Any
 
 from loguru import logger
 
-from src.services.dashboard_service.filters import normalize_dimensions
-from src.services.dashboard_service.layout import normalize_plan_widgets
-from src.agents.prompts.agent_prompts import build_dashboard_planner_prompt, chat_messages
+from src.agents.prompts.dashboard_agent_prompts import (
+    build_dashboard_planner_prompt,
+    dashboard_messages,
+)
 from src.infrastructure.llm import get_router_llm
 from src.infrastructure.utils import extract_json
 from src.services.chat_service.knowledge_retriever import business_knowledge_retriever
 from src.services.chat_service.knowledge_store import business_knowledge_store
+from src.services.dashboard_service.filters import normalize_dimensions
+from src.services.dashboard_service.layout import normalize_plan_widgets
 
 FALLBACK_TITLE = "Sales dashboard"
 SLICER_QUESTION_MARK = "dashboard filter applied later"
-
-
-def apply_slicer_to_questions(
-    widgets: list[dict[str, Any]],
-    dimensions: list[str],
-) -> list[dict[str, Any]]:
-    names = normalize_dimensions(dimensions)
-    if not names:
-        return widgets
-    listed = ", ".join(names)
-    note = (
-        f" Do not group, split, or rank by {listed}; "
-        "that is a dashboard filter applied later, not a chart breakdown."
-    )
-    updated = []
-    for widget in widgets:
-        item = dict(widget)
-        question = str(item.get("question") or "").rstrip()
-        if question and SLICER_QUESTION_MARK not in question.lower():
-            item["question"] = f"{question}{note}"
-        updated.append(item)
-    return updated
-
 FALLBACK_WIDGETS = [
     {
         "title": "Net sales",
@@ -58,12 +38,12 @@ FALLBACK_WIDGETS = [
         "chart_type": "bar",
         "question": "Top 10 products by net sales this month for my reps.",
     },
-]
-
-
-class DashboardPlanner:
+    ]
+    
+class DashboardPlaner:
+    """Planner agent for a dashboard brief."""
     def __init__(self, llm: Any = None) -> None:
-        self.llm = llm or get_router_llm()
+        self.llm = llm
 
     def plan(
         self,
@@ -71,7 +51,8 @@ class DashboardPlanner:
         existing_widgets: list[dict[str, Any]] | None = None,
         mode: str = "compose",
     ) -> dict[str, Any]:
-        knowledge = self._retrieve_knowledge(requirement)
+        model = self.llm or get_router_llm()
+        knowledge = self.retrieve_knowledge(requirement)
         existing_text = self._format_existing(existing_widgets)
         try:
             system_prompt, user_prompt = build_dashboard_planner_prompt(
@@ -80,26 +61,49 @@ class DashboardPlanner:
                 existing_widgets=existing_text,
                 mode=mode,
             )
-            response = self.llm.invoke(chat_messages(system_prompt, user_prompt))
+            response = model.invoke(dashboard_messages(system_prompt, user_prompt))
             parsed = extract_json((response.content or "").strip())
         except Exception as exc:
             logger.error(f"Dashboard planner failed: {exc}")
             parsed = {}
 
-        title = str(parsed.get("title") or "").strip() or FALLBACK_TITLE
+        title = str(parsed.get("title") or "").strip() or self.FALLBACK_TITLE
         widgets = normalize_plan_widgets(parsed.get("widgets"))
         if not widgets and mode == "compose":
-            widgets = normalize_plan_widgets(FALLBACK_WIDGETS)
+            widgets = normalize_plan_widgets(self.FALLBACK_WIDGETS)
         if mode == "add":
             widgets = widgets[:2]
         dimensions = normalize_dimensions(parsed.get("filter_dimensions"))
         return {
             "title": title,
-            "widgets": apply_slicer_to_questions(widgets, dimensions),
+            "widgets": self.apply_slicer_to_questions(widgets, dimensions),
             "filter_dimensions": dimensions,
         }
 
-    def _retrieve_knowledge(self, question: str) -> str:
+    @classmethod
+    def apply_slicer_to_questions(
+        cls,
+        widgets: list[dict[str, Any]],
+        dimensions: list[str],
+    ) -> list[dict[str, Any]]:
+        names = normalize_dimensions(dimensions)
+        if not names:
+            return widgets
+        listed = ", ".join(names)
+        note = (
+            f" Do not group, split, or rank by {listed}; "
+            "that is a dashboard filter applied later, not a chart breakdown."
+        )
+        updated = []
+        for widget in widgets:
+            item = dict(widget)
+            question = str(item.get("question") or "").rstrip()
+            if question and cls.SLICER_QUESTION_MARK not in question.lower():
+                item["question"] = f"{question}{note}"
+            updated.append(item)
+        return updated
+
+    def retrieve_knowledge(self, question: str) -> str:
         keyword_matches = business_knowledge_store.keyword_search(question)
         keyword_knowledge = "\n".join(
             f"KPI: {match['name']}\n{match['definition']}" for match in keyword_matches
@@ -107,8 +111,8 @@ class DashboardPlanner:
         vector_knowledge = ""
         if business_knowledge_retriever:
             try:
-                vector_knowledge = (
-                    business_knowledge_retriever.retrieve_business_definitions_block(question)
+                vector_knowledge = business_knowledge_retriever.retrieve_business_definitions_block(
+                    question
                 )
             except Exception:
                 vector_knowledge = ""

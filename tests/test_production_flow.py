@@ -3,7 +3,7 @@
 import pytest
 
 from src.infrastructure.db.sql_safety import classify_db_error, is_retryable
-from src.agents.orchestrator import FORBIDDEN_SQL, orchestrator
+from src.agents.chat.orchestrator import FORBIDDEN_SQL, orchestrator
 from src.infrastructure.db.sql_safety import assess_sql
 
 class TestErrorTaxonomy:

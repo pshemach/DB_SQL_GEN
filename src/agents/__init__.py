@@ -1,10 +1,11 @@
 """Sales SQL agents.
 
-``orchestrator.py`` owns the workflow. Large steps stay in their own files
+Chat workflow lives in ``chat/``. ``chat/orchestrator.py`` owns that graph.
+Large steps stay in their own files
 (router, planner, retriever, generator, critic, formatter, transformer).
 """
 
-from src.agents.orchestrator import (
+from src.agents.chat.orchestrator import (
     AgentOrchestrator,
     build_agent,
     graph,

@@ -7,7 +7,6 @@ from src.services.dashboard_service.filters import (
     normalize_filters,
 )
 from src.services.dashboard_service.layout import extend_layout, pack_layout
-from src.services.dashboard_service.planner import DashboardPlanner, apply_slicer_to_questions
 from src.services.dashboard_service.service import (
     add_widget,
     public_dashboard,
@@ -19,9 +18,7 @@ from src.services.dashboard_service.service import (
 
 __all__ = [
     "DashboardComposer",
-    "DashboardPlanner",
     "add_widget",
-    "apply_slicer_to_questions",
     "dashboard_composer",
     "empty_filters",
     "extend_layout",

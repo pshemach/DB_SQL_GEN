@@ -1,7 +1,8 @@
 """Agent prompt templates and builders.
 
 ``build_*_prompt`` returns ``(system_prompt, user_prompt)``.
-Exports follow the orchestrator flow.
+Chat exports follow the chat graph. Dashboard exports follow widget planning
+and the widget SQL plan.
 """
 
 from src.agents.prompts.chat_agent_prompts import (
@@ -21,7 +22,6 @@ from src.agents.prompts.chat_agent_prompts import (
     RESULT_FORMATTER_PROMPT,
     KNOWLEDGE_GAP_DETECTOR_PROMPT,
     CLARIFICATION_AGENT_PROMPT,
-    DASHBOARD_PLANNER_PROMPT,
     build_domain_classifier_prompt,
     build_router_prompt,
     build_direct_prompt,
@@ -38,8 +38,23 @@ from src.agents.prompts.chat_agent_prompts import (
     build_result_formatter_prompt,
     build_knowledge_gap_prompt,
     build_clarification_prompt,
-    build_dashboard_planner_prompt,
     chat_messages,
+)
+from src.agents.prompts.dashboard_agent_prompts import (
+    DASHBOARD_PLANNER_PROMPT,
+    DASHBOARD_SCOPE_PROMPT,
+    DASHBOARD_SQL_CRITIC_PROMPT,
+    DASHBOARD_SQL_GENERATOR_PROMPT,
+    DASHBOARD_SQL_PLANNER_PROMPT,
+    DASHBOARD_SQL_REPAIR_PROMPT,
+    DASHBOARD_TABLE_PROMPT,
+    build_dashboard_planner_prompt,
+    build_dashboard_scope_prompt,
+    build_dashboard_sql_critic_prompt,
+    build_dashboard_sql_generator_prompt,
+    build_dashboard_sql_planner_prompt,
+    build_dashboard_sql_repair_prompt,
+    build_dashboard_table_prompt,
 )
 
 __all__ = [
@@ -60,6 +75,12 @@ __all__ = [
     "KNOWLEDGE_GAP_DETECTOR_PROMPT",
     "CLARIFICATION_AGENT_PROMPT",
     "DASHBOARD_PLANNER_PROMPT",
+    "DASHBOARD_SCOPE_PROMPT",
+    "DASHBOARD_SQL_PLANNER_PROMPT",
+    "DASHBOARD_TABLE_PROMPT",
+    "DASHBOARD_SQL_GENERATOR_PROMPT",
+    "DASHBOARD_SQL_CRITIC_PROMPT",
+    "DASHBOARD_SQL_REPAIR_PROMPT",
     "build_domain_classifier_prompt",
     "build_router_prompt",
     "build_direct_prompt",
@@ -76,6 +97,12 @@ __all__ = [
     "build_result_formatter_prompt",
     "build_knowledge_gap_prompt",
     "build_clarification_prompt",
+    "build_dashboard_scope_prompt",
     "build_dashboard_planner_prompt",
+    "build_dashboard_sql_planner_prompt",
+    "build_dashboard_table_prompt",
+    "build_dashboard_sql_generator_prompt",
+    "build_dashboard_sql_critic_prompt",
+    "build_dashboard_sql_repair_prompt",
     "chat_messages",
 ]

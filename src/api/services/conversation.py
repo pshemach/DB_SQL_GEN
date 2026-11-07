@@ -6,8 +6,8 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Any, Optional
 
-from src.agents.orchestrator import run_agent_async, run_agent_stream
-from src.agents.formatter import detect_requested_chart_type
+from src.agents.chat.orchestrator import run_agent_async, run_agent_stream
+from src.agents.chat.formatter import detect_requested_chart_type
 from src.infrastructure.utils import serialize_query_result
 
 def format_agent_response(result: dict) -> str:

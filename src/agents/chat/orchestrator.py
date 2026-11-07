@@ -24,20 +24,20 @@ from langgraph.graph import END, StateGraph
 from langsmith import traceable
 from loguru import logger
 
-from src.agents.critic import CriticAgent
-from src.agents.formatter import ResultFormatterAgent
-from src.agents.generator import SQLGeneratorAgent
-from src.agents.guardrail import Guardrail
-from src.agents.planner import PlannerAgent
+from src.agents.chat.critic import CriticAgent
+from src.agents.chat.formatter import ResultFormatterAgent
+from src.agents.chat.generator import SQLGeneratorAgent
+from src.agents.chat.guardrail import Guardrail
+from src.agents.chat.planner import PlannerAgent
 from src.agents.prompts.chat_agent_prompts import (
     build_direct_prompt,
     build_pre_exec_critic_prompt,
     chat_messages,
 )
-from src.agents.retriever import SchemaLinkerAgent
-from src.agents.router import RouterAgent
-from src.agents.state import AgentState
-from src.agents.transformer import ResultTransformer
+from src.agents.chat.retriever import SchemaLinkerAgent
+from src.agents.chat.router import RouterAgent
+from src.agents.chat.state import AgentState
+from src.agents.chat.transformer import ResultTransformer
 from src.infrastructure.config import (
     ENABLE_DYNAMIC_FEW_SHOT,
     ENABLE_PRE_EXEC_CRITIC,

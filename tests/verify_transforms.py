@@ -19,8 +19,8 @@ def verify_imports():
         
         # Test local components
         from src.agents.tools.local_sql_engine import LocalSQLEngine
-        from src.agents.transformer import TableAnalystAgent, ResultTransformer
-        from src.agents.router import RouterAgent
+        from src.agents.chat.transformer import TableAnalystAgent, ResultTransformer
+        from src.agents.chat.router import RouterAgent
         
         logger.info("✓ Custom agent modules imported successfully.")
         return True

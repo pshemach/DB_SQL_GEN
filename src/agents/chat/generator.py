@@ -4,7 +4,7 @@ SQL Generator Agent: Translates logical plans into SQL queries.
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from loguru import logger
-from src.agents.state import AgentState
+from src.agents.chat.state import AgentState
 from src.agents.prompts.chat_agent_prompts import build_generator_prompt
 from src.infrastructure.config import ENABLE_DYNAMIC_FEW_SHOT
 from src.infrastructure.llm import get_generator_llm

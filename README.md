@@ -30,7 +30,7 @@ pytest
 
 ## How a question moves
 
-The workflow is `src/agents/orchestrator.py` (`AgentOrchestrator`). It is on when `ENABLE_PRODUCTION_GRAPH` is true (the default).
+The workflow is `src/agents/chat/orchestrator.py` (`AgentOrchestrator`). It is on when `ENABLE_PRODUCTION_GRAPH` is true (the default).
 
 1. Load session memory and check the semantic cache.
 2. Authorization guardrails. A user with no allowed rep codes is denied.
@@ -48,10 +48,10 @@ Row scope is `RepCode IN (...)` from the signed-in user's allowed rep codes, app
 
 | Change | Start here |
 | --- | --- |
-| Dialog routing (clarify, chitchat, follow-up, new SQL) | `src/agents/router.py`, `src/agents/orchestrator.py` |
-| SQL plan, generation, execution, retry | `src/agents/orchestrator.py`, `src/agents/planner.py`, `src/agents/generator.py`, `src/agents/critic.py` |
+| Dialog routing (clarify, chitchat, follow-up, new SQL) | `src/agents/chat/router.py`, `src/agents/chat/orchestrator.py` |
+| SQL plan, generation, execution, retry | `src/agents/chat/orchestrator.py`, `src/agents/chat/planner.py`, `src/agents/chat/generator.py`, `src/agents/chat/critic.py` |
 | Prompts | `src/agents/prompts/chat_agent_prompts.py` |
-| Shared graph state | `src/agents/state.py` |
+| Shared graph state | `src/agents/chat/state.py` |
 | SELECT-only policy | `src/infrastructure/db/sql_safety.py` |
 | Database connection and schema reads | `src/infrastructure/db/database.py` |
 | Business metric meanings | `data/business_definitions.yaml` (local only) and `src/services/chat_service/knowledge_store.py` |
