@@ -18,8 +18,11 @@ from src.services.auth_service.access_context import (
     extract_user_role_from_phone_auth,
     extract_user_role_from_system_login,
 )
-from src.memory import chat_memory
-from src.services.auth_service.chatbot_auth import chatbot_auth_client
+from src.memory import ChatMemoryStore
+from src.services.auth_service.chatbot_auth import ChatBotAuthClient
+
+chat_memory = ChatMemoryStore()
+chatbot_auth_client = ChatBotAuthClient()
 from src.api.data_models import PhoneLoginRequest, SystemLoginRequest
 from src.api.dependencies import AUTH_SESSIONS, bearer_token, public_user, require_user
 

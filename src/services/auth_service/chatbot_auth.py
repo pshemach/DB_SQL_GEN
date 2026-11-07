@@ -88,5 +88,3 @@ class ChatBotAuthClient:
                 "error": str(e),
                 "data": None
             }
-
-chatbot_auth_client = ChatBotAuthClient()

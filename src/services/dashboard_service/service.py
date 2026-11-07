@@ -5,10 +5,12 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any, Optional
 
-from src.services.dashboard_service.composer import dashboard_composer
+from src.services.dashboard_service.composer import DashboardComposer
 from src.services.dashboard_service.filters import empty_filters, merge_filter_fields, normalize_filters
 from src.services.dashboard_service.layout import extend_layout, pack_layout
-from src.memory.dashboard_store import dashboard_store
+from src.memory.dashboard_store import DashboardStore
+
+dashboard_store = DashboardStore()
 
 
 def public_dashboard(record: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -45,7 +47,7 @@ async def stream_compose_and_save(
         existing = dashboard_store.get(dashboard_id, user_id)
 
     payload = None
-    async for event in dashboard_composer.stream_compose(
+    async for event in DashboardComposer().stream_compose(
         requirement,
         allowed_rep_codes=allowed_rep_codes,
         user_role=user_role,
@@ -87,7 +89,7 @@ def add_widget(
     if not current:
         return {"success": False, "error": "Dashboard not found.", "status_code": 404}
 
-    composed = dashboard_composer.compose(
+    composed = DashboardComposer().compose(
         requirement,
         allowed_rep_codes=allowed_rep_codes,
         user_role=user_role,
@@ -126,7 +128,7 @@ def refresh_dashboard(
     if not current:
         return {"success": False, "error": "Dashboard not found.", "status_code": 404}
 
-    widgets = dashboard_composer.refresh_widgets(
+    widgets = DashboardComposer().refresh_widgets(
         current.get("widgets") or [],
         allowed_rep_codes,
     )
@@ -166,7 +168,7 @@ async def stream_apply_filters_and_save(
         or current_filters.get("dimension_columns")
         or {}
     )
-    async for event in dashboard_composer.stream_apply_filters(
+    async for event in DashboardComposer().stream_apply_filters(
         current.get("widgets") or [],
         applied,
         allowed_rep_codes=allowed_rep_codes,

@@ -10,7 +10,9 @@ from uuid import uuid4
 from loguru import logger
 from sqlalchemy import text
 
-from src.infrastructure.db import db_manager
+from src.infrastructure.db.database import DatabaseManager
+
+db_manager = DatabaseManager()
 
 _EMPTY_FILTERS = {"date_from": None, "date_to": None, "fields": []}
 
@@ -277,6 +279,3 @@ class DashboardStore:
             "created_at": created.isoformat() if hasattr(created, "isoformat") else created,
             "updated_at": updated.isoformat() if hasattr(updated, "isoformat") else updated,
         }
-
-
-dashboard_store = DashboardStore()

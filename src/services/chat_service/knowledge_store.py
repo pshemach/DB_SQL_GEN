@@ -2,7 +2,7 @@ import yaml
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from src.services.chat_service.knowledge_retriever import business_knowledge_retriever
+from src.services.chat_service.knowledge_retriever import BusinessKnowledgeRetriever
 from src.infrastructure.config import BUSINESS_DOC_YAML_PATH
 
 class LiteralString(str):
@@ -27,7 +27,7 @@ class BusinessKnowledgeStore:
         self.definitions = self._load()
         
         # Initialize vector store retriever
-        self.retriever = business_knowledge_retriever
+        self.retriever = BusinessKnowledgeRetriever()
 
     def _load(self) -> Dict[str, Any]:
         if not self.yaml_path.exists():
@@ -169,7 +169,3 @@ class BusinessKnowledgeStore:
             .replace(" ", "_")
             .replace("-", "_")
         )
-
-business_knowledge_store = BusinessKnowledgeStore(
-    # yaml_path="data/business_definitions.yaml"
-)

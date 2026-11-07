@@ -66,10 +66,14 @@ from src.infrastructure.utils import (
     sanitize_state,
     serialize_query_result,
 )
-from src.memory import chat_memory
-from src.memory.result_cache import result_cache
+from src.memory import ChatMemoryStore
+from src.memory.result_cache import ResultCache
 from src.services.chat_service.few_shot import few_shot_retriever
-from src.services.chat_service.semantic_cache import semantic_cache
+from src.services.chat_service.semantic_cache import SemanticCache
+
+chat_memory = ChatMemoryStore()
+result_cache = ResultCache()
+semantic_cache = SemanticCache()
 
 NODE_STATUS = {
     "init": "Starting...",
@@ -136,7 +140,7 @@ class AgentOrchestrator:
         self.generator = SQLGeneratorAgent(llm_generator)
         self.critic = CriticAgent(llm_direct)
         self.formatter = ResultFormatterAgent(llm_direct)
-        self.transformer = ResultTransformer(llm_router, analyst_llm=llm_direct)
+        self.transformer = ResultTransformer(llm_router, analyst_llm=llm_direct, cache=result_cache)
         self.graph = self._build_graph()
 
     def _sql_question(self, state: AgentState) -> str:

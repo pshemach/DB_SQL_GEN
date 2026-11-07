@@ -4,7 +4,9 @@ Schema Linker Agent (Selector): Identifies relevant tables and columns.
 
 from typing import List
 from loguru import logger
-from src.infrastructure.db import db_manager
+from src.infrastructure.db.database import DatabaseManager
+
+db_manager = DatabaseManager()
 from src.agents.chat.state import AgentState
 
 from src.agents.prompts.chat_agent_prompts import build_table_selection_prompt, chat_messages

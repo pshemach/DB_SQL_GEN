@@ -8,7 +8,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
-from src.infrastructure.db import db_manager
+from src.infrastructure.db.database import DatabaseManager
+
+db_manager = DatabaseManager()
 from src.api.rate_limit import RateLimitMiddleware
 from src.api.routers import auth, cache, conversations, dashboards, examples, feedback, health, knowledge, query, schema
 from src.infrastructure.config import (

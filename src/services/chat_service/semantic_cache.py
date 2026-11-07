@@ -144,6 +144,3 @@ class SemanticCache:
         if self.enabled:
             self.cache.clear()
             logger.info("Cache cleared")
-
-# Global cache instance
-semantic_cache = SemanticCache()

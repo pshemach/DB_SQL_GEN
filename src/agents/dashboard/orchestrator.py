@@ -40,7 +40,9 @@ from src.infrastructure.config import (
     MAX_ITERATIONS,
     QUERY_TIMEOUT_SECONDS,
 )
-from src.infrastructure.db import db_manager
+from src.infrastructure.db.database import DatabaseManager
+
+db_manager = DatabaseManager()
 from src.infrastructure.db.sql_safety import assess_sql, classify_db_error, is_retryable
 from src.infrastructure.llm import (
     get_direct_llm,
@@ -403,11 +405,15 @@ class DashboardWidgetSqlOrchestrator:
         return workflow.compile()
 
 
-widget_sql_orchestrator = DashboardWidgetSqlOrchestrator()
-
-
 class DashboardAgent:
     """Planner, guardrail, and widget steps used by every dashboard graph."""
+
+    def widget_sql(self) -> DashboardWidgetSqlOrchestrator:
+        orchestrator = getattr(self, "_widget_sql", None)
+        if orchestrator is None:
+            orchestrator = DashboardWidgetSqlOrchestrator()
+            self._widget_sql = orchestrator
+        return orchestrator
 
     def access_error(self, allowed_rep_codes: list[str] | None) -> str | None:
         if allowed_rep_codes:
@@ -455,7 +461,7 @@ class DashboardAgent:
     ) -> dict[str, Any]:
         original_question = spec.get("question") or ""
         question = question_override or original_question
-        result = widget_sql_orchestrator.run(
+        result = self.widget_sql().run(
             question,
             widget_type=spec.get("type") or "chart",
             chart_type=spec.get("chart_type") or spec.get("type") or "chart",
@@ -590,7 +596,7 @@ class DashboardAgent:
         user_role: str | None = None,
         user_id: str | None = None,
     ) -> tuple[list[str], str | None]:
-        result = widget_sql_orchestrator.run(
+        result = self.widget_sql().run(
             (
                 f"List distinct {dimension} names I am allowed to see. "
                 "Return one column of names only, at most 80 rows. "
@@ -1110,8 +1116,3 @@ class DashboardFilterOrchestrator(DashboardAgent):
             {"apply_widget": "apply_widget", "end": END},
         )
         return workflow.compile()
-
-
-compose_orchestrator = DashboardComposeOrchestrator()
-refresh_orchestrator = DashboardRefreshOrchestrator()
-filter_orchestrator = DashboardRefreshOrchestrator()

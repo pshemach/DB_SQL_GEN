@@ -118,6 +118,3 @@ LAST QUERY CONTEXT:
         if session_id in self.sessions:
             del self.sessions[session_id]
             logger.info(f"Cleared cache for session {session_id}")
-
-# Global instance
-result_cache = ResultCache()

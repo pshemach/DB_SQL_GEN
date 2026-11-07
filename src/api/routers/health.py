@@ -1,7 +1,9 @@
 from fastapi import APIRouter
 from loguru import logger
 
-from src.infrastructure.db import db_manager
+from src.infrastructure.db.database import DatabaseManager
+
+db_manager = DatabaseManager()
 from src.api.data_models import HealthResponse
 from src.infrastructure.config import ENABLE_DYNAMIC_FEW_SHOT, ENABLE_SEMANTIC_CACHE
 

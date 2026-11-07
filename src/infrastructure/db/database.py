@@ -269,6 +269,3 @@ class DatabaseManager:
         """Close database connections."""
         self.engine.dispose()
         logger.info("Database connections closed")
-
-# Global database instance
-db_manager = DatabaseManager()

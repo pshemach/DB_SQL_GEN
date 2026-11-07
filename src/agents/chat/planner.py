@@ -1,7 +1,9 @@
 from loguru import logger
 from src.agents.chat.state import AgentState
 from src.agents.prompts.chat_agent_prompts import build_planner_prompt, chat_messages
-from src.services.chat_service.knowledge_retriever import business_knowledge_retriever as doc_retriever
+from src.services.chat_service.knowledge_retriever import BusinessKnowledgeRetriever
+
+doc_retriever = BusinessKnowledgeRetriever()
 from src.infrastructure.llm import get_planner_llm
 
 class PlannerAgent:

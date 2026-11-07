@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from src.memory.st_store import chat_memory
+from src.memory.st_store import ChatMemoryStore
+
+chat_memory = ChatMemoryStore()
 
 
 class MemoryRecaller:
@@ -23,7 +25,3 @@ class MemoryWriter:
 
     def save_state(self, session_id: str, state: dict) -> None:
         chat_memory.set_last_state(session_id, state)
-
-
-recaller = MemoryRecaller()
-writer = MemoryWriter()

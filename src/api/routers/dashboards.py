@@ -23,7 +23,9 @@ from src.services.dashboard_service import (
     stream_apply_filters_and_save,
     stream_compose_and_save,
 )
-from src.memory.dashboard_store import dashboard_store
+from src.memory.dashboard_store import DashboardStore
+
+dashboard_store = DashboardStore()
 
 router = APIRouter(tags=["dashboards"])
 

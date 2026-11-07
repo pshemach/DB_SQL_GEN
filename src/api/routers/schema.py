@@ -1,7 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
-from src.infrastructure.db import db_manager
+from src.infrastructure.db.database import DatabaseManager
+
+db_manager = DatabaseManager()
 
 router = APIRouter(prefix="/schema", tags=["schema"])
 

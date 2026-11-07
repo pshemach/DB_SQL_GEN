@@ -18,9 +18,8 @@ from src.services.dashboard_service.layout import (
 from src.services.dashboard_service.composer import DashboardComposer
 from src.agents.dashboard.orchestrator import (
     DashboardComposeOrchestrator,
-    compose_orchestrator,
-    filter_orchestrator,
-    refresh_orchestrator,
+    DashboardFilterOrchestrator,
+    DashboardRefreshOrchestrator,
 )
 from src.agents.chat.formatter import ResultFormatterAgent
 from src.agents.chat.orchestrator import orchestrator
@@ -245,12 +244,12 @@ class TestDashboardOrchestrators:
         assert out["layout"][0]["id"] == "w1"
 
     def test_compose_graph_stops_without_rep_codes(self):
-        out = compose_orchestrator.run("total sales", allowed_rep_codes=[])
+        out = DashboardComposeOrchestrator().run("total sales", allowed_rep_codes=[])
         assert out["success"] is False
         assert "rep codes" in out["error"]
 
     def test_refresh_graph_rejects_write_sql(self):
-        widgets = refresh_orchestrator.run(
+        widgets = DashboardRefreshOrchestrator().run(
             [{
                 "widget_id": "w1",
                 "title": "Bad",
@@ -264,12 +263,12 @@ class TestDashboardOrchestrators:
         assert "SELECT" in (widgets[0]["last_error"] or "")
 
     def test_filter_graph_skips_empty_board(self):
-        out = filter_orchestrator.run([], None, allowed_rep_codes=["R001"])
+        out = DashboardFilterOrchestrator().run([], None, allowed_rep_codes=["R001"])
         assert out["success"] is True
         assert out["widgets"] == []
 
     def test_graphs_keep_separate_nodes(self):
-        assert "planner" in set(compose_orchestrator.graph.get_graph().nodes)
-        assert "build_widget" in set(compose_orchestrator.graph.get_graph().nodes)
-        assert "refresh" in set(refresh_orchestrator.graph.get_graph().nodes)
-        assert "apply_widget" in set(filter_orchestrator.graph.get_graph().nodes)
+        assert "planner" in set(DashboardComposeOrchestrator().graph.get_graph().nodes)
+        assert "build_widget" in set(DashboardComposeOrchestrator().graph.get_graph().nodes)
+        assert "refresh" in set(DashboardRefreshOrchestrator().graph.get_graph().nodes)
+        assert "apply_widget" in set(DashboardFilterOrchestrator().graph.get_graph().nodes)

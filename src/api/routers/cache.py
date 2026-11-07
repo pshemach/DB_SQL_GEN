@@ -1,7 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
-from src.services.chat_service.semantic_cache import semantic_cache
+from src.services.chat_service.semantic_cache import SemanticCache
+
+semantic_cache = SemanticCache()
 
 router = APIRouter(tags=["cache"])
 

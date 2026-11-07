@@ -6,8 +6,11 @@ import plotly.express as px
 from loguru import logger
 
 from src.agents.chat.orchestrator import run_agent_async
-from src.infrastructure.db import db_manager
-from src.services.chat_service.knowledge_store import business_knowledge_store
+from src.infrastructure.db.database import DatabaseManager
+from src.services.chat_service.knowledge_store import BusinessKnowledgeStore
+
+db_manager = DatabaseManager()
+business_knowledge_store = BusinessKnowledgeStore()
 
 # =============================
 # PAGE CONFIG

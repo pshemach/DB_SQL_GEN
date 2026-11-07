@@ -1,6 +1,6 @@
 """Dashboard compose, layout, filters, and persistence."""
 
-from src.services.dashboard_service.composer import DashboardComposer, dashboard_composer
+from src.services.dashboard_service.composer import DashboardComposer
 from src.services.dashboard_service.filters import (
     empty_filters,
     merge_filter_fields,
@@ -19,7 +19,6 @@ from src.services.dashboard_service.service import (
 __all__ = [
     "DashboardComposer",
     "add_widget",
-    "dashboard_composer",
     "empty_filters",
     "extend_layout",
     "merge_filter_fields",

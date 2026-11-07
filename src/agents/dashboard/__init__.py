@@ -6,10 +6,6 @@ from src.agents.dashboard.orchestrator import (
     DashboardFilterOrchestrator,
     DashboardRefreshOrchestrator,
     DashboardWidgetSqlOrchestrator,
-    compose_orchestrator,
-    filter_orchestrator,
-    refresh_orchestrator,
-    widget_sql_orchestrator,
 )
 
 __all__ = [
@@ -18,8 +14,4 @@ __all__ = [
     "DashboardFilterOrchestrator",
     "DashboardRefreshOrchestrator",
     "DashboardWidgetSqlOrchestrator",
-    "compose_orchestrator",
-    "filter_orchestrator",
-    "refresh_orchestrator",
-    "widget_sql_orchestrator",
 ]

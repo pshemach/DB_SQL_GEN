@@ -1,6 +1,8 @@
 from typing import Any, Optional
 from sqlalchemy import text
-from src.infrastructure.db import db_manager
+from src.infrastructure.db.database import DatabaseManager
+
+db_manager = DatabaseManager()
 
 def get_value(data: dict, *keys, default=None):
     for key in keys:

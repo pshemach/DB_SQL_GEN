@@ -126,5 +126,3 @@ class BusinessKnowledgeRetriever:
             keywords_lines.append(keywords)
             
         return "\n".join(keywords_lines).strip()
-    
-business_knowledge_retriever = BusinessKnowledgeRetriever()

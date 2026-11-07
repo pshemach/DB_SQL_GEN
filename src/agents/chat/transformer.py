@@ -14,7 +14,7 @@ from src.agents.prompts.chat_agent_prompts import (
 )
 from src.agents.tools.local_sql_engine import LocalSQLEngine
 from src.infrastructure.llm import get_direct_llm, get_router_llm
-from src.memory.result_cache import result_cache
+from src.memory.result_cache import ResultCache
 from src.infrastructure.utils import extract_json
 
 class TableAnalystAgent:
@@ -63,16 +63,17 @@ class TableAnalystAgent:
 class ResultTransformer:
     """Dynamic follow-up via LLM classifier + DuckDB local SQL + Table Analyst."""
 
-    def __init__(self, llm=None, analyst_llm=None):
+    def __init__(self, llm=None, analyst_llm=None, cache: ResultCache | None = None):
         self.llm = llm or get_router_llm(temperature=0)
         self.analyst = TableAnalystAgent(analyst_llm)
+        self.cache = cache or ResultCache()
 
     def transform(self, state: dict) -> dict:
         session_id = state.get("session_id")
         question = state.get("original_question") or state.get("question") or ""
         memory_context = state.get("memory_context") or ""
 
-        cached = result_cache.get_cached_result(session_id)
+        cached = self.cache.get_cached_result(session_id)
 
         if not cached:
             logger.error(f"No cached result found for session {session_id}")

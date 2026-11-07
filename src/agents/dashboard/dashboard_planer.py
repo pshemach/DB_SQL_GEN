@@ -12,8 +12,11 @@ from src.agents.prompts.dashboard_agent_prompts import (
 )
 from src.infrastructure.llm import get_router_llm
 from src.infrastructure.utils import extract_json
-from src.services.chat_service.knowledge_retriever import business_knowledge_retriever
-from src.services.chat_service.knowledge_store import business_knowledge_store
+from src.services.chat_service.knowledge_retriever import BusinessKnowledgeRetriever
+from src.services.chat_service.knowledge_store import BusinessKnowledgeStore
+
+business_knowledge_retriever = BusinessKnowledgeRetriever()
+business_knowledge_store = BusinessKnowledgeStore()
 from src.services.dashboard_service.filters import normalize_dimensions
 from src.services.dashboard_service.layout import normalize_plan_widgets
 

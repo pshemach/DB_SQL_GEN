@@ -4,7 +4,9 @@ from datetime import datetime
 from uuid import uuid4
 from loguru import logger
 from sqlalchemy import text
-from src.infrastructure.db import db_manager
+from src.infrastructure.db.database import DatabaseManager
+
+db_manager = DatabaseManager()
 
 def _normalize_user_id(user_id: Any) -> Optional[str]:
     if user_id is None:
@@ -892,5 +894,3 @@ class ChatMemoryStore:
     def get_session_feedback_stats(self, session_id: str) -> Dict[str, Any]:
         """Get feedback statistics for a session."""
         return self.mysql_store.get_feedback_stats(session_id)
-    
-chat_memory = ChatMemoryStore()

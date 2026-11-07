@@ -9,8 +9,11 @@ from src.services.auth_service.access_context import (
     extract_user_id_from_phone_auth,
     extract_user_role_from_phone_auth,
 )
-from src.memory import chat_memory
-from src.services.auth_service.chatbot_auth import chatbot_auth_client
+from src.memory import ChatMemoryStore
+from src.services.auth_service.chatbot_auth import ChatBotAuthClient
+
+chat_memory = ChatMemoryStore()
+chatbot_auth_client = ChatBotAuthClient()
 from src.api.data_models import QueryRequest, QueryResponse
 from src.api.services.conversation import execute_turn
 
