@@ -7,7 +7,7 @@ import plotly.express as px
 from loguru import logger
 
 from src.infrastructure.utils import extract_json, json_safe_value
-from src.agents.prompts.agent_prompts import build_result_formatter_prompt, chat_messages
+from src.agents.prompts.chat_agent_prompts import build_result_formatter_prompt, chat_messages
 from src.infrastructure.config import CURRENCY_SYMBOL
 from src.infrastructure.llm import get_direct_llm
 

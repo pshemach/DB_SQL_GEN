@@ -7,7 +7,7 @@ from loguru import logger
 from src.infrastructure.db import db_manager
 from src.agents.state import AgentState
 
-from src.agents.prompts.agent_prompts import build_table_selection_prompt, chat_messages
+from src.agents.prompts.chat_agent_prompts import build_table_selection_prompt, chat_messages
 from src.infrastructure.llm import get_schema_selection_llm
 
 class SchemaLinkerAgent:

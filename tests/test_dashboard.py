@@ -16,6 +16,12 @@ from src.services.dashboard_service.layout import (
     pack_layout,
 )
 from src.services.dashboard_service.composer import DashboardComposer
+from src.agents.dashboard.orchestrator import (
+    DashboardComposeOrchestrator,
+    compose_orchestrator,
+    filter_orchestrator,
+    refresh_orchestrator,
+)
 from src.agents.formatter import ResultFormatterAgent
 from src.agents.orchestrator import orchestrator
 
@@ -205,3 +211,65 @@ class TestDashboardFilters:
         assert "dashboard filter applied later" in question
         again = apply_slicer_to_questions(widgets, ["region"])
         assert again[0]["question"].count("dashboard filter applied later") == 1
+
+
+class _StubPlanner:
+    def plan(self, requirement, existing_widgets=None, mode="compose"):
+        return {
+            "title": "Board",
+            "widgets": [{
+                "widget_id": "w1",
+                "title": "Net sales",
+                "type": "kpi",
+                "chart_type": "kpi",
+                "question": "Total net sales",
+            }],
+            "filter_dimensions": [],
+        }
+
+
+class TestDashboardOrchestrators:
+    def test_compose_graph_builds_stubbed_widget(self):
+        orch = DashboardComposeOrchestrator()
+        orch.guard = lambda requirement, user_role: None
+        orch.build_filtered_widget = lambda spec, **kwargs: {
+            **spec,
+            "status": "ready",
+            "last_rows": [],
+            "sql_query": "SELECT 1",
+        }
+        out = orch.run("total sales", allowed_rep_codes=["R001"], planner=_StubPlanner())
+        assert out["success"] is True
+        assert out["title"] == "Board"
+        assert out["widgets"][0]["status"] == "ready"
+        assert out["layout"][0]["id"] == "w1"
+
+    def test_compose_graph_stops_without_rep_codes(self):
+        out = compose_orchestrator.run("total sales", allowed_rep_codes=[])
+        assert out["success"] is False
+        assert "rep codes" in out["error"]
+
+    def test_refresh_graph_rejects_write_sql(self):
+        widgets = refresh_orchestrator.run(
+            [{
+                "widget_id": "w1",
+                "title": "Bad",
+                "type": "chart",
+                "sql_query": "DELETE FROM sales_flat",
+                "last_rows": [],
+            }],
+            ["R001"],
+        )
+        assert widgets[0]["status"] == "error"
+        assert "SELECT" in (widgets[0]["last_error"] or "")
+
+    def test_filter_graph_skips_empty_board(self):
+        out = filter_orchestrator.run([], None, allowed_rep_codes=["R001"])
+        assert out["success"] is True
+        assert out["widgets"] == []
+
+    def test_graphs_keep_separate_nodes(self):
+        assert "planner" in set(compose_orchestrator.graph.get_graph().nodes)
+        assert "build_widget" in set(compose_orchestrator.graph.get_graph().nodes)
+        assert "refresh" in set(refresh_orchestrator.graph.get_graph().nodes)
+        assert "apply_widget" in set(filter_orchestrator.graph.get_graph().nodes)

@@ -9,7 +9,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.agents.prompts.agent_prompts import build_router_prompt, chat_messages
+from src.agents.prompts.chat_agent_prompts import build_router_prompt, chat_messages
 from src.agents.state import AgentState
 from src.services.chat_service.knowledge_retriever import business_knowledge_retriever
 from src.services.chat_service.knowledge_store import business_knowledge_store

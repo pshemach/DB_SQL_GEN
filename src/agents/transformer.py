@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 import pandas as pd
 from loguru import logger
 
-from src.agents.prompts.agent_prompts import (
+from src.agents.prompts.chat_agent_prompts import (
     build_follow_up_prompt,
     build_table_analyst_prompt,
     chat_messages,

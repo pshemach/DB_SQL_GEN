@@ -6,7 +6,7 @@ from loguru import logger
 from src.infrastructure.db import db_manager
 from src.agents.state import AgentState
 
-from src.agents.prompts.agent_prompts import build_reflection_prompt, chat_messages
+from src.agents.prompts.chat_agent_prompts import build_reflection_prompt, chat_messages
 from src.infrastructure.config import ENABLE_SELF_CORRECTION, MAX_ITERATIONS, QUERY_TIMEOUT_SECONDS
 from src.infrastructure.llm import get_direct_llm
 from src.infrastructure.db.sql_safety import classify_db_error, is_retryable

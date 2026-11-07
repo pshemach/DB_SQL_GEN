@@ -29,7 +29,7 @@ from src.agents.formatter import ResultFormatterAgent
 from src.agents.generator import SQLGeneratorAgent
 from src.agents.guardrail import Guardrail
 from src.agents.planner import PlannerAgent
-from src.agents.prompts.agent_prompts import (
+from src.agents.prompts.chat_agent_prompts import (
     build_direct_prompt,
     build_pre_exec_critic_prompt,
     chat_messages,

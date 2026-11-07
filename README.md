@@ -50,7 +50,7 @@ Row scope is `RepCode IN (...)` from the signed-in user's allowed rep codes, app
 | --- | --- |
 | Dialog routing (clarify, chitchat, follow-up, new SQL) | `src/agents/router.py`, `src/agents/orchestrator.py` |
 | SQL plan, generation, execution, retry | `src/agents/orchestrator.py`, `src/agents/planner.py`, `src/agents/generator.py`, `src/agents/critic.py` |
-| Prompts | `src/agents/prompts/agent_prompts.py` |
+| Prompts | `src/agents/prompts/chat_agent_prompts.py` |
 | Shared graph state | `src/agents/state.py` |
 | SELECT-only policy | `src/infrastructure/db/sql_safety.py` |
 | Database connection and schema reads | `src/infrastructure/db/database.py` |

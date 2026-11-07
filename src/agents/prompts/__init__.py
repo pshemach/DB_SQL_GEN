@@ -4,7 +4,7 @@
 Exports follow the orchestrator flow.
 """
 
-from src.agents.prompts.agent_prompts import (
+from src.agents.prompts.chat_agent_prompts import (
     DOMAIN_CLASSIFIER_PROMPT,
     ORCHESTRATOR_SYSTEM_PROMPT,
     DIRECT_REPLY_SYSTEM_PROMPT,
