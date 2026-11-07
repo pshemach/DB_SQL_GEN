@@ -18,7 +18,7 @@ from src.services.auth_service.access_context import (
     extract_user_role_from_phone_auth,
     extract_user_role_from_system_login,
 )
-from src.memory import ChatMemoryStore
+from src.memory.st_store import ChatMemoryStore
 from src.services.auth_service.chatbot_auth import ChatBotAuthClient
 
 chat_memory = ChatMemoryStore()

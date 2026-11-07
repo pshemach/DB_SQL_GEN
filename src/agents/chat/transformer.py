@@ -13,7 +13,7 @@ from src.agents.prompts.chat_agent_prompts import (
     chat_messages,
 )
 from src.agents.tools.local_sql_engine import LocalSQLEngine
-from src.infrastructure.llm import get_direct_llm, get_router_llm
+from src.infrastructure.llm.llm_provider import get_direct_llm, get_router_llm
 from src.memory.result_cache import ResultCache
 from src.infrastructure.utils import extract_json
 

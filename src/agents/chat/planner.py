@@ -4,7 +4,7 @@ from src.agents.prompts.chat_agent_prompts import build_planner_prompt, chat_mes
 from src.services.chat_service.knowledge_retriever import BusinessKnowledgeRetriever
 
 doc_retriever = BusinessKnowledgeRetriever()
-from src.infrastructure.llm import get_planner_llm
+from src.infrastructure.llm.llm_provider import get_planner_llm
 
 class PlannerAgent:
     """Decomposes natural language questions into structured logical plans."""

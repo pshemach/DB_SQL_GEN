@@ -41,10 +41,8 @@ from src.infrastructure.config import (
     QUERY_TIMEOUT_SECONDS,
 )
 from src.infrastructure.db.database import DatabaseManager
-
-db_manager = DatabaseManager()
 from src.infrastructure.db.sql_safety import assess_sql, classify_db_error, is_retryable
-from src.infrastructure.llm import (
+from src.infrastructure.llm.llm_provider import (
     get_direct_llm,
     get_generator_llm,
     get_planner_llm,
@@ -62,6 +60,8 @@ from src.services.dashboard_service.filters import (
     selected_sql_column,
 )
 from src.services.dashboard_service.layout import pack_layout
+
+db_manager = DatabaseManager()
 
 WIDGET_ROW_CAP = 200
 NO_REP_CODES = "Access denied. No allowed rep codes were provided."

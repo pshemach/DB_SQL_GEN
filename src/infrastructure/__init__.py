@@ -5,8 +5,8 @@ No agent logic here. Connections, clients, and configuration only.
 """
 
 from src.infrastructure.config import dump, get_api_key, validate
-from src.infrastructure.llm import (
-    get_default_embeddings,
+from src.infrastructure.llm.embeddings import get_default_embeddings
+from src.infrastructure.llm.llm_provider import (
     get_direct_llm,
     get_fast_chat_llm,
     get_generator_llm,

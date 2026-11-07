@@ -9,16 +9,25 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from src.infrastructure.db.database import DatabaseManager
-
-db_manager = DatabaseManager()
 from src.api.rate_limit import RateLimitMiddleware
-from src.api.routers import auth, cache, conversations, dashboards, examples, feedback, health, knowledge, query, schema
+import src.api.routers.auth as auth
+import src.api.routers.cache as cache
+import src.api.routers.conversations as conversations
+import src.api.routers.dashboards as dashboards
+import src.api.routers.examples as examples
+import src.api.routers.feedback as feedback
+import src.api.routers.health as health
+import src.api.routers.knowledge as knowledge
+import src.api.routers.query as query
+import src.api.routers.schema as schema
 from src.infrastructure.config import (
     DATABASE_URI,
     ENABLE_DYNAMIC_FEW_SHOT,
     ENABLE_SEMANTIC_CACHE,
     validate,
 )
+
+db_manager = DatabaseManager()
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 

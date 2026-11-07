@@ -9,7 +9,7 @@ from loguru import logger
 from src.infrastructure.utils import extract_json, json_safe_value
 from src.agents.prompts.chat_agent_prompts import build_result_formatter_prompt, chat_messages
 from src.infrastructure.config import CURRENCY_SYMBOL
-from src.infrastructure.llm import get_direct_llm
+from src.infrastructure.llm.llm_provider import get_direct_llm
 
 _REQUESTED_CHART_PATTERNS = (
     (r"horizontal\s+bar", "horizontal_bar"),

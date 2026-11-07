@@ -16,7 +16,7 @@ from src.services.chat_service.knowledge_store import BusinessKnowledgeStore
 
 business_knowledge_retriever = BusinessKnowledgeRetriever()
 business_knowledge_store = BusinessKnowledgeStore()
-from src.infrastructure.llm import get_router_llm
+from src.infrastructure.llm.llm_provider import get_router_llm
 from src.infrastructure.utils import extract_json
 
 

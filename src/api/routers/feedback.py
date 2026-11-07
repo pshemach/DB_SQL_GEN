@@ -2,7 +2,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.memory import ChatMemoryStore
+from src.memory.st_store import ChatMemoryStore
 
 chat_memory = ChatMemoryStore()
 from src.api.data_models import FeedbackRequest

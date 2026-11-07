@@ -55,7 +55,7 @@ from src.infrastructure.config import (
     SQL_MAX_ROWS,
 )
 from src.infrastructure.db.sql_safety import assess_sql, is_retryable
-from src.infrastructure.llm import (
+from src.infrastructure.llm.llm_provider import (
     get_direct_llm,
     get_generator_llm,
     get_planner_llm,
@@ -66,7 +66,7 @@ from src.infrastructure.utils import (
     sanitize_state,
     serialize_query_result,
 )
-from src.memory import ChatMemoryStore
+from src.memory.st_store import ChatMemoryStore
 from src.memory.result_cache import ResultCache
 from src.services.chat_service.few_shot import few_shot_retriever
 from src.services.chat_service.semantic_cache import SemanticCache

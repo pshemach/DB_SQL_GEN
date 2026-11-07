@@ -8,7 +8,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
-from src.memory import ChatMemoryStore
+from src.memory.st_store import ChatMemoryStore
 
 chat_memory = ChatMemoryStore()
 from src.api.data_models import ConversationFollowUpRequest, ConversationStartRequest

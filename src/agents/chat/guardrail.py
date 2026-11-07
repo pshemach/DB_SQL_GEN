@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from loguru import logger
 
-from src.infrastructure.llm import get_router_llm
+from src.infrastructure.llm.llm_provider import get_router_llm
 from src.agents.prompts.chat_agent_prompts import build_domain_classifier_prompt, chat_messages
 
 GuardrailVerdict = Literal["in_scope", "out_of_scope"]

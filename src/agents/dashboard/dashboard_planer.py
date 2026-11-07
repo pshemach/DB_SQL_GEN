@@ -10,7 +10,7 @@ from src.agents.prompts.dashboard_agent_prompts import (
     build_dashboard_planner_prompt,
     dashboard_messages,
 )
-from src.infrastructure.llm import get_router_llm
+from src.infrastructure.llm.llm_provider import get_router_llm
 from src.infrastructure.utils import extract_json
 from src.services.chat_service.knowledge_retriever import BusinessKnowledgeRetriever
 from src.services.chat_service.knowledge_store import BusinessKnowledgeStore
